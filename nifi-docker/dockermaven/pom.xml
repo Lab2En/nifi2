@@ -45,10 +45,10 @@
                                 <configuration>
                                     <images>
                                         <image>
-                                            <name>apache/nifi</name>
+                                            <name>thaihv/nifi2</name>
                                             <build>
                                                 <tags>
-                                                    <tag>${project.version}-maven</tag>
+                                                    <tag>0.0.1</tag>
                                                 </tags>
                                                 <dockerFile>Dockerfile</dockerFile>
                                                 <contextDir>${project.basedir}</contextDir>
