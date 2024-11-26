@@ -43,7 +43,7 @@ jobs:
         echo "/usr/local/maven/bin" >> $GITHUB_PATH
       shell: bash
     - name: Set MAVEN_OPTS for Increased Memory
-      run: echo "MAVEN_OPTS=-Xmx1024m -XX:MaxPermSize=512m" >> $GITHUB_ENV      
+      run: echo "MAVEN_OPTS=-Xmx2g" >> $GITHUB_ENV      
     - name: Verify Maven Version
       run: mvn --version
     - name: Build with Maven
