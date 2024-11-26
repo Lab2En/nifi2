@@ -15,7 +15,6 @@ jobs:
     env:
       VERSION: '0.0.1'
       JAVA_VERSION: '21'
-      MAVEN_OPTS: '-Xmx1024m'
     steps:
     - name: Clean Disk to avoid full capability
       run: |
@@ -43,12 +42,10 @@ jobs:
         echo "MAVEN_HOME=/usr/local/maven" >> $GITHUB_ENV
         echo "/usr/local/maven/bin" >> $GITHUB_PATH
       shell: bash
+    - name: Set MAVEN_OPTS for Increased Memory
+      run: echo "MAVEN_OPTS=-Xmx1024m -XX:MaxPermSize=512m" >> $GITHUB_ENV      
     - name: Verify Maven Version
       run: mvn --version
-      
-    - name: Cache Maven repository
-      uses: actions/cache@v3
-      
     - name: Build with Maven
       run: mvn -T1C clean install -DskipTests
     - name: Docker Login
