@@ -20,8 +20,8 @@ set -exuo pipefail
 TAG=$1
 VERSION=$2
 
-container_name="nifi-${TAG}-integration-test"
-image_name="apache/nifi:${TAG}"
+container_name="nifi2-${TAG}-integration-test"
+image_name="thaihv/nifi2:${TAG}"
 port=8443
 
 trap '{ docker logs "${container_name}" | tail -10; docker inspect -f "{{json .State}}" "${container_name}"; docker rm -f "${container_name}"; }' EXIT
