@@ -1,0 +1,55 @@
+
+name: Build & Deployment Apache Nifi2
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+    - 'README.md'
+    - 'docs/**'
+  pull_request:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest  
+    env:
+      VERSION: '0.0.1'
+      JAVA_VERSION: '21'
+      MAVEN_OPTS: '-Xmx1024m'
+    steps:
+    - name: Clean Disk to avoid full capability
+      run: |
+        sudo docker rmi $(docker image ls -aq) >/dev/null 2>&1 || true
+        sudo rm -rf \
+            /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup \
+            /usr/lib/jvm || true
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf "/opt/hostedtoolcache"    
+    - uses: actions/checkout@v3
+    - name: Set up JDK 21
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: ${{ env.JAVA_VERSION }}
+        architecture: x64
+        cache: maven
+    - name: Cache Maven repository
+      uses: actions/cache@v3
+      
+    - name: Build with Maven
+      run: mvn -T1C clean install -DskipTests
+    - name: Docker Login
+      env:
+        DOCKER_USER: ${{secrets.DOCKER_USERNAME}}
+        DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
+      run: |
+        docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+        
+    - name: Docker Build nifi2 Image
+      working-directory: ./nifi-docker/dockermaven
+      run: mvn -P docker clean install      
+
+    - name: Docker Push nifi2 Image to Docker Hub    
+      run: docker push thaihv/nifi2:$VERSION
