@@ -156,20 +156,20 @@
         <nifi.security.truststore.certificate />
         <nifi.security.truststoreType>PKCS12</nifi.security.truststoreType>
         <nifi.security.truststorePasswd />
-        <nifi.security.user.authorizer>single-user-authorizer</nifi.security.user.authorizer>
+        <nifi.security.user.authorizer>managed-authorizer</nifi.security.user.authorizer>
         <nifi.security.allow.anonymous.authentication>false</nifi.security.allow.anonymous.authentication>
-        <nifi.security.user.login.identity.provider>single-user-provider</nifi.security.user.login.identity.provider>
+        <nifi.security.user.login.identity.provider/>
         <nifi.security.user.jws.key.rotation.period>PT1H</nifi.security.user.jws.key.rotation.period>
         <nifi.security.x509.principal.extractor />
         <nifi.security.ocsp.responder.url />
         <nifi.security.ocsp.responder.certificate />
 
         <!-- nifi.properties: openid connect -->
-        <nifi.security.user.oidc.discovery.url />
+        <nifi.security.user.oidc.discovery.url >http://www.tamky.xyz:8080/realms/setl-nifi/.well-known/openid-configuration</nifi.security.user.oidc.discovery.url>
         <nifi.security.user.oidc.connect.timeout>5 secs</nifi.security.user.oidc.connect.timeout>
         <nifi.security.user.oidc.read.timeout>5 secs</nifi.security.user.oidc.read.timeout>
-        <nifi.security.user.oidc.client.id />
-        <nifi.security.user.oidc.client.secret />
+        <nifi.security.user.oidc.client.id>nifi2</nifi.security.user.oidc.client.id>
+        <nifi.security.user.oidc.client.secret>gke5sfEVdqPLOXCILLyP4PZFPHeu5v46</nifi.security.user.oidc.client.secret>
         <nifi.security.user.oidc.preferred.jwsalgorithm />
         <!-- Set additional scopes to support Refresh Token retrieval -->
         <nifi.security.user.oidc.additional.scopes>offline_access</nifi.security.user.oidc.additional.scopes>
