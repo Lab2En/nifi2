@@ -17,9 +17,9 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlType;
 import org.apache.nifi.web.api.entity.ControllerServiceReferencingComponentEntity;
 
-import jakarta.xml.bind.annotation.XmlType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -224,7 +224,7 @@ public class ControllerServiceDTO extends ComponentDTO {
      * @return The state of this controller service. Possible values are ENABLED, ENABLING, DISABLED, DISABLING
      */
     @Schema(description = "The state of the controller service.",
-            allowableValues = "ENABLED, ENABLING, DISABLED, DISABLING"
+            allowableValues = {"ENABLED", "ENABLING", "DISABLED", "DISABLING"}
     )
     public String getState() {
         return state;
@@ -332,7 +332,7 @@ public class ControllerServiceDTO extends ComponentDTO {
 
     @Schema(description = "Indicates whether the ControllerService is valid, invalid, or still in the process of validating (i.e., it is unknown whether or not the ControllerService is valid)",
         accessMode = Schema.AccessMode.READ_ONLY,
-        allowableValues = VALID + ", " + INVALID + ", " + VALIDATING)
+        allowableValues = {VALID, INVALID, VALIDATING})
     public String getValidationStatus() {
         return validationStatus;
     }

@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.cdc.event;
 
-
 import java.util.List;
 
 /**
@@ -31,6 +30,7 @@ public class BaseRowEventInfo<RowEventDataType> extends BaseTableEventInfo imple
         this.rows = rows;
     }
 
+    @Override
     public List<RowEventDataType> getRows() {
         return rows;
     }

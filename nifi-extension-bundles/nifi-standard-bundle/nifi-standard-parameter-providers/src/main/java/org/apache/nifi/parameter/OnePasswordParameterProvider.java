@@ -16,6 +16,8 @@
  */
 package org.apache.nifi.parameter;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.ConfigVerificationResult;
@@ -26,9 +28,6 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.web.client.api.HttpResponseEntity;
 import org.apache.nifi.web.client.api.HttpUriBuilder;
 import org.apache.nifi.web.client.provider.api.WebClientServiceProvider;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.net.URI;
@@ -45,7 +44,6 @@ public class OnePasswordParameterProvider extends AbstractParameterProvider impl
 
     public static final PropertyDescriptor WEB_CLIENT_SERVICE_PROVIDER = new PropertyDescriptor.Builder()
             .name("Web Client Service Provider")
-            .displayName("Web Client Service Provider")
             .description("Controller service for HTTP client operations.")
             .identifiesControllerService(WebClientServiceProvider.class)
             .required(true)
@@ -53,7 +51,6 @@ public class OnePasswordParameterProvider extends AbstractParameterProvider impl
 
     public static final PropertyDescriptor CONNECT_SERVER = new PropertyDescriptor.Builder()
             .name("Connect Server")
-            .displayName("Connect Server")
             .description("HTTP endpoint of the 1Password Connect Server to connect to. Example: http://localhost:8080")
             .required(true)
             .addValidator(StandardValidators.URL_VALIDATOR)
@@ -61,7 +58,6 @@ public class OnePasswordParameterProvider extends AbstractParameterProvider impl
 
     public static final PropertyDescriptor ACCESS_TOKEN = new PropertyDescriptor.Builder()
             .name("Access Token")
-            .displayName("Access Token")
             .description("Access Token used for authentication against the 1Password APIs.")
             .sensitive(true)
             .required(true)
@@ -166,7 +162,7 @@ public class OnePasswordParameterProvider extends AbstractParameterProvider impl
 
         if (vaultID != null) {
             uriBuilder.addPathSegment(vaultID)
-            .addPathSegment(GET_ITEMS);
+                .addPathSegment(GET_ITEMS);
         }
 
         if (itemID != null) {

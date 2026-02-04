@@ -21,6 +21,7 @@ import com.azure.core.amqp.AmqpTransportType;
 import com.azure.core.amqp.exception.AmqpErrorCondition;
 import com.azure.core.amqp.exception.AmqpException;
 import com.azure.core.credential.AzureNamedKeyCredential;
+import com.azure.core.credential.TokenCredential;
 import com.azure.core.http.ProxyOptions;
 import com.azure.core.util.HttpClientOptions;
 import com.azure.identity.ManagedIdentityCredential;
@@ -58,6 +59,8 @@ import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.migration.ProxyServiceMigration;
+import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
 import org.apache.nifi.processor.AbstractSessionFactoryProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -78,8 +81,10 @@ import org.apache.nifi.serialization.RecordSetWriterFactory;
 import org.apache.nifi.serialization.WriteResult;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.nifi.shared.azure.eventhubs.AzureEventHubAuthenticationStrategy;
 import org.apache.nifi.shared.azure.eventhubs.AzureEventHubComponent;
 import org.apache.nifi.shared.azure.eventhubs.AzureEventHubTransportType;
+import org.apache.nifi.shared.azure.eventhubs.BlobStorageAuthenticationStrategy;
 import org.apache.nifi.util.StopWatch;
 import org.apache.nifi.util.StringUtils;
 
@@ -94,6 +99,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -129,38 +135,33 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
     private static final String FORMAT_STORAGE_CONNECTION_STRING_FOR_SAS_TOKEN = "BlobEndpoint=https://%s.blob.core.%s/;SharedAccessSignature=%s";
 
     static final PropertyDescriptor NAMESPACE = new PropertyDescriptor.Builder()
-            .name("event-hub-namespace")
-            .displayName("Event Hub Namespace")
+            .name("Event Hub Namespace")
             .description("The namespace that the Azure Event Hubs is assigned to. This is generally equal to <Event Hub Names>-ns.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(true)
             .build();
     static final PropertyDescriptor EVENT_HUB_NAME = new PropertyDescriptor.Builder()
-            .name("event-hub-name")
-            .displayName("Event Hub Name")
+            .name("Event Hub Name")
             .description("The name of the event hub to pull messages from.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(true)
             .build();
     static final PropertyDescriptor SERVICE_BUS_ENDPOINT = AzureEventHubUtils.SERVICE_BUS_ENDPOINT;
+    static final PropertyDescriptor AUTHENTICATION_STRATEGY = AzureEventHubComponent.AUTHENTICATION_STRATEGY;
+    static final PropertyDescriptor EVENT_HUB_OAUTH2_ACCESS_TOKEN_PROVIDER = AzureEventHubComponent.OAUTH2_ACCESS_TOKEN_PROVIDER;
     static final PropertyDescriptor ACCESS_POLICY_NAME = new PropertyDescriptor.Builder()
-            .name("event-hub-shared-access-policy-name")
-            .displayName("Shared Access Policy Name")
+            .name("Shared Access Policy Name")
             .description("The name of the shared access policy. This policy must have Listen claims.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(false)
+            .dependsOn(AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE)
             .build();
-    static final PropertyDescriptor POLICY_PRIMARY_KEY = new PropertyDescriptor.Builder()
-            .fromPropertyDescriptor(AzureEventHubUtils.POLICY_PRIMARY_KEY)
-            .name("event-hub-shared-access-policy-primary-key")
-            .build();
-    static final PropertyDescriptor USE_MANAGED_IDENTITY = AzureEventHubUtils.USE_MANAGED_IDENTITY;
+    static final PropertyDescriptor POLICY_PRIMARY_KEY = AzureEventHubUtils.POLICY_PRIMARY_KEY;
     static final PropertyDescriptor CONSUMER_GROUP = new PropertyDescriptor.Builder()
-            .name("event-hub-consumer-group")
-            .displayName("Consumer Group")
+            .name("Consumer Group")
             .description("The name of the consumer group to use.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -169,8 +170,7 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             .build();
 
     static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
-            .name("record-reader")
-            .displayName("Record Reader")
+            .name("Record Reader")
             .description("The Record Reader to use for reading received messages." +
                     " The event hub name can be referred by Expression Language '${eventhub.name}' to access a schema.")
             .identifiesControllerService(RecordReaderFactory.class)
@@ -178,8 +178,7 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             .required(false)
             .build();
     static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
-            .name("record-writer")
-            .displayName("Record Writer")
+            .name("Record Writer")
             .description("The Record Writer to use for serializing Records to an output FlowFile." +
                     " The event hub name can be referred by Expression Language '${eventhub.name}' to access a schema." +
                     " If not specified, each message will create a FlowFile.")
@@ -194,16 +193,14 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             "end-of-stream", "End of stream",
             "Ignore old retained messages even if exist, start reading new ones from now.");
     static final PropertyDescriptor INITIAL_OFFSET = new PropertyDescriptor.Builder()
-            .name("event-hub-initial-offset")
-            .displayName("Initial Offset")
+            .name("Initial Offset")
             .description("Specify where to start receiving messages if offset is not yet stored in the checkpoint store.")
             .required(true)
             .allowableValues(INITIAL_OFFSET_START_OF_STREAM, INITIAL_OFFSET_END_OF_STREAM)
             .defaultValue(INITIAL_OFFSET_END_OF_STREAM)
             .build();
     static final PropertyDescriptor PREFETCH_COUNT = new PropertyDescriptor.Builder()
-            .name("event-hub-prefetch-count")
-            .displayName("Prefetch Count")
+            .name("Prefetch Count")
             .defaultValue("The number of messages to fetch from the event hub before processing." +
                     " This parameter affects throughput." +
                     " The more prefetch count, the better throughput in general, but consumes more resources (RAM)." +
@@ -217,8 +214,7 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             .required(true)
             .build();
     static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
-            .name("event-hub-batch-size")
-            .displayName("Batch Size")
+            .name("Batch Size")
             .description("The number of messages to process within a NiFi session." +
                     " This parameter affects throughput and consistency." +
                     " NiFi commits its session and Event Hubs checkpoints after processing this number of messages." +
@@ -231,8 +227,7 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             .required(true)
             .build();
     static final PropertyDescriptor RECEIVE_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("event-hub-message-receive-timeout")
-            .displayName("Message Receive Timeout")
+            .name("Message Receive Timeout")
             .description("The amount of time this consumer should wait to receive the Batch Size before returning.")
             .defaultValue("1 min")
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
@@ -241,8 +236,7 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             .build();
 
     static final PropertyDescriptor CHECKPOINT_STRATEGY = new PropertyDescriptor.Builder()
-            .name("checkpoint-strategy")
-            .displayName("Checkpoint Strategy")
+            .name("Checkpoint Strategy")
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
             .required(true)
             .allowableValues(CheckpointStrategy.class)
@@ -251,38 +245,50 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             .build();
 
     static final PropertyDescriptor STORAGE_ACCOUNT_NAME = new PropertyDescriptor.Builder()
-            .name("storage-account-name")
-            .displayName("Storage Account Name")
+            .name("Storage Account Name")
             .description("Name of the Azure Storage account to store event hub consumer group state.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(true)
             .dependsOn(CHECKPOINT_STRATEGY, CheckpointStrategy.AZURE_BLOB_STORAGE)
             .build();
+    static final PropertyDescriptor BLOB_STORAGE_AUTHENTICATION_STRATEGY = new PropertyDescriptor.Builder()
+            .name("Blob Storage Authentication Strategy")
+            .description("Authentication strategy used to access Azure Blob Storage when persisting checkpoints.")
+            .allowableValues(BlobStorageAuthenticationStrategy.class)
+            .defaultValue(BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY.getValue())
+            .expressionLanguageSupported(ExpressionLanguageScope.NONE)
+            .required(true)
+            .dependsOn(CHECKPOINT_STRATEGY, CheckpointStrategy.AZURE_BLOB_STORAGE)
+            .build();
+    static final PropertyDescriptor BLOB_STORAGE_OAUTH2_ACCESS_TOKEN_PROVIDER = new PropertyDescriptor.Builder()
+            .name("Storage Access Token Provider")
+            .description("Controller Service providing OAuth2 Access Tokens for authenticating to Azure Blob Storage when persisting checkpoints.")
+            .identifiesControllerService(OAuth2AccessTokenProvider.class)
+            .required(true)
+            .dependsOn(BLOB_STORAGE_AUTHENTICATION_STRATEGY, BlobStorageAuthenticationStrategy.OAUTH2)
+            .build();
     static final PropertyDescriptor STORAGE_ACCOUNT_KEY = new PropertyDescriptor.Builder()
-            .name("storage-account-key")
-            .displayName("Storage Account Key")
+            .name("Storage Account Key")
             .description("The Azure Storage account key to store event hub consumer group state.")
             .sensitive(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(false)
-            .dependsOn(CHECKPOINT_STRATEGY, CheckpointStrategy.AZURE_BLOB_STORAGE)
+            .dependsOn(BLOB_STORAGE_AUTHENTICATION_STRATEGY, BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY)
             .build();
     static final PropertyDescriptor STORAGE_SAS_TOKEN = new PropertyDescriptor.Builder()
-            .name("storage-sas-token")
-            .displayName("Storage SAS Token")
+            .name("Storage SAS Token")
             .description("The Azure Storage SAS token to store Event Hub consumer group state. Always starts with a ? character.")
             .sensitive(true)
             .addValidator(StandardValidators.createRegexMatchingValidator(SAS_TOKEN_PATTERN, true,
                     "Token must start with a ? character."))
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(false)
-            .dependsOn(CHECKPOINT_STRATEGY, CheckpointStrategy.AZURE_BLOB_STORAGE)
+            .dependsOn(BLOB_STORAGE_AUTHENTICATION_STRATEGY, BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE)
             .build();
     static final PropertyDescriptor STORAGE_CONTAINER_NAME = new PropertyDescriptor.Builder()
-            .name("storage-container-name")
-            .displayName("Storage Container Name")
+            .name("Storage Container Name")
             .description("Name of the Azure Storage container to store the event hub consumer group state." +
                     " If not specified, event hub name is used.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -303,15 +309,24 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
                     " the contents of the message will be routed to this Relationship as its own individual FlowFile.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS);
-    private static final Set<Relationship> RECORD_RELATIONSHIPS = Set.of(REL_SUCCESS, REL_PARSE_FAILURE);
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(NAMESPACE,
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
+
+    private static final Set<Relationship> RECORD_RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_PARSE_FAILURE
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            NAMESPACE,
             EVENT_HUB_NAME,
             SERVICE_BUS_ENDPOINT,
             TRANSPORT_TYPE,
             ACCESS_POLICY_NAME,
             POLICY_PRIMARY_KEY,
-            USE_MANAGED_IDENTITY,
+            AUTHENTICATION_STRATEGY,
+            EVENT_HUB_OAUTH2_ACCESS_TOKEN_PROVIDER,
             CONSUMER_GROUP,
             RECORD_READER,
             RECORD_WRITER,
@@ -321,9 +336,11 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
             RECEIVE_TIMEOUT,
             CHECKPOINT_STRATEGY,
             STORAGE_ACCOUNT_NAME,
+            STORAGE_CONTAINER_NAME,
+            BLOB_STORAGE_AUTHENTICATION_STRATEGY,
             STORAGE_ACCOUNT_KEY,
             STORAGE_SAS_TOKEN,
-            STORAGE_CONTAINER_NAME,
+            BLOB_STORAGE_OAUTH2_ACCESS_TOKEN_PROVIDER,
             PROXY_CONFIGURATION_SERVICE
     );
 
@@ -339,7 +356,7 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -350,6 +367,65 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
     @Override
     public void migrateProperties(final PropertyConfiguration config) {
         config.removeProperty("event-hub-consumer-hostname");
+        config.renameProperty("event-hub-namespace", NAMESPACE.getName());
+        config.renameProperty("event-hub-name", EVENT_HUB_NAME.getName());
+        config.renameProperty("event-hub-shared-access-policy-name", ACCESS_POLICY_NAME.getName());
+        config.renameProperty("event-hub-consumer-group", CONSUMER_GROUP.getName());
+        config.renameProperty("record-reader", RECORD_READER.getName());
+        config.renameProperty("record-writer", RECORD_WRITER.getName());
+        config.renameProperty("event-hub-initial-offset", INITIAL_OFFSET.getName());
+        config.renameProperty("event-hub-prefetch-count", PREFETCH_COUNT.getName());
+        config.renameProperty("event-hub-batch-size", BATCH_SIZE.getName());
+        config.renameProperty("event-hub-message-receive-timeout", RECEIVE_TIMEOUT.getName());
+        config.renameProperty("checkpoint-strategy", CHECKPOINT_STRATEGY.getName());
+        config.renameProperty("storage-account-name", STORAGE_ACCOUNT_NAME.getName());
+        config.renameProperty("storage-account-key", STORAGE_ACCOUNT_KEY.getName());
+        config.renameProperty("storage-sas-token", STORAGE_SAS_TOKEN.getName());
+        config.renameProperty("storage-container-name", STORAGE_CONTAINER_NAME.getName());
+        config.renameProperty("event-hub-shared-access-policy-primary-key", POLICY_PRIMARY_KEY.getName());
+        config.renameProperty(AzureEventHubUtils.OLD_USE_MANAGED_IDENTITY_DESCRIPTOR_NAME, AzureEventHubUtils.LEGACY_USE_MANAGED_IDENTITY_PROPERTY_NAME);
+
+        final Optional<String> blobAuthenticationStrategyValue = config.getRawPropertyValue(BLOB_STORAGE_AUTHENTICATION_STRATEGY.getName())
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank);
+        final boolean blobAuthenticationStrategyMissing = blobAuthenticationStrategyValue.isEmpty();
+        final boolean storageAccountKeySet = hasConfiguredValue(config, STORAGE_ACCOUNT_KEY);
+        final boolean storageSasTokenSet = hasConfiguredValue(config, STORAGE_SAS_TOKEN);
+
+        if (blobAuthenticationStrategyMissing) {
+            final String blobStorageAuthenticationStrategyValue = storageSasTokenSet && !storageAccountKeySet
+                    ? BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue()
+                    : BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY.getValue();
+
+            config.setProperty(BLOB_STORAGE_AUTHENTICATION_STRATEGY.getName(), blobStorageAuthenticationStrategyValue);
+        }
+
+        final Optional<String> authenticationStrategyValue = config.getRawPropertyValue(AUTHENTICATION_STRATEGY.getName())
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank);
+        final boolean authenticationStrategyMissing = authenticationStrategyValue.isEmpty();
+        final boolean legacyManagedIdentityPropertyPresent = config.hasProperty(AzureEventHubUtils.LEGACY_USE_MANAGED_IDENTITY_PROPERTY_NAME);
+        final boolean sharedAccessCredentialsConfigured = hasConfiguredValue(config, ACCESS_POLICY_NAME)
+                || hasConfiguredValue(config, POLICY_PRIMARY_KEY);
+
+        if (authenticationStrategyMissing || legacyManagedIdentityPropertyPresent) {
+            final boolean useManagedIdentity = config.getPropertyValue(AzureEventHubUtils.LEGACY_USE_MANAGED_IDENTITY_PROPERTY_NAME)
+                    .map(Boolean::parseBoolean)
+                    .orElse(!sharedAccessCredentialsConfigured);
+            final String derivedAuthenticationStrategy = useManagedIdentity
+                    ? AzureEventHubAuthenticationStrategy.MANAGED_IDENTITY.getValue()
+                    : AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue();
+            config.setProperty(AUTHENTICATION_STRATEGY.getName(), derivedAuthenticationStrategy);
+        }
+
+        config.removeProperty(AzureEventHubUtils.LEGACY_USE_MANAGED_IDENTITY_PROPERTY_NAME);
+        ProxyServiceMigration.renameProxyConfigurationServiceProperty(config);
+    }
+
+    private boolean hasConfiguredValue(final PropertyConfiguration config, final PropertyDescriptor descriptor) {
+        return config.getPropertyValue(descriptor.getName())
+                .filter(StringUtils::isNotBlank)
+                .isPresent();
     }
 
     @Override
@@ -360,38 +436,102 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
         final String storageAccountKey = validationContext.getProperty(STORAGE_ACCOUNT_KEY).evaluateAttributeExpressions().getValue();
         final String storageSasToken = validationContext.getProperty(STORAGE_SAS_TOKEN).evaluateAttributeExpressions().getValue();
         final CheckpointStrategy checkpointStrategy = CheckpointStrategy.valueOf(validationContext.getProperty(CHECKPOINT_STRATEGY).getValue());
+        final boolean blobOauthProviderSet = validationContext.getProperty(BLOB_STORAGE_OAUTH2_ACCESS_TOKEN_PROVIDER).isSet();
 
         if ((recordReader != null && recordWriter == null) || (recordReader == null && recordWriter != null)) {
             results.add(new ValidationResult.Builder()
                     .subject("Record Reader and Writer")
-                    .explanation(String.format("Both %s and %s should be set in order to write FlowFiles as Records.",
-                            RECORD_READER.getDisplayName(), RECORD_WRITER.getDisplayName()))
+                    .explanation("Both %s and %s should be set in order to write FlowFiles as Records."
+                            .formatted(RECORD_READER.getDisplayName(), RECORD_WRITER.getDisplayName()))
                     .valid(false)
                     .build());
         }
 
         if (checkpointStrategy == CheckpointStrategy.AZURE_BLOB_STORAGE) {
-            if (StringUtils.isBlank(storageAccountKey) && StringUtils.isBlank(storageSasToken)) {
-                results.add(new ValidationResult.Builder()
-                        .subject(String.format("%s or %s",
-                                STORAGE_ACCOUNT_KEY.getDisplayName(), STORAGE_SAS_TOKEN.getDisplayName()))
-                        .explanation(String.format("either %s or %s should be set.",
-                                STORAGE_ACCOUNT_KEY.getDisplayName(), STORAGE_SAS_TOKEN.getDisplayName()))
-                        .valid(false)
-                        .build());
-            }
+            final BlobStorageAuthenticationStrategy blobStorageAuthenticationStrategy =
+                    validationContext.getProperty(BLOB_STORAGE_AUTHENTICATION_STRATEGY)
+                            .asAllowableValue(BlobStorageAuthenticationStrategy.class);
 
-            if (StringUtils.isNotBlank(storageAccountKey) && StringUtils.isNotBlank(storageSasToken)) {
-                results.add(new ValidationResult.Builder()
-                        .subject(String.format("%s or %s",
-                                STORAGE_ACCOUNT_KEY.getDisplayName(), STORAGE_SAS_TOKEN.getDisplayName()))
-                        .explanation(String.format("%s and %s should not be set at the same time.",
-                                STORAGE_ACCOUNT_KEY.getDisplayName(), STORAGE_SAS_TOKEN.getDisplayName()))
-                        .valid(false)
-                        .build());
+            if (blobStorageAuthenticationStrategy == BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY) {
+                if (StringUtils.isBlank(storageAccountKey)) {
+                    results.add(new ValidationResult.Builder()
+                            .subject(STORAGE_ACCOUNT_KEY.getDisplayName())
+                            .explanation("%s must be set when %s is %s."
+                                    .formatted(STORAGE_ACCOUNT_KEY.getDisplayName(),
+                                            BLOB_STORAGE_AUTHENTICATION_STRATEGY.getDisplayName(),
+                                            BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY.getDisplayName()))
+                            .valid(false)
+                            .build());
+                }
+
+                if (StringUtils.isNotBlank(storageSasToken)) {
+                    results.add(new ValidationResult.Builder()
+                            .subject(STORAGE_SAS_TOKEN.getDisplayName())
+                            .explanation("%s must not be set when %s is %s."
+                                    .formatted(STORAGE_SAS_TOKEN.getDisplayName(),
+                                            BLOB_STORAGE_AUTHENTICATION_STRATEGY.getDisplayName(),
+                                            BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY.getDisplayName()))
+                            .valid(false)
+                            .build());
+                }
+            } else if (blobStorageAuthenticationStrategy == BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE) {
+                if (StringUtils.isBlank(storageSasToken)) {
+                    results.add(new ValidationResult.Builder()
+                            .subject(STORAGE_SAS_TOKEN.getDisplayName())
+                            .explanation("%s must be set when %s is %s."
+                                    .formatted(STORAGE_SAS_TOKEN.getDisplayName(),
+                                            BLOB_STORAGE_AUTHENTICATION_STRATEGY.getDisplayName(),
+                                            BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getDisplayName()))
+                            .valid(false)
+                            .build());
+                }
+
+                if (StringUtils.isNotBlank(storageAccountKey)) {
+                    results.add(new ValidationResult.Builder()
+                            .subject(STORAGE_ACCOUNT_KEY.getDisplayName())
+                            .explanation("%s must not be set when %s is %s."
+                                    .formatted(STORAGE_ACCOUNT_KEY.getDisplayName(),
+                                            BLOB_STORAGE_AUTHENTICATION_STRATEGY.getDisplayName(),
+                                            BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getDisplayName()))
+                            .valid(false)
+                            .build());
+                }
+            } else if (blobStorageAuthenticationStrategy == BlobStorageAuthenticationStrategy.OAUTH2) {
+                if (!blobOauthProviderSet) {
+                    results.add(new ValidationResult.Builder()
+                            .subject(BLOB_STORAGE_OAUTH2_ACCESS_TOKEN_PROVIDER.getDisplayName())
+                            .explanation("%s must be set when %s is %s."
+                                    .formatted(BLOB_STORAGE_OAUTH2_ACCESS_TOKEN_PROVIDER.getDisplayName(),
+                                            BLOB_STORAGE_AUTHENTICATION_STRATEGY.getDisplayName(),
+                                            BlobStorageAuthenticationStrategy.OAUTH2.getDisplayName()))
+                            .valid(false)
+                            .build());
+                }
+
+                if (StringUtils.isNotBlank(storageAccountKey)) {
+                    results.add(new ValidationResult.Builder()
+                            .subject(STORAGE_ACCOUNT_KEY.getDisplayName())
+                            .explanation("%s must not be set when %s is %s."
+                                    .formatted(STORAGE_ACCOUNT_KEY.getDisplayName(),
+                                            BLOB_STORAGE_AUTHENTICATION_STRATEGY.getDisplayName(),
+                                            BlobStorageAuthenticationStrategy.OAUTH2.getDisplayName()))
+                            .valid(false)
+                            .build());
+                }
+
+                if (StringUtils.isNotBlank(storageSasToken)) {
+                    results.add(new ValidationResult.Builder()
+                            .subject(STORAGE_SAS_TOKEN.getDisplayName())
+                            .explanation("%s must not be set when %s is %s."
+                                    .formatted(STORAGE_SAS_TOKEN.getDisplayName(),
+                                            BLOB_STORAGE_AUTHENTICATION_STRATEGY.getDisplayName(),
+                                            BlobStorageAuthenticationStrategy.OAUTH2.getDisplayName()))
+                            .valid(false)
+                            .build());
+                }
             }
         }
-        results.addAll(AzureEventHubUtils.customValidate(ACCESS_POLICY_NAME, POLICY_PRIMARY_KEY, validationContext));
+        results.addAll(AzureEventHubUtils.customValidate(ACCESS_POLICY_NAME, POLICY_PRIMARY_KEY, EVENT_HUB_OAUTH2_ACCESS_TOKEN_PROVIDER, validationContext));
         return results;
     }
 
@@ -469,10 +609,29 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
 
         if (checkpointStrategy == CheckpointStrategy.AZURE_BLOB_STORAGE) {
             final String containerName = defaultIfBlank(context.getProperty(STORAGE_CONTAINER_NAME).evaluateAttributeExpressions().getValue(), eventHubName);
-            final String storageConnectionString = createStorageConnectionString(context);
-            final BlobContainerClientBuilder blobContainerClientBuilder = new BlobContainerClientBuilder()
-                    .connectionString(storageConnectionString)
-                    .containerName(containerName);
+            final String storageAccountName = context.getProperty(STORAGE_ACCOUNT_NAME).evaluateAttributeExpressions().getValue();
+            final String domainName = getStorageDomainName(serviceBusEndpoint);
+            final BlobStorageAuthenticationStrategy blobStorageAuthenticationStrategy =
+                    context.getProperty(BLOB_STORAGE_AUTHENTICATION_STRATEGY).asAllowableValue(BlobStorageAuthenticationStrategy.class);
+
+            final BlobContainerClientBuilder blobContainerClientBuilder = new BlobContainerClientBuilder();
+
+            switch (blobStorageAuthenticationStrategy) {
+                case STORAGE_ACCOUNT_KEY, SHARED_ACCESS_SIGNATURE -> {
+                    final String storageConnectionString = createStorageConnectionString(context, blobStorageAuthenticationStrategy, storageAccountName, domainName);
+                    blobContainerClientBuilder.connectionString(storageConnectionString);
+                }
+                case OAUTH2 -> {
+                    final OAuth2AccessTokenProvider tokenProvider =
+                            context.getProperty(BLOB_STORAGE_OAUTH2_ACCESS_TOKEN_PROVIDER).asControllerService(OAuth2AccessTokenProvider.class);
+                    final TokenCredential tokenCredential = AzureEventHubUtils.createTokenCredential(tokenProvider);
+                    final String endpoint = createBlobEndpoint(storageAccountName, domainName);
+                    blobContainerClientBuilder.endpoint(endpoint);
+                    blobContainerClientBuilder.credential(tokenCredential);
+                }
+            }
+            blobContainerClientBuilder.containerName(containerName);
+
             final ProxyOptions storageProxyOptions = AzureStorageUtils.getProxyOptions(context);
             if (storageProxyOptions != null) {
                 blobContainerClientBuilder.clientOptions(new HttpClientOptions().setProxyOptions(storageProxyOptions));
@@ -501,16 +660,30 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
                 .processError(errorProcessor)
                 .processEventBatch(eventBatchProcessor, maxBatchSize, maxWaitTime);
 
-        final boolean useManagedIdentity = context.getProperty(USE_MANAGED_IDENTITY).asBoolean();
-        if (useManagedIdentity) {
-            final ManagedIdentityCredentialBuilder managedIdentityCredentialBuilder = new ManagedIdentityCredentialBuilder();
-            final ManagedIdentityCredential managedIdentityCredential = managedIdentityCredentialBuilder.build();
-            eventProcessorClientBuilder.credential(fullyQualifiedNamespace, eventHubName, managedIdentityCredential);
-        } else {
-            final String policyName = context.getProperty(ACCESS_POLICY_NAME).evaluateAttributeExpressions().getValue();
-            final String policyKey = context.getProperty(POLICY_PRIMARY_KEY).getValue();
-            final AzureNamedKeyCredential azureNamedKeyCredential = new AzureNamedKeyCredential(policyName, policyKey);
-            eventProcessorClientBuilder.credential(fullyQualifiedNamespace, eventHubName, azureNamedKeyCredential);
+        final AzureEventHubAuthenticationStrategy configuredAuthenticationStrategy =
+                context.getProperty(AUTHENTICATION_STRATEGY).asAllowableValue(AzureEventHubAuthenticationStrategy.class);
+        final AzureEventHubAuthenticationStrategy authenticationStrategy = configuredAuthenticationStrategy == null
+                ? AzureEventHubAuthenticationStrategy.MANAGED_IDENTITY
+                : configuredAuthenticationStrategy;
+
+        switch (authenticationStrategy) {
+            case MANAGED_IDENTITY -> {
+                final ManagedIdentityCredentialBuilder managedIdentityCredentialBuilder = new ManagedIdentityCredentialBuilder();
+                final ManagedIdentityCredential managedIdentityCredential = managedIdentityCredentialBuilder.build();
+                eventProcessorClientBuilder.credential(fullyQualifiedNamespace, eventHubName, managedIdentityCredential);
+            }
+            case SHARED_ACCESS_SIGNATURE -> {
+                final String policyName = context.getProperty(ACCESS_POLICY_NAME).evaluateAttributeExpressions().getValue();
+                final String policyKey = context.getProperty(POLICY_PRIMARY_KEY).getValue();
+                final AzureNamedKeyCredential azureNamedKeyCredential = new AzureNamedKeyCredential(policyName, policyKey);
+                eventProcessorClientBuilder.credential(fullyQualifiedNamespace, eventHubName, azureNamedKeyCredential);
+            }
+            case OAUTH2 -> {
+                final OAuth2AccessTokenProvider tokenProvider =
+                        context.getProperty(EVENT_HUB_OAUTH2_ACCESS_TOKEN_PROVIDER).asControllerService(OAuth2AccessTokenProvider.class);
+                final TokenCredential tokenCredential = AzureEventHubUtils.createTokenCredential(tokenProvider);
+                eventProcessorClientBuilder.credential(fullyQualifiedNamespace, eventHubName, tokenCredential);
+            }
         }
 
         final Integer prefetchCount = context.getProperty(PREFETCH_COUNT).evaluateAttributeExpressions().asInteger();
@@ -612,7 +785,7 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
     ) {
         if (lastEnqueuedEventProperties != null) {
             attributes.put("eventhub.enqueued.timestamp", String.valueOf(lastEnqueuedEventProperties.getEnqueuedTime()));
-            attributes.put("eventhub.offset", String.valueOf(lastEnqueuedEventProperties.getOffset()));
+            attributes.put("eventhub.offset", lastEnqueuedEventProperties.getOffsetString());
             attributes.put("eventhub.sequence", String.valueOf(lastEnqueuedEventProperties.getSequenceNumber()));
         }
 
@@ -739,17 +912,28 @@ public class ConsumeAzureEventHub extends AbstractSessionFactoryProcessor implem
         session.getProvenanceReporter().receive(flowFile, transitUri, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
     }
 
-    private String createStorageConnectionString(final ProcessContext context) {
-        final String storageAccountName = context.getProperty(STORAGE_ACCOUNT_NAME).evaluateAttributeExpressions().getValue();
-        final String serviceBusEndpoint = context.getProperty(SERVICE_BUS_ENDPOINT).getValue();
-        final String domainName = serviceBusEndpoint.replace(".servicebus.", "");
+    private String createStorageConnectionString(final ProcessContext context,
+                                                 final BlobStorageAuthenticationStrategy blobStorageAuthenticationStrategy,
+                                                 final String storageAccountName,
+                                                 final String domainName) {
         final String storageAccountKey = context.getProperty(STORAGE_ACCOUNT_KEY).evaluateAttributeExpressions().getValue();
         final String storageSasToken = context.getProperty(STORAGE_SAS_TOKEN).evaluateAttributeExpressions().getValue();
+        return switch (blobStorageAuthenticationStrategy) {
+            case STORAGE_ACCOUNT_KEY ->
+                String.format(FORMAT_STORAGE_CONNECTION_STRING_FOR_ACCOUNT_KEY, storageAccountName, storageAccountKey, domainName);
+            case SHARED_ACCESS_SIGNATURE ->
+                String.format(FORMAT_STORAGE_CONNECTION_STRING_FOR_SAS_TOKEN, storageAccountName, domainName, storageSasToken);
+            case OAUTH2 -> throw new IllegalArgumentException(String.format(
+                "Blob Storage Authentication Strategy %s does not support connection string authentication", blobStorageAuthenticationStrategy));
+        };
+    }
 
-        if (storageAccountKey != null) {
-            return String.format(FORMAT_STORAGE_CONNECTION_STRING_FOR_ACCOUNT_KEY, storageAccountName, storageAccountKey, domainName);
-        }
-        return String.format(FORMAT_STORAGE_CONNECTION_STRING_FOR_SAS_TOKEN, storageAccountName, domainName, storageSasToken);
+    private String createBlobEndpoint(final String storageAccountName, final String domainName) {
+        return String.format("https://%s.blob.core.%s/", storageAccountName, domainName);
+    }
+
+    private String getStorageDomainName(final String serviceBusEndpoint) {
+        return serviceBusEndpoint.replace(".servicebus.", "");
     }
 
     private Map<String, EventPosition> getLegacyPartitionEventPosition(

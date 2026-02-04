@@ -25,16 +25,19 @@ class ConsumeElasticsearch_IT extends AbstractJsonQueryElasticsearch_IT {
     private static final String RANGE_FIELD = "num";
     private static final String RANGE_SORT_ORDER = "asc";
 
+    @Override
     ElasticsearchRestProcessor getProcessor() {
         return new ConsumeElasticsearch();
     }
 
+    @Override
     @BeforeEach
     public void setUp() {
         // Range Field is required; no Initial Value should result in a default "match_all" query being constructed
         runner.setProperty(ConsumeElasticsearch.RANGE_FIELD, RANGE_FIELD);
         runner.setProperty(ConsumeElasticsearch.RANGE_FIELD_SORT_ORDER, RANGE_SORT_ORDER);
         runner.removeProperty(ConsumeElasticsearch.RANGE_INITIAL_VALUE);
+        runner.setValidateExpressionUsage(false);
     }
 
     @Test

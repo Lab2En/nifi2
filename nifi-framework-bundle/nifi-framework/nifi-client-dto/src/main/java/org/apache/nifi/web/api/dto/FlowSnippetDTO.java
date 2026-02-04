@@ -17,8 +17,8 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -184,12 +184,7 @@ public class FlowSnippetDTO {
     }
 
     private <T extends ComponentDTO> Set<T> orderedById(Set<T> dtos) {
-        TreeSet<T> components = new TreeSet<>(new Comparator<ComponentDTO>() {
-            @Override
-            public int compare(ComponentDTO c1, ComponentDTO c2) {
-                return c1.getId().compareTo(c2.getId());
-            }
-        });
+        Set<T> components = new TreeSet<>(Comparator.comparing(ComponentDTO::getId));
         components.addAll(dtos);
         return components;
     }
@@ -298,12 +293,7 @@ public class FlowSnippetDTO {
     }
 
     private <T extends RemoteProcessGroupPortDTO> Set<T> orderedRemotePortsById(Set<T> dtos) {
-        TreeSet<T> components = new TreeSet<>(new Comparator<RemoteProcessGroupPortDTO>() {
-            @Override
-            public int compare(RemoteProcessGroupPortDTO c1, RemoteProcessGroupPortDTO c2) {
-                return UUID.fromString(c1.getId()).compareTo(UUID.fromString(c2.getId()));
-            }
-        });
+        Set<T> components = new TreeSet<>(Comparator.comparing((RemoteProcessGroupPortDTO c) -> UUID.fromString(c.getId())));
         components.addAll(dtos);
         return components;
     }

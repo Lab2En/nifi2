@@ -16,15 +16,15 @@
  */
 package org.apache.nifi.hl7.query.evaluator.message;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.nifi.hl7.model.HL7Field;
 import org.apache.nifi.hl7.model.HL7Segment;
 import org.apache.nifi.hl7.query.evaluator.Evaluator;
 import org.apache.nifi.hl7.query.evaluator.IntegerEvaluator;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 @SuppressWarnings("rawtypes")
 public class FieldEvaluator implements Evaluator<List> {
@@ -37,6 +37,7 @@ public class FieldEvaluator implements Evaluator<List> {
         this.indexEvaluator = indexEvaluator;
     }
 
+    @Override
     public List<HL7Field> evaluate(final Map<String, Object> objectMap) {
         final List<HL7Segment> segments = segmentEvaluator.evaluate(objectMap);
         if (segments == null) {
@@ -61,6 +62,7 @@ public class FieldEvaluator implements Evaluator<List> {
         return fields;
     }
 
+    @Override
     public Class<? extends List> getType() {
         return List.class;
     }

@@ -27,7 +27,6 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.RequiredPermission;
-import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
@@ -83,23 +82,20 @@ public class PutFile extends AbstractProcessor {
     public static final Pattern RWX_PATTERN = Pattern.compile("^([r-][w-])([x-])([r-][w-])([x-])([r-][w-])([x-])$");
     public static final Pattern NUM_PATTERN = Pattern.compile("^[0-7]{3}$");
 
-    private static final Validator PERMISSIONS_VALIDATOR = new Validator() {
-        @Override
-        public ValidationResult validate(String subject, String input, ValidationContext context) {
-            ValidationResult.Builder vr = new ValidationResult.Builder();
-            if (context.isExpressionLanguagePresent(input)) {
-                return new ValidationResult.Builder().subject(subject).input(input).explanation("Expression Language Present").valid(true).build();
-            }
-
-            if (RWX_PATTERN.matcher(input).matches() || NUM_PATTERN.matcher(input).matches()) {
-                return vr.valid(true).build();
-            }
-            return vr.valid(false)
-                    .subject(subject)
-                    .input(input)
-                    .explanation("This must be expressed in rwxr-x--- form or octal triplet form.")
-                    .build();
+    private static final Validator PERMISSIONS_VALIDATOR = (subject, input, context) -> {
+        ValidationResult.Builder vr = new ValidationResult.Builder();
+        if (context.isExpressionLanguagePresent(input)) {
+            return new ValidationResult.Builder().subject(subject).input(input).explanation("Expression Language Present").valid(true).build();
         }
+
+        if (RWX_PATTERN.matcher(input).matches() || NUM_PATTERN.matcher(input).matches()) {
+            return vr.valid(true).build();
+        }
+        return vr.valid(false)
+                .subject(subject)
+                .input(input)
+                .explanation("This must be expressed in rwxr-x--- form or octal triplet form.")
+                .build();
     };
 
     public static final PropertyDescriptor DIRECTORY = new PropertyDescriptor.Builder()
@@ -163,7 +159,7 @@ public class PutFile extends AbstractProcessor {
             .defaultValue("true")
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             DIRECTORY,
             CONFLICT_RESOLUTION,
             CREATE_DIRS,
@@ -196,7 +192,7 @@ public class PutFile extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -228,7 +224,7 @@ public class PutFile extends AbstractProcessor {
                     while (!Files.exists(existing)) {
                         existing = existing.getParent();
                     }
-                    if (permissions != null && !permissions.trim().isEmpty()) {
+                    if (permissions != null && !permissions.isBlank()) {
                         try {
                             String perms = stringPermissions(permissions, true);
                             if (!perms.isEmpty()) {
@@ -246,8 +242,8 @@ public class PutFile extends AbstractProcessor {
                         Files.createDirectories(rootDirPath);
                     }
 
-                    boolean chOwner = owner != null && !owner.trim().isEmpty();
-                    boolean chGroup = group != null && !group.trim().isEmpty();
+                    boolean chOwner = owner != null && !owner.isBlank();
+                    boolean chGroup = group != null && !group.isBlank();
                     if (chOwner || chGroup) {
                         Path currentPath = rootDirPath;
                         while (!currentPath.equals(existing)) {
@@ -320,7 +316,7 @@ public class PutFile extends AbstractProcessor {
             session.exportTo(flowFile, dotCopyFile, false);
 
             final String lastModifiedTime = context.getProperty(CHANGE_LAST_MODIFIED_TIME).evaluateAttributeExpressions(flowFile).getValue();
-            if (lastModifiedTime != null && !lastModifiedTime.trim().isEmpty()) {
+            if (lastModifiedTime != null && !lastModifiedTime.isBlank()) {
                 try {
                     final OffsetDateTime fileModifyTime = OffsetDateTime.parse(lastModifiedTime, DATE_TIME_FORMATTER);
                     dotCopyFile.toFile().setLastModified(fileModifyTime.toInstant().toEpochMilli());
@@ -329,7 +325,7 @@ public class PutFile extends AbstractProcessor {
                 }
             }
 
-            if (permissions != null && !permissions.trim().isEmpty()) {
+            if (permissions != null && !permissions.isBlank()) {
                 try {
                     String perms = stringPermissions(permissions, false);
                     if (!perms.isEmpty()) {
@@ -340,7 +336,7 @@ public class PutFile extends AbstractProcessor {
                 }
             }
 
-            if (owner != null && !owner.trim().isEmpty()) {
+            if (owner != null && !owner.isBlank()) {
                 try {
                     UserPrincipalLookupService lookupService = dotCopyFile.getFileSystem().getUserPrincipalLookupService();
                     Files.setOwner(dotCopyFile, lookupService.lookupPrincipalByName(owner));
@@ -349,7 +345,7 @@ public class PutFile extends AbstractProcessor {
                 }
             }
 
-            if (group != null && !group.trim().isEmpty()) {
+            if (group != null && !group.isBlank()) {
                 try {
                     UserPrincipalLookupService lookupService = dotCopyFile.getFileSystem().getUserPrincipalLookupService();
                     PosixFileAttributeView view = Files.getFileAttributeView(dotCopyFile, PosixFileAttributeView.class);
@@ -478,7 +474,7 @@ public class PutFile extends AbstractProcessor {
                     }
                 }
                 permissions = permBuilder.toString();
-            } catch (NumberFormatException ignore) {
+            } catch (NumberFormatException ignored) {
             }
         }
 

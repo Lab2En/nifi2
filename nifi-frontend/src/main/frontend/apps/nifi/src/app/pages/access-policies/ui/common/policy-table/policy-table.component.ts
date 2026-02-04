@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { NiFiCommon } from '@nifi/shared';
@@ -35,12 +35,13 @@ export interface TenantItem {
 
 @Component({
     selector: 'policy-table',
-    standalone: true,
     templateUrl: './policy-table.component.html',
     imports: [MatTableModule, MatSortModule, MatIconButton, MatMenu, MatMenuTrigger, MatMenuItem],
     styleUrls: ['./policy-table.component.scss']
 })
 export class PolicyTable {
+    private nifiCommon = inject(NiFiCommon);
+
     displayedColumns: string[] = ['user', 'actions'];
     dataSource: MatTableDataSource<TenantItem> = new MatTableDataSource<TenantItem>();
 
@@ -86,8 +87,6 @@ export class PolicyTable {
         active: 'user',
         direction: 'asc'
     };
-
-    constructor(private nifiCommon: NiFiCommon) {}
 
     updateSort(sort: Sort): void {
         this.sort = sort;

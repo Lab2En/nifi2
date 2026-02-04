@@ -17,20 +17,6 @@
 
 package org.apache.nifi.controller.state.manager;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import javax.net.ssl.SSLContext;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.nifi.attribute.expression.language.Query;
 import org.apache.nifi.attribute.expression.language.StandardPropertyValue;
@@ -71,6 +57,22 @@ import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import javax.net.ssl.SSLContext;
+
 public class StandardStateManagerProvider implements StateManagerProvider {
     private static final Logger logger = LoggerFactory.getLogger(StandardStateManagerProvider.class);
 
@@ -81,6 +83,7 @@ public class StandardStateManagerProvider implements StateManagerProvider {
     private final StateProvider localStateProvider;
     private final StateProvider clusterStateProvider;
     private final StateProvider previousClusterStateProvider;
+    private final ConcurrentMap<String, AtomicBoolean> dropStateKeySupported = new ConcurrentHashMap<>();
 
     public StandardStateManagerProvider(final StateProvider localStateProvider, final StateProvider clusterStateProvider) {
         this.localStateProvider = localStateProvider;
@@ -251,7 +254,7 @@ public class StandardStateManagerProvider implements StateManagerProvider {
                     + "' property is missing from the NiFi Properties file");
         }
 
-        if (providerId.trim().isEmpty()) {
+        if (providerId.isBlank()) {
             throw new IllegalStateException("Cannot create " + scope + " Provider because the '" + providerIdPropertyName
                     + "' property in the NiFi Properties file has no value set. This is a required property and must reference the identifier of one of the "
                     + scope + " elements in the State Management Configuration File (" + configFile + ")");
@@ -325,7 +328,7 @@ public class StandardStateManagerProvider implements StateManagerProvider {
             propertyMap.put(descriptor, new StandardPropertyValue(resourceContext, entry.getValue(), null, parameterLookup));
         }
 
-        final ComponentLog logger = new SimpleProcessLogger(providerConfig.getId(), provider, new StandardLoggingContext(null));
+        final ComponentLog logger = new SimpleProcessLogger(providerConfig.getId(), provider, new StandardLoggingContext());
         final StateProviderInitializationContext initContext = new StandardStateProviderInitializationContext(providerConfig.getId(), propertyMap, sslContext, logger);
 
         synchronized (provider) {
@@ -385,7 +388,7 @@ public class StandardStateManagerProvider implements StateManagerProvider {
         final ClassLoader ctxClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             final List<Bundle> bundles = extensionManager.getBundles(type);
-            if (bundles.size() == 0) {
+            if (bundles.isEmpty()) {
                 throw new IllegalStateException(String.format("The specified class '%s' is not known to this nifi.", type));
             }
             if (bundles.size() > 1) {
@@ -423,126 +426,126 @@ public class StandardStateManagerProvider implements StateManagerProvider {
         return new StateProvider() {
             @Override
             public void initialize(StateProviderInitializationContext context) throws IOException {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.initialize(context);
                 }
             }
 
             @Override
             public void shutdown() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.shutdown();
                 }
             }
 
             @Override
             public void setState(Map<String, String> state, String componentId) throws IOException {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.setState(state, componentId);
                 }
             }
 
             @Override
             public StateMap getState(String componentId) throws IOException {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.getState(componentId);
                 }
             }
 
             @Override
             public boolean replace(StateMap oldValue, Map<String, String> newValue, String componentId) throws IOException {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.replace(oldValue, newValue, componentId);
                 }
             }
 
             @Override
             public void clear(String componentId) throws IOException {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.clear(componentId);
                 }
             }
 
             @Override
             public void onComponentRemoved(String componentId) throws IOException {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.onComponentRemoved(componentId);
                 }
             }
 
             @Override
             public void enable() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.enable();
                 }
             }
 
             @Override
             public void disable() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.disable();
                 }
             }
 
             @Override
             public boolean isEnabled() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.isEnabled();
                 }
             }
 
             @Override
             public Scope[] getSupportedScopes() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.getSupportedScopes();
                 }
             }
 
             @Override
             public Collection<ValidationResult> validate(ValidationContext context) {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.validate(context);
                 }
             }
 
             @Override
             public PropertyDescriptor getPropertyDescriptor(String name) {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.getPropertyDescriptor(name);
                 }
             }
 
             @Override
             public void onPropertyModified(PropertyDescriptor descriptor, String oldValue, String newValue) {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     stateProvider.onPropertyModified(descriptor, oldValue, newValue);
                 }
             }
 
             @Override
             public List<PropertyDescriptor> getPropertyDescriptors() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.getPropertyDescriptors();
                 }
             }
 
             @Override
             public String getIdentifier() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.getIdentifier();
                 }
             }
 
             @Override
             public boolean isComponentEnumerationSupported() {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.isComponentEnumerationSupported();
                 }
             }
 
             @Override
             public Collection<String> getStoredComponentIds() throws IOException {
-                try (final NarCloseable narCloseable = NarCloseable.withNarLoader()) {
+                try (final NarCloseable ignored = NarCloseable.withNarLoader()) {
                     return stateProvider.getStoredComponentIds();
                 }
             }
@@ -555,13 +558,31 @@ public class StandardStateManagerProvider implements StateManagerProvider {
      * @return the StateManager that can be used by the component with the given ID, or <code>null</code> if none exists
      */
     @Override
+    public synchronized StateManager getStateManager(final String componentId, final boolean dropSupportedFlag) {
+        final AtomicBoolean dropSupported = dropStateKeySupported.computeIfAbsent(componentId, id -> new AtomicBoolean(false));
+        if (dropSupportedFlag) {
+            dropSupported.set(true);
+        }
+
+        StateManager stateManager = stateManagers.get(componentId);
+        if (stateManager != null) {
+            return stateManager;
+        }
+
+        stateManager = new StandardStateManager(localStateProvider, clusterStateProvider, componentId, dropSupported::get);
+        stateManagers.put(componentId, stateManager);
+        return stateManager;
+    }
+
+    @Override
     public synchronized StateManager getStateManager(final String componentId) {
         StateManager stateManager = stateManagers.get(componentId);
         if (stateManager != null) {
             return stateManager;
         }
 
-        stateManager = new StandardStateManager(localStateProvider, clusterStateProvider, componentId);
+        final AtomicBoolean dropSupported = dropStateKeySupported.computeIfAbsent(componentId, id -> new AtomicBoolean(false));
+        stateManager = new StandardStateManager(localStateProvider, clusterStateProvider, componentId, dropSupported::get);
         stateManagers.put(componentId, stateManager);
         return stateManager;
     }
@@ -623,5 +644,13 @@ public class StandardStateManagerProvider implements StateManagerProvider {
                 logger.warn("Component with ID {} was removed from NiFi instance but failed to cleanup resources used to maintain its clustered state", componentId, e);
             }
         }
+
+        dropStateKeySupported.remove(componentId);
     }
+
+    @Override
+    public boolean isClusterProviderEnabled() {
+        return nifiProperties.isClustered() && clusterStateProvider != null && clusterStateProvider.isEnabled();
+    }
+
 }

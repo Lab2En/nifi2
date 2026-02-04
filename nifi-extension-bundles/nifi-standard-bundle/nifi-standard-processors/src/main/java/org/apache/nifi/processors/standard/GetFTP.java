@@ -56,7 +56,7 @@ import java.util.List;
 @SeeAlso(PutFTP.class)
 public class GetFTP extends GetFileTransfer {
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FTPTransfer.HOSTNAME,
             FTPTransfer.PORT,
             FTPTransfer.USERNAME,
@@ -83,13 +83,14 @@ public class GetFTP extends GetFileTransfer {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
-        super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        config.renameProperty(FTPTransfer.OBSOLETE_UTF8_ENCODING, FTPTransfer.UTF8_ENCODING.getName());
+        config.renameProperty(FTPTransfer.OLD_FOLLOW_SYMLINK_PROPERTY_NAME, FTPTransfer.FOLLOW_SYMLINK.getName());
     }
 
     @Override

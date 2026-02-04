@@ -16,6 +16,9 @@
  */
 package org.apache.nifi.registry.service;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validator;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.flow.VersionedComponent;
@@ -57,9 +60,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.ConstraintViolationException;
-import jakarta.validation.Validator;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -104,7 +104,7 @@ public class RegistryService {
 
     private <T> void validate(T t, String invalidMessage) {
         final Set<ConstraintViolation<T>> violations = validator.validate(t);
-        if (violations.size() > 0) {
+        if (!violations.isEmpty()) {
             throw new ConstraintViolationException(invalidMessage, violations);
         }
     }
@@ -130,7 +130,7 @@ public class RegistryService {
         validate(bucket, "Cannot create Bucket");
 
         final List<BucketEntity> bucketsWithSameName = metadataService.getBucketsByName(bucket.getName());
-        if (bucketsWithSameName.size() > 0) {
+        if (!bucketsWithSameName.isEmpty()) {
             throw new IllegalStateException("A bucket with the same name already exists");
         }
 
@@ -351,7 +351,7 @@ public class RegistryService {
 
         // ensure another flow with the same name doesn't exist
         final List<FlowEntity> flowsWithSameName = metadataService.getFlowsByName(existingBucket.getId(), versionedFlow.getName());
-        if (flowsWithSameName != null && flowsWithSameName.size() > 0) {
+        if (flowsWithSameName != null && !flowsWithSameName.isEmpty()) {
             throw new IllegalStateException("A versioned flow with the same name already exists in the selected bucket");
         }
 
@@ -582,7 +582,7 @@ public class RegistryService {
         }
 
         // if we already have snapshots we need to verify the new one has the correct version
-        if (sortedSnapshots.size() > 0) {
+        if (!sortedSnapshots.isEmpty()) {
             final VersionedFlowSnapshotMetadata lastSnapshot = sortedSnapshots.last();
 
             // if we have existing versions and a client sends -1, then make this the latest version

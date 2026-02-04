@@ -38,12 +38,10 @@ import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.stream.io.StreamUtils;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -211,7 +209,7 @@ public class ExtractText extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor ENABLE_REPEATING_CAPTURE_GROUP = new PropertyDescriptor.Builder()
-        .name("Enable repeating capture group")
+        .name("Enable Repeating Capture Group")
         .description("If set to true, every string matching the capture groups will be extracted. Otherwise, "
             + "if the Regular Expression matches more than once, only the first match will be extracted.")
         .required(true)
@@ -220,7 +218,7 @@ public class ExtractText extends AbstractProcessor {
         .build();
 
     public static final PropertyDescriptor ENABLE_NAMED_GROUPS = new PropertyDescriptor.Builder()
-        .name("Enable named group support")
+        .name("Enable Named Groups")
         .description("""
             If set to true, when named groups are present in the regular expression, the name of the
             group will be used in the attribute name as opposed to the group index.  All capturing groups
@@ -231,7 +229,17 @@ public class ExtractText extends AbstractProcessor {
         .defaultValue("false")
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<String> OBSOLETE_ENABLE_REPEATING_CAPTURE_GROUP_PROPERTY_NAMES = List.of(
+            "extract-text-enable-repeating-capture-group",
+            "Enable repeating capture group"
+    );
+
+    private static final List<String> OBSOLETE_ENABLE_NAMED_GROUPS_PROPERTY_NAMES = List.of(
+            "extract-text-enable-named-groups",
+            "Enable named group support"
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             CHARACTER_SET,
             MAX_BUFFER_SIZE,
             MAX_CAPTURE_GROUP_LENGTH,
@@ -275,13 +283,13 @@ public class ExtractText extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(final PropertyConfiguration config) {
-        config.renameProperty("extract-text-enable-named-groups", "Enable named group support");
-        config.renameProperty("extract-text-enable-repeating-capture-group", "Enable repeating capture group");
+        OBSOLETE_ENABLE_REPEATING_CAPTURE_GROUP_PROPERTY_NAMES.forEach(obsoletePropertyName -> config.renameProperty(obsoletePropertyName, ENABLE_REPEATING_CAPTURE_GROUP.getName()));
+        OBSOLETE_ENABLE_NAMED_GROUPS_PROPERTY_NAMES.forEach(obsoletePropertyName -> config.renameProperty(obsoletePropertyName, ENABLE_NAMED_GROUPS.getName()));
     }
 
     @Override
@@ -399,12 +407,7 @@ public class ExtractText extends AbstractProcessor {
 
         try {
             final byte[] byteBuffer = buffer;
-            session.read(flowFile, new InputStreamCallback() {
-                @Override
-                public void process(InputStream in) throws IOException {
-                    StreamUtils.fillBuffer(in, byteBuffer, false);
-                }
-            });
+            session.read(flowFile, in -> StreamUtils.fillBuffer(in, byteBuffer, false));
 
             final long len = Math.min(byteBuffer.length, flowFile.getSize());
             contentString = new String(byteBuffer, 0, (int) len, charset);

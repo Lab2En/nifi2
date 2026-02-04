@@ -15,31 +15,28 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Observable } from 'rxjs';
 import { DocumentedType } from '../../../../../state/shared';
-import { MAT_DIALOG_DATA } from '@angular/material/dialog';
-import { CreateParameterProviderDialogRequest } from '../../../state/parameter-providers';
 import { ExtensionCreation } from '../../../../../ui/common/extension-creation/extension-creation.component';
 import { CloseOnEscapeDialog } from '@nifi/shared';
+import { ExtensionTypesLoadingStatus } from '../../../../../state/extension-types';
 
 @Component({
     selector: 'create-parameter-provider',
-    standalone: true,
     imports: [CommonModule, ExtensionCreation],
     templateUrl: './create-parameter-provider.component.html',
     styleUrls: ['./create-parameter-provider.component.scss']
 })
 export class CreateParameterProvider extends CloseOnEscapeDialog {
     @Input() saving$!: Observable<boolean>;
+    @Input() parameterProviderTypes$!: Observable<DocumentedType[]>;
+    @Input() parameterProviderTypesLoadingStatus$!: Observable<ExtensionTypesLoadingStatus>;
     @Output() createParameterProvider: EventEmitter<DocumentedType> = new EventEmitter<DocumentedType>();
 
-    parameterProviderTypes: DocumentedType[];
-
-    constructor(@Inject(MAT_DIALOG_DATA) private dialogRequest: CreateParameterProviderDialogRequest) {
+    constructor() {
         super();
-        this.parameterProviderTypes = dialogRequest.parameterProviderTypes;
     }
 
     parameterProviderTypeSelected(parameterProviderType: DocumentedType) {

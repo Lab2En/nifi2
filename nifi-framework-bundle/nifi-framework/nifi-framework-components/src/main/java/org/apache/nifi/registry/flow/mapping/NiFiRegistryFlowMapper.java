@@ -21,6 +21,7 @@ import org.apache.commons.lang3.ClassUtils;
 import org.apache.nifi.asset.Asset;
 import org.apache.nifi.bundle.BundleCoordinate;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.listen.ListenPortDefinition;
 import org.apache.nifi.components.resource.ResourceCardinality;
 import org.apache.nifi.components.resource.ResourceDefinition;
 import org.apache.nifi.connectable.Connectable;
@@ -59,6 +60,7 @@ import org.apache.nifi.flow.VersionedFlowCoordinates;
 import org.apache.nifi.flow.VersionedFlowRegistryClient;
 import org.apache.nifi.flow.VersionedFunnel;
 import org.apache.nifi.flow.VersionedLabel;
+import org.apache.nifi.flow.VersionedListenPortDefinition;
 import org.apache.nifi.flow.VersionedParameter;
 import org.apache.nifi.flow.VersionedParameterContext;
 import org.apache.nifi.flow.VersionedParameterProvider;
@@ -136,13 +138,13 @@ public class NiFiRegistryFlowMapper {
     }
 
     /**
-     * Map the given process group to a versioned process group without any use of an actual flow registry even if the
-     * group is currently versioned in a registry.
-     *
-     * @param group             the process group to map
-     * @param serviceProvider   the controller service provider to use for mapping
-     * @return a complete versioned process group without any registry related details
-     */
+    * Map the given process group to a versioned process group without any use of an actual flow registry even if the
+    * group is currently versioned in a registry.
+    *
+    * @param group             the process group to map
+    * @param serviceProvider   the controller service provider to use for mapping
+    * @return a complete versioned process group without any registry related details
+    */
     public InstantiatedVersionedProcessGroup mapNonVersionedProcessGroup(final ProcessGroup group, final ControllerServiceProvider serviceProvider) {
         versionedComponentIds.clear();
 
@@ -151,17 +153,17 @@ public class NiFiRegistryFlowMapper {
     }
 
     /**
-     * Map the given process group to a versioned process group using the provided registry client.
-     *
-     * @param group             the process group to map
-     * @param serviceProvider   the controller service provider to use for mapping
-     * @param flowManager    the registry client to use when retrieving versioning details
-     * @param mapDescendantVersionedFlows  true in order to include descendant flows in the mapped result
-     * @return a complete versioned process group with applicable registry related details
-     */
+    * Map the given process group to a versioned process group using the provided registry client.
+    *
+    * @param group             the process group to map
+    * @param serviceProvider   the controller service provider to use for mapping
+    * @param flowManager    the registry client to use when retrieving versioning details
+    * @param mapDescendantVersionedFlows  true in order to include descendant flows in the mapped result
+    * @return a complete versioned process group with applicable registry related details
+    */
     public InstantiatedVersionedProcessGroup mapProcessGroup(final ProcessGroup group, final ControllerServiceProvider serviceProvider,
-                                                             final FlowManager flowManager,
-                                                             final boolean mapDescendantVersionedFlows) {
+                                                            final FlowManager flowManager,
+                                                            final boolean mapDescendantVersionedFlows) {
         versionedComponentIds.clear();
 
         // apply registry versioning according to the lambda below
@@ -181,11 +183,6 @@ public class NiFiRegistryFlowMapper {
 
         final VersionedFlowCoordinates coordinates = new VersionedFlowCoordinates();
         final String registryId = versionControlInfo.getRegistryIdentifier();
-        final FlowRegistryClientNode registry = flowManager.getFlowRegistryClient(registryId);
-        if (registry == null) {
-            throw new IllegalStateException("Process Group refers to a Flow Registry with ID " + registryId + " but no Flow Registry exists with that ID. Cannot resolve to a URL.");
-        }
-
         if (flowMappingOptions.isMapFlowRegistryClientId()) {
             coordinates.setRegistryId(registryId);
         }
@@ -321,12 +318,12 @@ public class NiFiRegistryFlowMapper {
     }
 
     /**
-     * Generate a versioned component identifier based on the given component identifier. The result for a given
-     * component identifier is deterministic.
-     *
-     * @param componentId the component identifier to generate a versioned component identifier for
-     * @return a deterministic versioned component identifier
-     */
+    * Generate a versioned component identifier based on the given component identifier. The result for a given
+    * component identifier is deterministic.
+    *
+    * @param componentId the component identifier to generate a versioned component identifier for
+    * @return a deterministic versioned component identifier
+    */
     public static String generateVersionedComponentId(final String componentId) {
         return UUID.nameUUIDFromBytes(componentId.getBytes(StandardCharsets.UTF_8)).toString();
     }
@@ -595,6 +592,9 @@ public class NiFiRegistryFlowMapper {
             final VersionedResourceDefinition versionedResourceDefinition = mapResourceDefinition(descriptor.getResourceDefinition());
             versionedDescriptor.setResourceDefinition(versionedResourceDefinition);
 
+            final VersionedListenPortDefinition versionedListenPortDefinition = mapListenPortDefinition(descriptor.getListenPortDefinition());
+            versionedDescriptor.setListenPortDefinition(versionedListenPortDefinition);
+
             final Class<?> referencedServiceType = descriptor.getControllerServiceDefinition();
             versionedDescriptor.setIdentifiesControllerService(referencedServiceType != null);
 
@@ -640,6 +640,19 @@ public class NiFiRegistryFlowMapper {
         versionedResourceDefinition.setCardinality(versionedCardinality);
         versionedResourceDefinition.setResourceTypes(versionedResourceTypes);
         return versionedResourceDefinition;
+    }
+
+    private VersionedListenPortDefinition mapListenPortDefinition(final ListenPortDefinition listenPortDefinition) {
+        if (listenPortDefinition == null) {
+            return null;
+        }
+
+        final VersionedListenPortDefinition.TransportProtocol transportProtocol = VersionedListenPortDefinition.TransportProtocol.valueOf(listenPortDefinition.getTransportProtocol().name());
+
+        final VersionedListenPortDefinition versionedListenPortDefinition = new VersionedListenPortDefinition();
+        versionedListenPortDefinition.setTransportProtocol(transportProtocol);
+        versionedListenPortDefinition.setApplicationProtocols(listenPortDefinition.getApplicationProtocols());
+        return versionedListenPortDefinition;
     }
 
     private Bundle mapBundle(final BundleCoordinate coordinate) {
@@ -881,7 +894,7 @@ public class NiFiRegistryFlowMapper {
     }
 
     private void mapParameterContext(final ParameterContext parameterContext, final Map<String, VersionedParameterContext> parameterContexts,
-                                     final Map<String, ParameterProviderReference> parameterProviderReferences) {
+                                    final Map<String, ParameterProviderReference> parameterProviderReferences) {
         if (parameterContexts.containsKey(parameterContext.getName())) {
             return;
         }
@@ -890,6 +903,7 @@ public class NiFiRegistryFlowMapper {
         final Set<VersionedParameter> parameters = mapParameters(parameterContext);
 
         final VersionedParameterContext versionedContext = new VersionedParameterContext();
+        versionedContext.setDescription(parameterContext.getDescription());
         versionedContext.setName(parameterContext.getName());
         versionedContext.setParameters(parameters);
         versionedContext.setInheritedParameterContexts(parameterContext.getInheritedParameterContextNames());
@@ -929,8 +943,20 @@ public class NiFiRegistryFlowMapper {
             } else {
                 final String referencedVersionServiceId = referencedControllerServiceData.getFirst().getVersionedServiceId();
                 final String parameterValue = parameter.getValue();
-                final String serviceId = getId(Optional.ofNullable(referencedVersionServiceId), parameterValue);
-                versionedParameter = mapParameter(parameter, serviceId);
+
+                // If a referenced Versioned Service ID is available, use it directly. Do not attempt to
+                // generate or cache a mapping using a null component identifier.
+                if (referencedVersionServiceId != null) {
+                    versionedParameter = mapParameter(parameter, referencedVersionServiceId);
+                } else if (parameterValue != null && !parameterValue.isBlank()) {
+                    // If the parameter has a concrete (non-empty) value referencing a service instance id,
+                    // generate a stable Versioned ID for it.
+                    final String serviceId = getId(Optional.empty(), parameterValue);
+                    versionedParameter = mapParameter(parameter, serviceId);
+                } else {
+                    // No referenced service and no parameter value specified; map as null to avoid NPE
+                    versionedParameter = mapParameter(parameter, null);
+                }
             }
         } else {
             versionedParameter = mapParameter(parameter);
@@ -991,8 +1017,8 @@ public class NiFiRegistryFlowMapper {
     }
 
     private org.apache.nifi.flow.ScheduledState mapScheduledState(final ScheduledState scheduledState) {
-         return scheduledState == ScheduledState.DISABLED
-                 ? org.apache.nifi.flow.ScheduledState.DISABLED
-                 : org.apache.nifi.flow.ScheduledState.ENABLED;
+        return scheduledState == ScheduledState.DISABLED
+                ? org.apache.nifi.flow.ScheduledState.DISABLED
+                : org.apache.nifi.flow.ScheduledState.ENABLED;
     }
 }

@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
-import { EditTenantRequest, EditTenantResponse, Revision, UserEntity, UserGroupEntity } from '../../../state/shared';
+import { EditTenantRequest, EditTenantResponse, UserEntity, UserGroupEntity } from '../../../state/shared';
 import { MatButtonModule } from '@angular/material/button';
 import {
     AbstractControl,
@@ -39,14 +39,12 @@ import { AsyncPipe } from '@angular/common';
 import { Observable } from 'rxjs';
 import { MatListModule } from '@angular/material/list';
 import { Client } from '../../../service/client.service';
-import { NiFiCommon, CloseOnEscapeDialog } from '@nifi/shared';
-import { ErrorBanner } from '../error-banner/error-banner.component';
+import { NiFiCommon, CloseOnEscapeDialog, Revision } from '@nifi/shared';
 import { ErrorContextKey } from '../../../state/error';
 import { ContextErrorBanner } from '../context-error-banner/context-error-banner.component';
 
 @Component({
     selector: 'edit-tenant-dialog',
-    standalone: true,
     imports: [
         MatDialogModule,
         MatButtonModule,
@@ -59,16 +57,20 @@ import { ContextErrorBanner } from '../context-error-banner/context-error-banner
         NifiSpinnerDirective,
         AsyncPipe,
         MatListModule,
-        ErrorBanner,
         ContextErrorBanner
     ],
     templateUrl: './edit-tenant-dialog.component.html',
     styleUrls: ['./edit-tenant-dialog.component.scss']
 })
 export class EditTenantDialog extends CloseOnEscapeDialog {
+    private request = inject<EditTenantRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+    private client = inject(Client);
+
     @Input() saving$!: Observable<boolean>;
     @Output() editTenant: EventEmitter<EditTenantResponse> = new EventEmitter<EditTenantResponse>();
-    @Output() cancel: EventEmitter<void> = new EventEmitter<void>();
+    @Output() exit: EventEmitter<void> = new EventEmitter<void>();
 
     readonly USER: string = 'user';
     readonly USER_GROUP: string = 'userGroup';
@@ -82,13 +84,10 @@ export class EditTenantDialog extends CloseOnEscapeDialog {
     users: UserEntity[];
     userGroups: UserGroupEntity[];
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) private request: EditTenantRequest,
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon,
-        private client: Client
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         const user: UserEntity | undefined = request.user;
         const userGroup: UserGroupEntity | undefined = request.userGroup;
 
@@ -202,7 +201,7 @@ export class EditTenantDialog extends CloseOnEscapeDialog {
     }
 
     cancelClicked(): void {
-        this.cancel.next();
+        this.exit.next();
     }
 
     okClicked(): void {

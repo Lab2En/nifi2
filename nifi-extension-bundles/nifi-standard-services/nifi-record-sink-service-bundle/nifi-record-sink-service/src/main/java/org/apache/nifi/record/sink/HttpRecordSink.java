@@ -46,8 +46,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -61,7 +59,7 @@ public class HttpRecordSink extends AbstractControllerService implements RecordS
     protected static final String HEADER_AUTHORIZATION = "Authorization";
     protected static final String HEADER_CONTENT_TYPE = "Content-Type";
 
-     public static final PropertyDescriptor API_URL = new PropertyDescriptor.Builder()
+    public static final PropertyDescriptor API_URL = new PropertyDescriptor.Builder()
             .name("API URL")
             .description("The URL which receives the HTTP requests.")
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -94,6 +92,14 @@ public class HttpRecordSink extends AbstractControllerService implements RecordS
             .required(false)
             .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            API_URL,
+            MAX_BATCH_SIZE,
+            RECORD_WRITER_FACTORY,
+            WEB_SERVICE_CLIENT_PROVIDER,
+            OAUTH2_ACCESS_TOKEN_PROVIDER
+    );
+
     private String apiUrl;
     private int maxBatchSize;
     private volatile RecordSetWriterFactory writerFactory;
@@ -101,17 +107,9 @@ public class HttpRecordSink extends AbstractControllerService implements RecordS
     private volatile Optional<OAuth2AccessTokenProvider> oauth2AccessTokenProviderOptional;
     Map<String, String> dynamicHttpHeaders;
 
-    public static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(Arrays.asList(
-            API_URL,
-            MAX_BATCH_SIZE,
-            RECORD_WRITER_FACTORY,
-            WEB_SERVICE_CLIENT_PROVIDER,
-            OAUTH2_ACCESS_TOKEN_PROVIDER
-    ));
-
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     /**
@@ -192,7 +190,7 @@ public class HttpRecordSink extends AbstractControllerService implements RecordS
         WriteResult writeResult;
         try (final ByteArrayOutputStream baos = new ByteArrayOutputStream();
              final RecordSetWriter writer = writerFactory.createWriter(getLogger(), recordSet.getSchema(), baos, attributes)) {
-                writeResult = sendRecords(recordSet, writer, baos, maxBatchSize);
+            writeResult = sendRecords(recordSet, writer, baos, maxBatchSize);
         } catch (SchemaNotFoundException e) {
             final String errorMessage = String.format("RecordSetWriter could not be created because the schema was not found. The schema name for the RecordSet to write is %s",
                     recordSet.getSchema().getSchemaName());

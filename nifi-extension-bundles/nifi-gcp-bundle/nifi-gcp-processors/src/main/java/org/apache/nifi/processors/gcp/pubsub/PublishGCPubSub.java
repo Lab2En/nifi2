@@ -21,8 +21,8 @@ import com.google.api.core.ApiFutureCallback;
 import com.google.api.core.ApiFutures;
 import com.google.api.gax.batching.BatchingSettings;
 import com.google.api.gax.core.FixedCredentialsProvider;
-import com.google.api.gax.rpc.ApiException;
 import com.google.api.gax.core.FixedExecutorProvider;
+import com.google.api.gax.rpc.ApiException;
 import com.google.cloud.pubsub.v1.Publisher;
 import com.google.cloud.pubsub.v1.stub.GrpcPublisherStub;
 import com.google.cloud.pubsub.v1.stub.PublisherStubSettings;
@@ -51,6 +51,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -82,8 +83,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.nifi.processors.gcp.pubsub.PubSubAttributes.MESSAGE_ID_ATTRIBUTE;
 import static org.apache.nifi.processors.gcp.pubsub.PubSubAttributes.MESSAGE_ID_DESCRIPTION;
@@ -106,13 +107,12 @@ import static org.apache.nifi.processors.gcp.pubsub.PubSubAttributes.TOPIC_NAME_
 })
 @SystemResourceConsideration(resource = SystemResource.MEMORY, description = "The entirety of the FlowFile's content "
         + "will be read into memory to be sent as a PubSub message.")
-public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
+public class PublishGCPubSub extends AbstractGCPubSubProcessor {
     private static final List<String> REQUIRED_PERMISSIONS = Collections.singletonList("pubsub.topics.publish");
     private static final String TRANSIT_URI_FORMAT_STRING = "gcp://%s";
 
     public static final PropertyDescriptor MAX_BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Input Batch Size")
-            .displayName("Input Batch Size")
             .description("Maximum number of FlowFiles processed for each Processor invocation")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
@@ -122,7 +122,6 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
 
     public static final PropertyDescriptor MESSAGE_DERIVATION_STRATEGY = new PropertyDescriptor.Builder()
             .name("Message Derivation Strategy")
-            .displayName("Message Derivation Strategy")
             .description("The strategy used to publish the incoming FlowFile to the Google Cloud PubSub endpoint.")
             .required(true)
             .defaultValue(MessageDerivationStrategy.FLOWFILE_ORIENTED.getValue())
@@ -131,7 +130,6 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
 
     public static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
             .name("Record Reader")
-            .displayName("Record Reader")
             .description("The Record Reader to use for incoming FlowFiles")
             .identifiesControllerService(RecordReaderFactory.class)
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
@@ -141,7 +139,6 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
 
     public static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
             .name("Record Writer")
-            .displayName("Record Writer")
             .description("The Record Writer to use in order to serialize the data before sending to GCPubSub endpoint")
             .identifiesControllerService(RecordSetWriterFactory.class)
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
@@ -151,7 +148,6 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
 
     public static final PropertyDescriptor MAX_MESSAGE_SIZE = new PropertyDescriptor.Builder()
             .name("Maximum Message Size")
-            .displayName("Maximum Message Size")
             .description("The maximum size of a Google PubSub message in bytes. Defaults to 1 MB (1048576 bytes)")
             .dependsOn(MESSAGE_DERIVATION_STRATEGY, MessageDerivationStrategy.FLOWFILE_ORIENTED.getValue())
             .required(true)
@@ -160,8 +156,7 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
             .build();
 
     public static final PropertyDescriptor TOPIC_NAME = new PropertyDescriptor.Builder()
-            .name("gcp-pubsub-topic")
-            .displayName("Topic Name")
+            .name("Topic Name")
             .description("Name of the Google Cloud PubSub Topic")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -173,7 +168,7 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
             .description("FlowFiles are routed to this relationship if the Google Cloud Pub/Sub operation fails but attempting the operation again may succeed.")
             .build();
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             GCP_CREDENTIALS_PROVIDER_SERVICE,
             PROJECT_ID,
             TOPIC_NAME,
@@ -189,13 +184,17 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
             PROXY_CONFIGURATION_SERVICE
     );
 
-    public static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_FAILURE, REL_RETRY);
+    public static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE,
+            REL_RETRY
+    );
 
     protected Publisher publisher = null;
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -310,6 +309,12 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
         }
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("gcp-pubsub-topic", TOPIC_NAME.getName());
+    }
+
     private void onTriggerFlowFileStrategy(
             final ProcessContext context,
             final ProcessSession session,
@@ -329,7 +334,7 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
             if (flowFile.getSize() > maxMessageSize) {
                 final String message = String.format("FlowFile size %d exceeds MAX_MESSAGE_SIZE", flowFile.getSize());
                 failures.add(new IllegalArgumentException(message));
-                flowFileResults.add(new FlowFileResult(flowFile, futures, successes, failures));
+                flowFileResults.add(new FlowFileResult(flowFile, futures, successes, failures, getLogger()));
             } else {
                 baos.reset();
                 session.exportTo(flowFile, baos);
@@ -337,7 +342,7 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
                 final ApiFuture<String> apiFuture = publishOneMessage(context, flowFile, baos.toByteArray());
                 futures.add(apiFuture);
                 addCallback(apiFuture, new TrackedApiFutureCallback(successes, failures), executor);
-                flowFileResults.add(new FlowFileResult(flowFile, futures, successes, failures));
+                flowFileResults.add(new FlowFileResult(flowFile, futures, successes, failures, getLogger()));
             }
         }
         finishBatch(session, stopWatch, flowFileResults);
@@ -387,7 +392,7 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
                     futures.add(apiFuture);
                     addCallback(apiFuture, new TrackedApiFutureCallback(successes, failures), executor);
                 }
-                flowFileResults.add(new FlowFileResult(flowFile, futures, successes, failures));
+                flowFileResults.add(new FlowFileResult(flowFile, futures, successes, failures, getLogger()));
             }
         }
         finishBatch(session, stopWatch, flowFileResults);
@@ -475,9 +480,9 @@ public class PublishGCPubSub extends AbstractGCPubSubWithProxyProcessor {
 
     private Publisher.Builder getPublisherBuilder(ProcessContext context) {
         final Long batchSizeThreshold = context.getProperty(BATCH_SIZE_THRESHOLD).asLong();
-        final long batchBytesThreshold = context.getProperty(BATCH_BYTES_THRESHOLD).asDataSize(DataUnit.B).longValue();
+        final long batchBytesThreshold = context.getProperty(BATCH_BYTES_THRESHOLD).evaluateAttributeExpressions().asDataSize(DataUnit.B).longValue();
         final Long batchDelayThreshold = context.getProperty(BATCH_DELAY_THRESHOLD).asTimePeriod(TimeUnit.MILLISECONDS);
-        final String endpoint = context.getProperty(API_ENDPOINT).getValue();
+        final String endpoint = context.getProperty(API_ENDPOINT).evaluateAttributeExpressions().getValue();
 
         final Publisher.Builder publisherBuilder = Publisher.newBuilder(getTopicName(context))
                 .setCredentialsProvider(FixedCredentialsProvider.create(getGoogleCredentials(context)))

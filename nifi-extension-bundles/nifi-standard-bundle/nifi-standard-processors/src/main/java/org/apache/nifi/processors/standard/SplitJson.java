@@ -21,7 +21,7 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.InvalidJsonException;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.PathNotFoundException;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.SideEffectFree;
@@ -89,7 +89,7 @@ public class SplitJson extends AbstractJsonPathProcessor {
             .required(true)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             ARRAY_JSON_PATH_EXPRESSION,
             NULL_VALUE_DEFAULT_REPRESENTATION,
             MAX_STRING_LENGTH
@@ -127,13 +127,13 @@ public class SplitJson extends AbstractJsonPathProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void onPropertyModified(PropertyDescriptor descriptor, String oldValue, String newValue) {
         if (descriptor.equals(ARRAY_JSON_PATH_EXPRESSION)) {
-            if (!StringUtils.equals(oldValue, newValue)) {
+            if (!Strings.CS.equals(oldValue, newValue)) {
                 // This value will be computed and set in customValidate()
                 JSON_PATH_REF.set(null);
             }
@@ -212,10 +212,9 @@ public class SplitJson extends AbstractJsonPathProcessor {
             Object resultSegment = resultList.get(i);
             FlowFile split = processSession.create(original);
             split = processSession.write(split, (out) -> {
-                        String resultSegmentContent = getResultRepresentation(jsonPathConfiguration.jsonProvider(), resultSegment, nullDefaultValue);
-                        out.write(resultSegmentContent.getBytes(StandardCharsets.UTF_8));
-                    }
-            );
+                String resultSegmentContent = getResultRepresentation(jsonPathConfiguration.jsonProvider(), resultSegment, nullDefaultValue);
+                out.write(resultSegmentContent.getBytes(StandardCharsets.UTF_8));
+            });
             attributes.put(SEGMENT_ORIGINAL_FILENAME.key(), split.getAttribute(CoreAttributes.FILENAME.key()));
             attributes.put(FRAGMENT_INDEX.key(), Integer.toString(i));
             processSession.transfer(processSession.putAllAttributes(split, attributes), REL_SPLIT);

@@ -33,16 +33,16 @@ import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.RecordReader;
 import org.apache.nifi.serialization.RecordReaderFactory;
 
-import javax.script.Invocable;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Map;
+import javax.script.Invocable;
+import javax.script.ScriptContext;
+import javax.script.ScriptEngine;
+import javax.script.ScriptException;
 
 /**
  * A RecordReader implementation that allows the user to script the RecordReader instance
@@ -62,6 +62,7 @@ import java.util.Map;
 public class ScriptedReader extends AbstractScriptedRecordFactory<RecordReaderFactory> implements RecordReaderFactory {
 
     @OnEnabled
+    @Override
     public void onEnabled(final ConfigurationContext context) {
         synchronized (scriptingComponentHelper.isInitialized) {
             if (!scriptingComponentHelper.isInitialized.get()) {
@@ -119,6 +120,7 @@ public class ScriptedReader extends AbstractScriptedRecordFactory<RecordReaderFa
      * @param scriptBody An input stream associated with the script content
      * @return Whether the script was successfully reloaded
      */
+    @Override
     protected boolean reloadScript(final String scriptBody) {
         // note we are starting here with a fresh listing of validation
         // results since we are (re)loading a new/updated script. any

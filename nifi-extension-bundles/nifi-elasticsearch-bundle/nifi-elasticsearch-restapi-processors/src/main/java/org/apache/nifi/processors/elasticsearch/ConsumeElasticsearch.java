@@ -19,6 +19,7 @@ package org.apache.nifi.processors.elasticsearch;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.nifi.annotation.behavior.DynamicProperties;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.PrimaryNodeOnly;
@@ -40,6 +41,7 @@ import org.apache.nifi.components.state.StateMap;
 import org.apache.nifi.elasticsearch.SearchResponse;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.util.JsonValidator;
@@ -65,19 +67,28 @@ import java.util.stream.Stream;
 @TriggerSerially
 @PrimaryNodeOnly
 @DefaultSchedule(period = "1 min")
-@Tags({"elasticsearch", "elasticsearch5", "elasticsearch6", "elasticsearch7", "elasticsearch8", "query", "scroll", "page", "search", "json"})
+@Tags({"elasticsearch", "elasticsearch7", "elasticsearch8", "elasticsearch9", "query", "scroll", "page", "search", "json"})
 @CapabilityDescription("A processor that repeatedly runs a paginated query against a field using a Range query to consume new Documents from an Elasticsearch index/query. " +
         "The processor will retrieve multiple pages of results until either no more results are available or the Pagination Keep Alive expiration is reached, " +
         "after which the Range query will automatically update the field constraint based on the last retrieved Document value.")
 @SeeAlso({SearchElasticsearch.class, PaginatedJsonQueryElasticsearch.class})
-@DynamicProperty(
-        name = "The name of a URL query parameter to add",
-        value = "The value of the URL query parameter",
-        expressionLanguageScope = ExpressionLanguageScope.ENVIRONMENT,
-        description = "Adds the specified property name/value as a query parameter in the Elasticsearch URL used for processing. " +
-                "These parameters will override any matching parameters in the query request body. " +
-                "For SCROLL type queries, these parameters are only used in the initial (first page) query as the " +
-                "Elasticsearch Scroll API does not support the same query parameters for subsequent pages of data.")
+@DynamicProperties({
+        @DynamicProperty(
+                name = "The name of the HTTP request header",
+                value = "A Record Path expression to retrieve the HTTP request header value",
+                expressionLanguageScope = ExpressionLanguageScope.ENVIRONMENT,
+                description = "Prefix: " + ElasticsearchRestProcessor.DYNAMIC_PROPERTY_PREFIX_REQUEST_HEADER +
+                        " - adds the specified property name/value as a HTTP request header in the Elasticsearch request. " +
+                        "If the Record Path expression results in a null or blank value, the HTTP request header will be omitted."),
+        @DynamicProperty(
+                name = "The name of a URL query parameter to add",
+                value = "The value of the URL query parameter",
+                expressionLanguageScope = ExpressionLanguageScope.ENVIRONMENT,
+                description = "Adds the specified property name/value as a query parameter in the Elasticsearch URL used for processing. " +
+                        "These parameters will override any matching parameters in the query request body. " +
+                        "For SCROLL type queries, these parameters are only used in the initial (first page) query as the " +
+                        "Elasticsearch Scroll API does not support the same query parameters for subsequent pages of data.")
+})
 @Stateful(scopes = Scope.CLUSTER, description = "The pagination state (scrollId, searchAfter, pitId, hitCount, pageCount, pageExpirationTimestamp, trackingRangeValue) " +
         "is retained in between invocations of this processor until the Scroll/PiT has expired " +
         "(when the current time is later than the last query execution plus the Pagination Keep Alive interval).")
@@ -112,8 +123,7 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
             .build();
 
     public static final PropertyDescriptor RANGE_FIELD = new PropertyDescriptor.Builder()
-            .name("es-rest-range-field")
-            .displayName("Range Query Field")
+            .name("Range Query Field")
             .description("Field to be tracked as part of an Elasticsearch Range query using a \"gt\" bound match. " +
                     "This field must exist within the Elasticsearch document for it to be retrieved.")
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -121,8 +131,7 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
             .build();
 
     public static final PropertyDescriptor RANGE_FIELD_SORT_ORDER = new PropertyDescriptor.Builder()
-            .name("es-rest-sort-order")
-            .displayName("Sort Order")
+            .name("Sort Order")
             .description("The order in which to sort the \"" + RANGE_FIELD.getDisplayName() + "\". " +
                     "A \"sort\" clause for the \"" + RANGE_FIELD.getDisplayName() +
                     "\" field will be prepended to any provided \"" + SORT.getDisplayName() + "\" clauses. " +
@@ -134,8 +143,7 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
             .build();
 
     public static final PropertyDescriptor RANGE_INITIAL_VALUE = new PropertyDescriptor.Builder()
-            .name("es-rest-range-initial-value")
-            .displayName("Initial Value")
+            .name("Initial Value")
             .description("The initial value to use for the query if the processor has not run previously. " +
                     "If the processor has run previously and stored a value in its state, this property will be ignored. " +
                     "If no value is provided, and the processor has not previously run, no Range query bounds will be used, " +
@@ -145,8 +153,7 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
             .build();
 
     public static final PropertyDescriptor RANGE_DATE_FORMAT = new PropertyDescriptor.Builder()
-            .name("es-rest-range-format")
-            .displayName(RANGE_INITIAL_VALUE.getDisplayName() + " Date Format")
+            .name(RANGE_INITIAL_VALUE.getDisplayName() + " Date Format")
             .description("If the \"" + RANGE_FIELD.getDisplayName() + "\" is a Date field, convert the \"" + RANGE_INITIAL_VALUE.getDisplayName() + "\" to a date with this format. " +
                     "If not specified, Elasticsearch will use the date format provided by the \"" + RANGE_FIELD.getDisplayName() + "\"'s mapping. " +
                     "For valid syntax, see https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html")
@@ -156,8 +163,7 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
             .build();
 
     public static final PropertyDescriptor RANGE_TIME_ZONE = new PropertyDescriptor.Builder()
-            .name("es-rest-range-time-zone")
-            .displayName(RANGE_INITIAL_VALUE.getDisplayName() + " Date Time Zone")
+            .name(RANGE_INITIAL_VALUE.getDisplayName() + " Date Time Zone")
             .description("If the \"" + RANGE_FIELD.getDisplayName() + "\" is a Date field, convert the \"" + RANGE_INITIAL_VALUE.getDisplayName() + "\" to UTC with this time zone. " +
                     "Valid values are ISO 8601 UTC offsets, such as \"+01:00\" or \"-08:00\", and IANA time zone IDs, such as \"Europe/London\".")
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -166,8 +172,7 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
             .build();
 
     public static final PropertyDescriptor ADDITIONAL_FILTERS = new PropertyDescriptor.Builder()
-            .name("es-rest-additional-filters")
-            .displayName("Additional Filters")
+            .name("Additional Filters")
             .description("One or more query filters in JSON syntax, not Lucene syntax. " +
                     "Ex: [{\"match\":{\"somefield\":\"somevalue\"}}, {\"match\":{\"anotherfield\":\"anothervalue\"}}]. " +
                     "These filters wil be used as part of a Bool query's filter.")
@@ -178,13 +183,23 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
     private static final List<PropertyDescriptor> propertyDescriptors = Stream.concat(
             Stream.of(RANGE_FIELD, RANGE_FIELD_SORT_ORDER, RANGE_INITIAL_VALUE, RANGE_DATE_FORMAT, RANGE_TIME_ZONE, ADDITIONAL_FILTERS),
             scrollPropertyDescriptors.stream()
-                    .filter(pd -> !QUERY.equals(pd) && !QUERY_CLAUSE.equals(pd) && !QUERY_DEFINITION_STYLE.equals(pd))
+                    .filter(pd -> !QUERY.equals(pd) && !QUERY_CLAUSE.equals(pd) && !QUERY_DEFINITION_STYLE.equals(pd) && !RESTART_ON_FINISH.equals(pd))
                     .map(property -> {
-                        if (property == ElasticsearchRestProcessor.SIZE) return SIZE;
-                        if (property == ElasticsearchRestProcessor.AGGREGATIONS) return AGGREGATIONS;
-                        if (property == ElasticsearchRestProcessor.SORT) return SORT;
-                        if (property == ElasticsearchRestProcessor.FIELDS) return FIELDS;
-                        if (property == ElasticsearchRestProcessor.SCRIPT_FIELDS) return SCRIPT_FIELDS;
+                        if (property == ElasticsearchRestProcessor.SIZE) {
+                            return SIZE;
+                        }
+                        if (property == ElasticsearchRestProcessor.AGGREGATIONS) {
+                            return AGGREGATIONS;
+                        }
+                        if (property == ElasticsearchRestProcessor.SORT) {
+                            return SORT;
+                        }
+                        if (property == ElasticsearchRestProcessor.FIELDS) {
+                            return FIELDS;
+                        }
+                        if (property == ElasticsearchRestProcessor.SCRIPT_FIELDS) {
+                            return SCRIPT_FIELDS;
+                        }
                         return property;
                     })
     ).toList();
@@ -220,6 +235,17 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
         // reset tracking fields, so that we don't retain incorrect values between processor restarts
         trackingRangeField = null;
         trackingSortOrder = null;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("es-rest-range-field", RANGE_FIELD.getName());
+        config.renameProperty("es-rest-sort-order", RANGE_FIELD_SORT_ORDER.getName());
+        config.renameProperty("es-rest-range-initial-value", RANGE_INITIAL_VALUE.getName());
+        config.renameProperty("es-rest-range-format", RANGE_DATE_FORMAT.getName());
+        config.renameProperty("es-rest-range-time-zone", RANGE_TIME_ZONE.getName());
+        config.renameProperty("es-rest-additional-filters", ADDITIONAL_FILTERS.getName());
     }
 
     private String getTrackingRangeField(final ProcessContext context) {
@@ -260,16 +286,17 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
         // only retrieve documents with values greater than the last queried value (if present)
         final String trackingRangeValue = getTrackingRangeValueOrDefault(context);
         if (StringUtils.isNotBlank(trackingRangeValue)) {
-            filters.add(Collections.singletonMap("range", Collections.singletonMap(getTrackingRangeField(context),
-                    new HashMap<String, String>(3, 1) {{
-                        put("gt", trackingRangeValue);
-                        if (context.getProperty(RANGE_DATE_FORMAT).isSet()) {
-                            put("format", context.getProperty(RANGE_DATE_FORMAT).getValue());
-                        }
-                        if (context.getProperty(RANGE_TIME_ZONE).isSet()) {
-                            put("time_zone", context.getProperty(RANGE_TIME_ZONE).getValue());
-                        }
-                    }})));
+            final Map<String, String> innerValue = new HashMap<>(3, 1);
+            innerValue.put("gt", trackingRangeValue);
+            if (context.getProperty(RANGE_INITIAL_VALUE).isSet()) {
+                if (context.getProperty(RANGE_DATE_FORMAT).isSet()) {
+                    innerValue.put("format", context.getProperty(RANGE_DATE_FORMAT).getValue());
+                }
+                if (context.getProperty(RANGE_TIME_ZONE).isSet()) {
+                    innerValue.put("time_zone", context.getProperty(RANGE_TIME_ZONE).getValue());
+                }
+            }
+            filters.add(Map.of("range", Map.of(getTrackingRangeField(context), innerValue)));
         }
 
         // add any additional filters specified as a property, allowing for one (Object) or multiple (Array of Objects) filters
@@ -279,7 +306,7 @@ public class ConsumeElasticsearch extends SearchElasticsearch {
                 filters.addAll(mapper.convertValue(additionalFilters, new TypeReference<List<Map<String, Object>>>() {
                 }));
             } else {
-                filters.add(mapper.convertValue(additionalFilters, new TypeReference<Map<String, Object>>() {
+                filters.add(mapper.convertValue(additionalFilters, new TypeReference<>() {
                 }));
             }
         }

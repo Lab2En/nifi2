@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.web.security.saml2.service.web;
 
+import jakarta.servlet.http.Cookie;
 import org.apache.nifi.web.security.cookie.ApplicationCookieName;
 import org.apache.nifi.web.security.saml2.registration.Saml2RegistrationProperty;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,8 +30,6 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.saml2.provider.service.authentication.AbstractSaml2AuthenticationRequest;
 import org.springframework.security.saml2.provider.service.authentication.Saml2PostAuthenticationRequest;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
-
-import jakarta.servlet.http.Cookie;
 
 import java.util.UUID;
 
@@ -128,9 +127,9 @@ class StandardSaml2AuthenticationRequestRepositoryTest {
     private AbstractSaml2AuthenticationRequest getRequest() {
         final RelyingPartyRegistration registration = RelyingPartyRegistration.withRegistrationId(Saml2RegistrationProperty.REGISTRATION_ID.getProperty())
                 .entityId(Saml2RegistrationProperty.REGISTRATION_ID.getProperty())
-                .assertingPartyDetails(assertingPartyDetails -> {
-                    assertingPartyDetails.entityId(Saml2RegistrationProperty.REGISTRATION_ID.getProperty());
-                    assertingPartyDetails.singleSignOnServiceLocation(LOCATION);
+                .assertingPartyMetadata(assertingPartyMetadata -> {
+                    assertingPartyMetadata.entityId(Saml2RegistrationProperty.REGISTRATION_ID.getProperty());
+                    assertingPartyMetadata.singleSignOnServiceLocation(LOCATION);
                 })
                 .build();
         return Saml2PostAuthenticationRequest.withRelyingPartyRegistration(registration).samlRequest(SAML_REQUEST).build();

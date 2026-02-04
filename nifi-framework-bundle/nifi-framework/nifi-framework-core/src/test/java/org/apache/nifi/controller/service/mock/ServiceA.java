@@ -16,12 +16,11 @@
  */
 package org.apache.nifi.controller.service.mock;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ControllerService;
+
+import java.util.List;
 
 public class ServiceA extends AbstractControllerService {
 
@@ -39,10 +38,10 @@ public class ServiceA extends AbstractControllerService {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> descriptors = new ArrayList<>();
-        descriptors.add(OTHER_SERVICE);
-        descriptors.add(OTHER_SERVICE_2);
-        return descriptors;
+        return List.of(
+                OTHER_SERVICE,
+                OTHER_SERVICE_2
+        );
     }
 
 }

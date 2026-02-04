@@ -16,6 +16,10 @@
  */
 package org.apache.nifi.io.socket;
 
+import org.apache.nifi.security.util.TlsException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -27,9 +31,6 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import org.apache.nifi.security.util.TlsException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Implements a listener for TCP/IP messages sent over unicast socket.
@@ -97,49 +98,43 @@ public abstract class SocketListener {
         final ExecutorService runnableExecServiceRef = executorService;
         final ServerSocket runnableServerSocketRef = serverSocket;
 
-        final Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (runnableExecServiceRef.isShutdown() == false) {
-                    Socket socket = null;
+        final Thread t = new Thread(() -> {
+            while (!runnableExecServiceRef.isShutdown()) {
+                Socket socket = null;
+                try {
                     try {
-                        try {
-                            socket = runnableServerSocketRef.accept();
-                            if (configuration.getSocketTimeout() != null) {
-                                socket.setSoTimeout(configuration.getSocketTimeout());
-                            }
-                        } catch (final SocketTimeoutException ste) {
-                            // nobody connected to us. Go ahead and call closeQuietly just to make sure we don't leave
-                            // any sockets lingering
-                            SocketUtils.closeQuietly(socket);
-                            continue;
-                        } catch (final SocketException se) {
-                            logger.warn("Failed to communicate with {}", (socket == null ? "Unknown Host" : socket.getInetAddress().getHostName()), se);
-                            SocketUtils.closeQuietly(socket);
-                            continue;
-                        } catch (final Throwable t) {
-                            logger.warn("Socket Listener encountered exception", t);
-                            SocketUtils.closeQuietly(socket);
-                            continue;
+                        socket = runnableServerSocketRef.accept();
+                        if (configuration.getSocketTimeout() != null) {
+                            socket.setSoTimeout(configuration.getSocketTimeout());
                         }
-
-                        final Socket finalSocket = socket;
-                        runnableExecServiceRef.execute(new Runnable() {
-                            @Override
-                            public void run() {
-                                try {
-                                    dispatchRequest(finalSocket);
-                                } catch (final Throwable t) {
-                                    logger.warn("Dispatching socket request encountered exception", t);
-                                } finally {
-                                    SocketUtils.closeQuietly(finalSocket);
-                                }
-                            }
-                        });
-                    } catch (final Throwable t) {
-                        logger.error("Socket Listener encountered exception", t);
+                    } catch (final SocketTimeoutException ste) {
+                        // nobody connected to us. Go ahead and call closeQuietly just to make sure we don't leave
+                        // any sockets lingering
                         SocketUtils.closeQuietly(socket);
+                        continue;
+                    } catch (final SocketException se) {
+                        logger.warn("Failed to communicate with {}", (socket == null ? "Unknown Host" : socket.getInetAddress().getHostName()), se);
+                        SocketUtils.closeQuietly(socket);
+                        continue;
+                    } catch (final Throwable t12) {
+                        logger.warn("Socket Listener encountered exception", t12);
+                        SocketUtils.closeQuietly(socket);
+                        continue;
                     }
+
+                    final Socket finalSocket = socket;
+                    runnableExecServiceRef.execute(() -> {
+                        try {
+                            dispatchRequest(finalSocket);
+                        } catch (final Throwable t1) {
+                            logger.warn("Dispatching socket request encountered exception", t1);
+                        } finally {
+                            SocketUtils.closeQuietly(finalSocket);
+                        }
+                    });
+                } catch (final Throwable t12) {
+                    logger.error("Socket Listener encountered exception", t12);
+                    SocketUtils.closeQuietly(socket);
                 }
             }
         });
@@ -150,12 +145,12 @@ public abstract class SocketListener {
     }
 
     public boolean isRunning() {
-        return (executorService != null && executorService.isShutdown() == false);
+        return (executorService != null && !executorService.isShutdown());
     }
 
     public void stop() throws IOException {
 
-        if (isRunning() == false) {
+        if (!isRunning()) {
             return;
         }
 

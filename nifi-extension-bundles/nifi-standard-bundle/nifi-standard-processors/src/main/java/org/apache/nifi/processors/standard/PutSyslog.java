@@ -30,6 +30,7 @@ import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.event.transport.EventSender;
 import org.apache.nifi.event.transport.configuration.LineEnding;
+import org.apache.nifi.event.transport.configuration.ShutdownQuietPeriod;
 import org.apache.nifi.event.transport.configuration.TransportProtocol;
 import org.apache.nifi.event.transport.netty.StringNettyEventSenderFactory;
 import org.apache.nifi.expression.ExpressionLanguageScope;
@@ -43,7 +44,6 @@ import org.apache.nifi.ssl.SSLContextProvider;
 import org.apache.nifi.syslog.parsers.SyslogParser;
 import org.apache.nifi.util.StopWatch;
 
-import javax.net.ssl.SSLContext;
 import java.nio.charset.Charset;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -60,7 +60,7 @@ import java.util.regex.Pattern;
 @CapabilityDescription("Sends Syslog messages to a given host and port over TCP or UDP. Messages are constructed from the \"Message ___\" properties of the processor " +
         "which can use expression language to generate messages from incoming FlowFiles. The properties are used to construct messages of the form: " +
         "(<PRIORITY>)(VERSION )(TIMESTAMP) (HOSTNAME) (BODY) where version is optional.  The constructed messages are checked against regular expressions for " +
-        "RFC5424 and RFC3164 formatted messages. The timestamp can be an RFC5424 timestamp with a format of \"yyyy-MM-dd'T'HH:mm:ss.SZ\" or \"yyyy-MM-dd'T'HH:mm:ss.S+hh:mm\", " +
+        "RFC5424 and RFC3164 formatted messages. The timestamp can be an RFC5424 timestamp with a format of \"yyyy-MM-dd'T'HH:mm:ss.S'Z'\" or \"yyyy-MM-dd'T'HH:mm:ss.S+hh:mm\", " +
         "or it can be an RFC3164 timestamp with a format of \"MMM d HH:mm:ss\". If a message is constructed that does not form a valid Syslog message according to the " +
         "above description, then it is routed to the invalid relationship. Valid messages are sent to the Syslog server and successes are routed to the success relationship, " +
         "failures routed to the failure relationship.")
@@ -118,7 +118,7 @@ public class PutSyslog extends AbstractSyslogProcessor {
     public static final PropertyDescriptor MSG_TIMESTAMP = new PropertyDescriptor
             .Builder().name("Message Timestamp")
             .description("The timestamp for the Syslog messages. The timestamp can be an RFC5424 timestamp with a format of " +
-                    "\"yyyy-MM-dd'T'HH:mm:ss.SZ\" or \"yyyy-MM-dd'T'HH:mm:ss.S+hh:mm\", \" or it can be an RFC3164 timestamp " +
+                    "\"yyyy-MM-dd'T'HH:mm:ss.S'Z'\" or \"yyyy-MM-dd'T'HH:mm:ss.S+hh:mm\", \" or it can be an RFC3164 timestamp " +
                     "with a format of \"MMM d HH:mm:ss\".")
             .required(true)
             .defaultValue("${now():format('MMM d HH:mm:ss')}")
@@ -149,7 +149,7 @@ public class PutSyslog extends AbstractSyslogProcessor {
             .dependsOn(PROTOCOL, TCP_VALUE)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             HOSTNAME,
             PROTOCOL,
             PORT,
@@ -195,7 +195,7 @@ public class PutSyslog extends AbstractSyslogProcessor {
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -277,13 +277,15 @@ public class PutSyslog extends AbstractSyslogProcessor {
         final int timeout = context.getProperty(TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.MILLISECONDS).intValue();
         factory.setTimeout(Duration.ofMillis(timeout));
 
-        final PropertyValue sslContextServiceProperty = context.getProperty(SSL_CONTEXT_SERVICE);
-        if (sslContextServiceProperty.isSet()) {
-            final SSLContextProvider sslContextProvider = sslContextServiceProperty.asControllerService(SSLContextProvider.class);
-            final SSLContext sslContext = sslContextProvider.createContext();
-            factory.setSslContext(sslContext);
+        if (protocol == TransportProtocol.TCP) {
+            final SSLContextProvider sslContextProvider = context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextProvider.class);
+
+            if (sslContextProvider != null) {
+                factory.setSslContext(sslContextProvider.createContext());
+            }
         }
 
+        factory.setShutdownQuietPeriod(ShutdownQuietPeriod.QUICK.getDuration());
         return factory.getEventSender();
     }
 

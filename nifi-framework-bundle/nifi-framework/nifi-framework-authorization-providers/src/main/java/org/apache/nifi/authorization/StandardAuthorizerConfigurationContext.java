@@ -16,9 +16,9 @@
  */
 package org.apache.nifi.authorization;
 
-import org.apache.nifi.parameter.ParameterLookup;
 import org.apache.nifi.attribute.expression.language.StandardPropertyValue;
 import org.apache.nifi.components.PropertyValue;
+import org.apache.nifi.parameter.ParameterLookup;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,7 +34,7 @@ public class StandardAuthorizerConfigurationContext implements AuthorizerConfigu
 
     public StandardAuthorizerConfigurationContext(String identifier, Map<String, String> properties) {
         this.identifier = identifier;
-        this.properties = Collections.unmodifiableMap(new HashMap<String, String>(properties));
+        this.properties = Collections.unmodifiableMap(new HashMap<>(properties));
     }
 
     @Override

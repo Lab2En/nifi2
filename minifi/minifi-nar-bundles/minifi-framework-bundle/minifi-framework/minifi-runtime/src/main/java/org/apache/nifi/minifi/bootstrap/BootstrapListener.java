@@ -17,11 +17,14 @@
 
 package org.apache.nifi.minifi.bootstrap;
 
-import static org.apache.nifi.bootstrap.CommandResult.FAILURE;
-import static org.apache.nifi.bootstrap.CommandResult.SUCCESS;
-
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.nifi.minifi.MiNiFiServer;
+import org.apache.nifi.minifi.commons.status.FlowStatusReport;
+import org.apache.nifi.minifi.status.StatusRequestException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -41,13 +44,9 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
-import org.apache.nifi.bootstrap.BootstrapCommunicator;
-import org.apache.nifi.bootstrap.CommandResult;
-import org.apache.nifi.minifi.MiNiFiServer;
-import org.apache.nifi.minifi.commons.status.FlowStatusReport;
-import org.apache.nifi.minifi.status.StatusRequestException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import static org.apache.nifi.minifi.bootstrap.CommandResult.FAILURE;
+import static org.apache.nifi.minifi.bootstrap.CommandResult.SUCCESS;
 
 public class BootstrapListener implements BootstrapCommunicator {
 
@@ -74,7 +73,7 @@ public class BootstrapListener implements BootstrapCommunicator {
         bootstrapRequestReader = new BootstrapRequestReader(secretKey);
 
         objectMapper = new ObjectMapper();
-        objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        objectMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         registerHandlers();
     }
 
@@ -117,6 +116,7 @@ public class BootstrapListener implements BootstrapCommunicator {
         sendCommand(STARTED, new String[] {String.valueOf(status)});
     }
 
+    @Override
     public CommandResult sendCommand(String command, String[] args) throws IOException {
         try (Socket socket = new Socket()) {
             socket.setSoTimeout(60000);
@@ -203,7 +203,7 @@ public class BootstrapListener implements BootstrapCommunicator {
 
             try {
                 serverSocket.close();
-            } catch (IOException ioe) {
+            } catch (IOException ignored) {
                 // nothing to really do here. we could log this, but it would just become
                 // confusing in the logs, as we're shutting down and there's no real benefit
             }

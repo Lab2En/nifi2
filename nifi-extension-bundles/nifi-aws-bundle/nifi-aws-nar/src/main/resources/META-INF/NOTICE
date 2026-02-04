@@ -1,5 +1,5 @@
 nifi-aws-nar
-Copyright 2015-2020 The Apache Software Foundation
+Copyright 2015-2026 The Apache Software Foundation
 
 This product includes software developed at
 The Apache Software Foundation (http://www.apache.org/).
@@ -103,6 +103,12 @@ The following binary components are provided under the Apache Software License v
       Amazon Ion Java
       Copyright 2007-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
+  (ASLv2) AWS Glue Schema Registry Serializer Deserializer
+    The following NOTICE information applies:
+      AWS Glue Schema Registry Serializer Deserializer
+      Copyright 2020 Amazon.com, Inc. or its affiliates.
+    Files in package org/apache/nifi/aws/schemaregistry/serde come from library: software.amazon.schemaregistry:aws-schema-registry-serde:1.1.24
+
   (ASLv2) Amazon Web Services SDK
     The following NOTICE information applies:
       Copyright 2010-2014 Amazon.com, Inc. or its affiliates. All Rights Reserved.
@@ -117,28 +123,9 @@ The following binary components are provided under the Apache Software License v
       - XML parsing and utility functions from JetS3t - Copyright 2006-2009 James Murty.
       - PKCS#1 PEM encoded private key parsing and utility functions from oauth.googlecode.com - Copyright 1998-2010 AOL Inc.
 
-  (ASLv2) Jackson JSON processor
+  (ASLv2) Jackson
       The following NOTICE information applies:
-        # Jackson JSON processor
-
-        Jackson is a high-performance, Free/Open Source JSON processing library.
-        It was originally written by Tatu Saloranta (tatu.saloranta@iki.fi), and has
-        been in development since 2007.
-        It is currently developed by a community of developers, as well as supported
-        commercially by FasterXML.com.
-
-        ## Licensing
-
-        Jackson core and extension components may licensed under different licenses.
-        To find the details that apply to this artifact see the accompanying LICENSE file.
-        For more information, including possible other licensing options, contact
-        FasterXML.com (http://fasterxml.com).
-
-        ## Credits
-
-        A list of contributors may be found from CREDITS file, which is included
-        in some artifacts (usually source distributions); but is always available
-        from the source code management (SCM) system project uses.
+        Copyright 2007-, Tatu Saloranta (tatu.saloranta@iki.fi)
 
   (ASLv2) This includes derived works from apigateway-generic-java-sdk project (https://github.com/rpgreen/apigateway-generic-java-sdk)
   https://github.com/rpgreen/apigateway-generic-java-sdk/commit/32eea44cc855a530c9b4a28b9f3601a41bc85618 as the point reference:
@@ -179,6 +166,14 @@ The multi-part copy code in CopyS3Object was derived from code found in the Amaz
 
     This code was provided under the terms of the Apache Software License V2 per this:
     https://github.com/awsdocs/aws-doc-sdk-examples/blob/df606a664bf2f7cfe3abc76c187e024451d0279c/LICENSE
+
+************************
+Berkeley Software Distribution License 3-Clause
+************************
+
+The following binary components are provided under the BSD License. See project link for details.
+
+  (BSD License) Protocol Buffers (com.google.protobuf:protobuf-java:jar - https://github.com/protocolbuffers/protobuf)
 
 ************************
 Eclipse Distribution License 1.0

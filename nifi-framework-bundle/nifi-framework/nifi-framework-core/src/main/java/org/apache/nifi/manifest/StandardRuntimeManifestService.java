@@ -191,6 +191,7 @@ public class StandardRuntimeManifestService implements RuntimeManifestService {
         final Extension extension = new Extension();
         extension.setDescription(pythonProcessorDetails.getCapabilityDescription());
         extension.setName(pythonProcessorDetails.getProcessorType());
+        extension.setTags(pythonProcessorDetails.getTags());
         extension.setInputRequirement(InputRequirement.INPUT_REQUIRED);
         extension.setSupportsBatching(true);
         extension.setType(ExtensionType.PROCESSOR);
@@ -247,7 +248,7 @@ public class StandardRuntimeManifestService implements RuntimeManifestService {
         return property;
     }
 
-    private static List<Dependency> getDependencies(org.apache.nifi.python.processor.documentation.PropertyDescription propertyDescription) {
+    private static List<Dependency> getDependencies(final PropertyDescription propertyDescription) {
         return Optional.ofNullable(propertyDescription.getDependencies()).orElse(List.of())
                 .stream()
                 .map(value -> {

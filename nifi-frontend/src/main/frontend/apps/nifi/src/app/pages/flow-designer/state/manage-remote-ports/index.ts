@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType } from '@nifi/shared';
 
 export const remotePortsFeatureKey = 'remotePortListing';
 
@@ -76,7 +76,6 @@ export interface LoadRemotePortsResponse {
 
 export interface ConfigureRemotePortRequest {
     id: string;
-    uri: string;
     payload: any;
     postUpdateNavigation?: string[];
 }

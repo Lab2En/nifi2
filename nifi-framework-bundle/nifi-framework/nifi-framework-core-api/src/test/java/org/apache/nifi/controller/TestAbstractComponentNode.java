@@ -78,6 +78,10 @@ public class TestAbstractComponentNode {
 
     private static final String PROPERTY_VALUE = "abstract-property-value";
 
+    private static final String SECOND_PROPERTY_NAME = "Second Property";
+
+    private static final String SECOND_PROPERTY_VALUE = "2";
+
     @Timeout(5)
     @Test
     public void testGetValidationStatusWithTimeout() {
@@ -307,6 +311,37 @@ public class TestAbstractComponentNode {
     }
 
     @Test
+    public void testSetPropertiesPropertyModified() {
+        final String propertyValueModified = PROPERTY_VALUE + "-modified";
+        final List<PropertyModification> propertyModifications = new ArrayList<>();
+        final AbstractComponentNode node = new LocalComponentNode() {
+            @Override
+            protected void onPropertyModified(final PropertyDescriptor descriptor, final String oldValue, final String newValue) {
+                propertyModifications.add(new PropertyModification(descriptor, oldValue, newValue));
+                super.onPropertyModified(descriptor, oldValue, newValue);
+            }
+        };
+
+        final Map<String, String> properties = new HashMap<>();
+        properties.put(PROPERTY_NAME, PROPERTY_VALUE);
+        node.setProperties(properties);
+
+        assertEquals(1, propertyModifications.size());
+        PropertyModification mod = propertyModifications.get(0);
+        assertNull(mod.getPreviousValue());
+        assertEquals(PROPERTY_VALUE, mod.getUpdatedValue());
+        propertyModifications.clear();
+
+        properties.put(PROPERTY_NAME, propertyValueModified);
+        node.setProperties(properties);
+
+        assertEquals(1, propertyModifications.size());
+        mod = propertyModifications.get(0);
+        assertEquals(PROPERTY_VALUE, mod.getPreviousValue());
+        assertEquals(propertyValueModified, mod.getUpdatedValue());
+    }
+
+    @Test
     public void testSetPropertiesSensitiveDynamicPropertyNames() {
         final AbstractComponentNode node = new LocalComponentNode();
 
@@ -366,6 +401,27 @@ public class TestAbstractComponentNode {
         final PropertyDescriptor removedPropertyDescriptor = node.getPropertyDescriptor(PROPERTY_NAME);
         assertTrue(removedPropertyDescriptor.isDynamic());
         assertFalse(removedPropertyDescriptor.isSensitive());
+    }
+
+    @Test
+    public void testOverwritePropertiesSensitiveDynamicPropertyNames() {
+        final AbstractComponentNode node = new LocalComponentNode();
+
+        final Map<String, String> properties = Map.of(PROPERTY_NAME, PROPERTY_VALUE);
+        final Set<String> sensitiveDynamicPropertyNames = Collections.singleton(PROPERTY_NAME);
+        node.setProperties(properties, false, sensitiveDynamicPropertyNames);
+
+        final PropertyDescriptor propertyDescriptor = node.getPropertyDescriptor(PROPERTY_NAME);
+        assertTrue(propertyDescriptor.isDynamic());
+        assertTrue(propertyDescriptor.isSensitive());
+
+        // Overwrite Properties which clears existing Sensitive Dynamic Property Names
+        final Map<String, String> secondProperties = Map.of(SECOND_PROPERTY_NAME, SECOND_PROPERTY_VALUE);
+        node.overwriteProperties(secondProperties);
+
+        final PropertyDescriptor updatedPropertyDescriptor = node.getPropertyDescriptor(PROPERTY_NAME);
+        assertTrue(updatedPropertyDescriptor.isDynamic());
+        assertFalse(updatedPropertyDescriptor.isSensitive());
     }
 
     private ValidationContext getServiceValidationContext(final ControllerServiceState serviceState, final ControllerServiceProvider serviceProvider) {
@@ -515,7 +571,7 @@ public class TestAbstractComponentNode {
         protected Collection<ValidationResult> computeValidationErrors(ValidationContext context) {
             try {
                 Thread.sleep(pauseMillis);
-            } catch (final InterruptedException ie) {
+            } catch (final InterruptedException ignored) {
             }
 
             return null;

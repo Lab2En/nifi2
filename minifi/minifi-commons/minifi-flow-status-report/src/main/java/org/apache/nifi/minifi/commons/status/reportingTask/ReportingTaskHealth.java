@@ -27,9 +27,6 @@ public class ReportingTaskHealth implements java.io.Serializable {
     private int activeThreads;
     private List<ValidationError> validationErrorList;
 
-    public ReportingTaskHealth() {
-    }
-
     public String getScheduledState() {
         return scheduledState;
     }
@@ -64,14 +61,24 @@ public class ReportingTaskHealth implements java.io.Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         ReportingTaskHealth that = (ReportingTaskHealth) o;
 
-        if (isHasBulletins() != that.isHasBulletins()) return false;
-        if (getActiveThreads() != that.getActiveThreads()) return false;
-        if (getScheduledState() != null ? !getScheduledState().equals(that.getScheduledState()) : that.getScheduledState() != null) return false;
+        if (isHasBulletins() != that.isHasBulletins()) {
+            return false;
+        }
+        if (getActiveThreads() != that.getActiveThreads()) {
+            return false;
+        }
+        if (getScheduledState() != null ? !getScheduledState().equals(that.getScheduledState()) : that.getScheduledState() != null) {
+            return false;
+        }
         return getValidationErrorList() != null ? getValidationErrorList().equals(that.getValidationErrorList()) : that.getValidationErrorList() == null;
 
     }

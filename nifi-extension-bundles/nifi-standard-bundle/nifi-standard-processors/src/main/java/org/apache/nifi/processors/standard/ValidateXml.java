@@ -48,13 +48,6 @@ import org.apache.nifi.xml.processing.validation.SchemaValidator;
 import org.apache.nifi.xml.processing.validation.StandardSchemaValidator;
 import org.xml.sax.SAXException;
 
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamReader;
-import javax.xml.transform.Source;
-import javax.xml.transform.stax.StAXSource;
-import javax.xml.transform.stream.StreamSource;
-import javax.xml.validation.Schema;
-import javax.xml.validation.SchemaFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URL;
@@ -63,6 +56,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
+import javax.xml.transform.Source;
+import javax.xml.transform.stax.StAXSource;
+import javax.xml.transform.stream.StreamSource;
+import javax.xml.validation.Schema;
+import javax.xml.validation.SchemaFactory;
 
 @SideEffectFree
 @SupportsBatching
@@ -92,7 +92,6 @@ public class ValidateXml extends AbstractProcessor {
 
     public static final PropertyDescriptor SCHEMA_FILE = new PropertyDescriptor.Builder()
             .name("Schema File")
-            .displayName("Schema File")
             .description("The file path or URL to the XSD Schema file that is to be used for validation. If this property is blank, only XML syntax/structure will be validated.")
             .required(false)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -100,14 +99,13 @@ public class ValidateXml extends AbstractProcessor {
             .build();
     public static final PropertyDescriptor XML_SOURCE_ATTRIBUTE = new PropertyDescriptor.Builder()
             .name("XML Source Attribute")
-            .displayName("XML Source Attribute")
             .description("The name of the attribute containing XML to be validated. If this property is blank, the FlowFile content will be validated.")
             .required(false)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .addValidator(StandardValidators.ATTRIBUTE_KEY_VALIDATOR)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             SCHEMA_FILE,
             XML_SOURCE_ATTRIBUTE
     );
@@ -139,7 +137,7 @@ public class ValidateXml extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled

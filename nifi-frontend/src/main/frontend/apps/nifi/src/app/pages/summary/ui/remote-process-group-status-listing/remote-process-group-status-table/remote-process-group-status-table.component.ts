@@ -15,14 +15,15 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { SummaryTableFilterModule } from '../../common/summary-table-filter/summary-table-filter.module';
 import { MatSortModule, Sort } from '@angular/material/sort';
-import { SummaryTableFilterColumn } from '../../common/summary-table-filter/summary-table-filter.component';
+import {
+    SummaryTableFilter,
+    SummaryTableFilterColumn
+} from '../../common/summary-table-filter/summary-table-filter.component';
 import { MatTableModule } from '@angular/material/table';
-import { NiFiCommon } from '@nifi/shared';
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType, NiFiCommon } from '@nifi/shared';
 import { RouterLink } from '@angular/router';
 import { MatPaginatorModule } from '@angular/material/paginator';
 import { RemoteProcessGroupStatusSnapshot, RemoteProcessGroupStatusSnapshotEntity } from '../../../state';
@@ -34,10 +35,9 @@ export type SupportedColumns = 'name' | 'uri' | 'transmitting' | 'sent' | 'recei
 
 @Component({
     selector: 'remote-process-group-status-table',
-    standalone: true,
     imports: [
         CommonModule,
-        SummaryTableFilterModule,
+        SummaryTableFilter,
         MatSortModule,
         MatTableModule,
         RouterLink,
@@ -51,15 +51,13 @@ export type SupportedColumns = 'name' | 'uri' | 'transmitting' | 'sent' | 'recei
     styleUrls: ['./remote-process-group-status-table.component.scss']
 })
 export class RemoteProcessGroupStatusTable extends ComponentStatusTable<RemoteProcessGroupStatusSnapshotEntity> {
+    private nifiCommon = inject(NiFiCommon);
+
     filterableColumns: SummaryTableFilterColumn[] = [
         { key: 'name', label: 'name' },
         { key: 'targetUri', label: 'uri' }
     ];
     displayedColumns: string[] = ['name', 'uri', 'transmitting', 'sent', 'received', 'actions'];
-
-    constructor(private nifiCommon: NiFiCommon) {
-        super();
-    }
 
     override filterPredicate(data: RemoteProcessGroupStatusSnapshotEntity, filter: string): boolean {
         const { filterTerm, filterColumn } = JSON.parse(filter);

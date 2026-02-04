@@ -16,12 +16,13 @@
  */
 package org.apache.nifi.util;
 
+import org.slf4j.Logger;
+
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
-import org.slf4j.Logger;
 
 /**
  * A utility class containing a few useful static methods to do typical IO
@@ -69,7 +70,7 @@ public class FileUtils {
      * @return true if deleted
      */
     public static boolean deleteFile(final File file, final Logger logger) {
-        return FileUtils.deleteFile(file, logger, 1);
+        return deleteFile(file, logger, 1);
     }
 
     /**
@@ -93,7 +94,7 @@ public class FileUtils {
                 for (int i = 0; i < effectiveAttempts && !isGone; i++) {
                     isGone = file.delete() || !file.exists();
                     if (!isGone && (effectiveAttempts - i) > 1) {
-                        FileUtils.sleepQuietly(MILLIS_BETWEEN_ATTEMPTS);
+                        sleepQuietly(MILLIS_BETWEEN_ATTEMPTS);
                     }
                 }
                 if (!isGone && logger != null) {
@@ -120,7 +121,7 @@ public class FileUtils {
      * if an I/O error occurs
      */
     public static void deleteFilesInDirectory(final File directory, final FilenameFilter filter, final Logger logger) throws IOException {
-        FileUtils.deleteFilesInDirectory(directory, filter, logger, false);
+        deleteFilesInDirectory(directory, filter, logger, false);
     }
 
     /**
@@ -136,7 +137,7 @@ public class FileUtils {
      * if an I/O error occurs
      */
     public static void deleteFilesInDirectory(final File directory, final FilenameFilter filter, final Logger logger, final boolean recurse) throws IOException {
-        FileUtils.deleteFilesInDirectory(directory, filter, logger, recurse, false);
+        deleteFilesInDirectory(directory, filter, logger, recurse, false);
     }
 
     /**
@@ -156,7 +157,7 @@ public class FileUtils {
     public static void deleteFilesInDirectory(final File directory, final FilenameFilter filter, final Logger logger, final boolean recurse, final boolean deleteEmptyDirectories) throws IOException {
         // ensure the specified directory is actually a directory and that it exists
         if (null != directory && directory.isDirectory()) {
-            final File ingestFiles[] = directory.listFiles();
+            final File[] ingestFiles = directory.listFiles();
             if (ingestFiles == null) {
                 // null if abstract pathname does not denote a directory, or if an I/O error occurs
                 throw new IOException("Unable to list directory content in: " + directory.getAbsolutePath());
@@ -164,12 +165,12 @@ public class FileUtils {
             for (File ingestFile : ingestFiles) {
                 boolean process = (filter == null) || filter.accept(directory, ingestFile.getName());
                 if (ingestFile.isFile() && process) {
-                    FileUtils.deleteFile(ingestFile, logger, 3);
+                    deleteFile(ingestFile, logger, 3);
                 }
                 if (ingestFile.isDirectory() && recurse) {
-                    FileUtils.deleteFilesInDirectory(ingestFile, filter, logger, recurse, deleteEmptyDirectories);
+                    deleteFilesInDirectory(ingestFile, filter, logger, recurse, deleteEmptyDirectories);
                     if (deleteEmptyDirectories && ingestFile.list().length == 0) {
-                        FileUtils.deleteFile(ingestFile, logger, 3);
+                        deleteFile(ingestFile, logger, 3);
                     }
                 }
             }
@@ -185,17 +186,17 @@ public class FileUtils {
      */
     public static void deleteFiles(final Collection<File> files, final boolean recurse) throws IOException {
         for (final File file : files) {
-            FileUtils.deleteFile(file, recurse);
+            deleteFile(file, recurse);
         }
     }
 
     public static void deleteFile(final File file, final boolean recurse) throws IOException {
         final File[] list = file.listFiles();
         if (file.isDirectory() && recurse && list != null) {
-            FileUtils.deleteFiles(Arrays.asList(list), recurse);
+            deleteFiles(Arrays.asList(list), recurse);
         }
         //now delete the file itself regardless of whether it is plain file or a directory
-        if (!FileUtils.deleteFile(file, null, 5)) {
+        if (!deleteFile(file, null, 5)) {
             throw new IOException("Unable to delete " + file.getAbsolutePath());
         }
     }
@@ -203,8 +204,7 @@ public class FileUtils {
     public static void sleepQuietly(final long millis) {
         try {
             Thread.sleep(millis);
-        } catch (final InterruptedException ex) {
-            /* do nothing */
+        } catch (final InterruptedException ignored) {
         }
     }
 }

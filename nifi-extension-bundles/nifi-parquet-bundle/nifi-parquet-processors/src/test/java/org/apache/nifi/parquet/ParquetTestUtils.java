@@ -16,16 +16,6 @@
  */
 package org.apache.nifi.parquet;
 
-import static java.util.stream.Collectors.toList;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.IntStream;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
@@ -35,6 +25,17 @@ import org.apache.hadoop.fs.Path;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.util.HadoopOutputFile;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.Map;
+import java.util.stream.IntStream;
+
+import static java.util.stream.Collectors.toList;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class ParquetTestUtils {
 
@@ -47,13 +48,7 @@ public class ParquetTestUtils {
     }
 
     public static Map<String, Object> createUser(int i) {
-        return new HashMap<String, Object>() {
-            {
-                put("name", "Bob" + i);
-                put("favorite_number", i);
-                put("favorite_color", "blue" + i);
-            }
-        };
+        return Map.of("name", "Bob" + i, "favorite_number", i, "favorite_color", "blue" + i);
     }
 
     private static File createUsersParquetFile(Collection<Map<String, Object>> users) throws IOException {
@@ -77,7 +72,7 @@ public class ParquetTestUtils {
 
     private static Schema getSchema() throws IOException {
         try (InputStream schemaInputStream = ParquetTestUtils.class.getClassLoader().getResourceAsStream("avro/user.avsc")) {
-            assert schemaInputStream != null;
+            assertNotNull(schemaInputStream);
             final String schemaString = IOUtils.toString(schemaInputStream, StandardCharsets.UTF_8);
             return new Schema.Parser().parse(schemaString);
         }

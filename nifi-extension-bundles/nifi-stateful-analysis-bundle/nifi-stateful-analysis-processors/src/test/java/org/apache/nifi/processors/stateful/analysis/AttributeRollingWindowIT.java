@@ -26,9 +26,7 @@ import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.junit.jupiter.api.condition.OS;
 import org.opentest4j.AssertionFailedError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -97,7 +95,7 @@ public class AttributeRollingWindowIT {
         runner.assertQueueEmpty();
 
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_FAILED_SET_STATE, 1);
-        MockFlowFile mockFlowFile = runner.getFlowFilesForRelationship(REL_FAILED_SET_STATE).get(0);
+        MockFlowFile mockFlowFile = runner.getFlowFilesForRelationship(REL_FAILED_SET_STATE).getFirst();
         mockFlowFile.assertAttributeNotExists(ROLLING_WINDOW_VALUE_KEY);
         mockFlowFile.assertAttributeNotExists(ROLLING_WINDOW_COUNT_KEY);
         mockFlowFile.assertAttributeNotExists(ROLLING_WINDOW_MEAN_KEY);
@@ -109,6 +107,9 @@ public class AttributeRollingWindowIT {
         return System.getProperty("os.name").toLowerCase().startsWith("windows");
     }
 
+    @EnabledIfSystemProperty(named = "nifi.test.unstable",
+            matches = "true",
+            disabledReason = "this test is too unstable in terms of timing on different size/types of testing envs")
     @Test
     public void testBasic() throws InterruptedException {
         final TestRunner runner = TestRunners.newTestRunner(AttributeRollingWindow.class);
@@ -124,7 +125,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("1".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        MockFlowFile flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        MockFlowFile flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "1.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "1");
@@ -135,7 +136,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("2".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-         flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "2.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "2");
@@ -148,7 +149,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("2".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "1.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "1");
@@ -159,7 +160,6 @@ public class AttributeRollingWindowIT {
     }
 
     @Test
-    @DisabledOnOs(OS.WINDOWS)
     public void testVerifyCount() throws InterruptedException {
         final TestRunner runner = TestRunners.newTestRunner(AttributeRollingWindow.class);
 
@@ -174,7 +174,7 @@ public class AttributeRollingWindowIT {
             runner.enqueue(String.valueOf(i).getBytes(), attributes);
             runner.run();
 
-            flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+            flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
             runner.clearTransferState();
             Double value = (double) i;
             Double mean = value / i;
@@ -196,7 +196,7 @@ public class AttributeRollingWindowIT {
 
             runner.run();
 
-            flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+            flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
             runner.clearTransferState();
             Double value = (double) i;
             Double mean = value / i;
@@ -212,7 +212,6 @@ public class AttributeRollingWindowIT {
     }
 
     @Test
-    @DisabledOnOs(OS.WINDOWS)
     public void testVerifyVarianceAndStandardDeviation() throws InterruptedException {
         final TestRunner runner = TestRunners.newTestRunner(AttributeRollingWindow.class);
 
@@ -229,7 +228,7 @@ public class AttributeRollingWindowIT {
             runner.enqueue(new byte[]{}, attributes);
             runner.run();
 
-            flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+            flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
             runner.clearTransferState();
             sum += i;
             double mean = sum / i;
@@ -252,7 +251,6 @@ public class AttributeRollingWindowIT {
             matches = "true",
             disabledReason = "this test is too unstable in terms of timing on different size/types of testing envs")
     @Test
-    @DisabledOnOs(OS.WINDOWS)
     public void testMicroBatching() throws InterruptedException {
         final TestRunner runner = TestRunners.newTestRunner(AttributeRollingWindow.class);
 
@@ -267,7 +265,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("1".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        MockFlowFile flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        MockFlowFile flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "2.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "1");
@@ -278,7 +276,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("2".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "4.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "2");
@@ -290,7 +288,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("2".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "6.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "3");
@@ -300,7 +298,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("2".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "8.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "4");
@@ -311,7 +309,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("2".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "6.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "3");
@@ -320,7 +318,7 @@ public class AttributeRollingWindowIT {
         runner.enqueue("2".getBytes(), attributes);
         runner.run(1);
         runner.assertAllFlowFilesTransferred(AttributeRollingWindow.REL_SUCCESS, 1);
-        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(AttributeRollingWindow.REL_SUCCESS).getFirst();
         runner.clearTransferState();
         flowFile.assertAttributeEquals(ROLLING_WINDOW_VALUE_KEY, "8.0");
         flowFile.assertAttributeEquals(ROLLING_WINDOW_COUNT_KEY, "4");

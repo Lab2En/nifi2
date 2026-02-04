@@ -17,7 +17,6 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlRootElement;
 
 @XmlRootElement(name = "replayLastEventRequestEntity")
@@ -36,7 +35,7 @@ public class ReplayLastEventRequestEntity extends Entity {
     }
 
     @Schema(description = "Which nodes are to replay their last provenance event.",
-        allowableValues = "ALL, PRIMARY"
+        allowableValues = {"ALL", "PRIMARY"}
     )
     public String getNodes() {
         return nodes;

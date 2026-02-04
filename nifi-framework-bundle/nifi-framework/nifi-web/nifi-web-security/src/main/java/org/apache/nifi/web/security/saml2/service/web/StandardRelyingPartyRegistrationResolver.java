@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.web.security.saml2.service.web;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.apache.nifi.web.security.saml2.registration.Saml2RegistrationProperty;
 import org.apache.nifi.web.servlet.shared.RequestUriBuilder;
 import org.slf4j.Logger;
@@ -26,10 +27,8 @@ import org.springframework.security.saml2.provider.service.registration.RelyingP
 import org.springframework.security.saml2.provider.service.web.RelyingPartyRegistrationResolver;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -45,17 +44,13 @@ public class StandardRelyingPartyRegistrationResolver implements Converter<HttpS
 
     private final RelyingPartyRegistrationRepository repository;
 
-    private final List<String> allowedContextPaths;
-
     /**
      * Standard Resolver with Registration Repository and Allowed Context Paths from application properties
      *
      * @param repository Relying Party Registration Repository required
-     * @param allowedContextPaths Allowed Context Paths required
      */
-    public StandardRelyingPartyRegistrationResolver(final RelyingPartyRegistrationRepository repository, final List<String> allowedContextPaths) {
+    public StandardRelyingPartyRegistrationResolver(final RelyingPartyRegistrationRepository repository) {
         this.repository = Objects.requireNonNull(repository, "Repository required");
-        this.allowedContextPaths = Objects.requireNonNull(allowedContextPaths, "Allowed Context Paths required");
     }
 
     /**
@@ -116,7 +111,7 @@ public class StandardRelyingPartyRegistrationResolver implements Converter<HttpS
     }
 
     private String getBaseUrl(final HttpServletRequest request) {
-        final URI requestUri = RequestUriBuilder.fromHttpServletRequest(request, allowedContextPaths).build();
+        final URI requestUri = RequestUriBuilder.fromHttpServletRequest(request).build();
         final String httpUrl = requestUri.toString();
         final String contextPath = request.getContextPath();
         return UriComponentsBuilder.fromUriString(httpUrl).path(contextPath).replaceQuery(null).fragment(null).build().toString();

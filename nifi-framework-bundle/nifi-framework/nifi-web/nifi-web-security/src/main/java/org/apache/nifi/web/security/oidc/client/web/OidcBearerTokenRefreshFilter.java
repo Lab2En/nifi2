@@ -16,6 +16,10 @@
  */
 package org.apache.nifi.web.security.oidc.client.web;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.apache.nifi.authorization.user.NiFiUser;
 import org.apache.nifi.authorization.user.NiFiUserUtils;
 import org.apache.nifi.web.security.cookie.ApplicationCookieName;
@@ -46,13 +50,9 @@ import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
@@ -72,7 +72,7 @@ public class OidcBearerTokenRefreshFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(OidcBearerTokenRefreshFilter.class);
 
-    private final AntPathRequestMatcher currentUserRequestMatcher = new AntPathRequestMatcher("/flow/current-user");
+    private final PathPatternRequestMatcher currentUserRequestMatcher = PathPatternRequestMatcher.withDefaults().matcher("/flow/current-user");
 
     private final ApplicationCookieService applicationCookieService = new StandardApplicationCookieService();
 

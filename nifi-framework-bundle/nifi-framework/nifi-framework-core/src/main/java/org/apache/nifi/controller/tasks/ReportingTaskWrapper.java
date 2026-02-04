@@ -20,10 +20,10 @@ import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.controller.ReportingTaskNode;
 import org.apache.nifi.controller.scheduling.LifecycleState;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.logging.StandardLoggingContext;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.nar.NarCloseable;
 import org.apache.nifi.processor.SimpleProcessLogger;
-import org.apache.nifi.logging.StandardLoggingContext;
 import org.apache.nifi.util.ReflectionUtils;
 
 public class ReportingTaskWrapper implements Runnable {
@@ -43,10 +43,10 @@ public class ReportingTaskWrapper implements Runnable {
         if (!lifecycleState.tryIncrementActiveThreadCount(null)) {
             return;
         }
-        try (final NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, taskNode.getReportingTask().getClass(), taskNode.getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, taskNode.getReportingTask().getClass(), taskNode.getIdentifier())) {
             taskNode.getReportingTask().onTrigger(taskNode.getReportingContext());
         } catch (final Throwable t) {
-            final ComponentLog componentLog = new SimpleProcessLogger(taskNode.getIdentifier(), taskNode.getReportingTask(), new StandardLoggingContext(null));
+            final ComponentLog componentLog = new SimpleProcessLogger(taskNode.getIdentifier(), taskNode.getReportingTask(), new StandardLoggingContext());
             componentLog.error("Error running task {}", taskNode.getReportingTask(), t);
             if (componentLog.isDebugEnabled()) {
                 componentLog.error("", t);
@@ -56,7 +56,7 @@ public class ReportingTaskWrapper implements Runnable {
                 // if the reporting task is no longer scheduled to run and this is the last thread,
                 // invoke the OnStopped methods
                 if (!lifecycleState.isScheduled() && lifecycleState.getActiveThreadCount() == 1 && lifecycleState.mustCallOnStoppedMethods()) {
-                    try (final NarCloseable x = NarCloseable.withComponentNarLoader(extensionManager, taskNode.getReportingTask().getClass(), taskNode.getIdentifier())) {
+                    try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, taskNode.getReportingTask().getClass(), taskNode.getIdentifier())) {
                         ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnStopped.class, taskNode.getReportingTask(), taskNode.getConfigurationContext());
                     }
                 }

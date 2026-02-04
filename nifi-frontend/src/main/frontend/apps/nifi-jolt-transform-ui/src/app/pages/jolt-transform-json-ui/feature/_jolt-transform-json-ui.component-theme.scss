@@ -18,7 +18,7 @@
 @use 'sass:map';
 @use '@angular/material' as mat;
 
-@mixin generate-theme($material-theme, $config) {
+@mixin generate-theme() {
     .jolt-transform-json-ui {
         @include mat.button-density(-1);
 
@@ -27,7 +27,7 @@
         }
 
         .input-editor {
-            .CodeMirror.cm-s-nifi {
+            .cm-s-nifi {
                 height: calc(100vh - 414px);
                 min-height: 81px;
             }

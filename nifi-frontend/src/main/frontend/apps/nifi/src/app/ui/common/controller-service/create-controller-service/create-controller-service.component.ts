@@ -15,30 +15,28 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
-import { MAT_DIALOG_DATA } from '@angular/material/dialog';
-import { CreateControllerServiceDialogRequest, DocumentedType } from '../../../../state/shared';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { DocumentedType } from '../../../../state/shared';
 import { ExtensionCreation } from '../../extension-creation/extension-creation.component';
 import { Observable } from 'rxjs';
 import { AsyncPipe } from '@angular/common';
 import { CloseOnEscapeDialog } from '@nifi/shared';
+import { ExtensionTypesLoadingStatus } from '../../../../state/extension-types';
 
 @Component({
     selector: 'create-controller-service',
-    standalone: true,
     imports: [ExtensionCreation, AsyncPipe],
     templateUrl: './create-controller-service.component.html',
     styleUrls: ['./create-controller-service.component.scss']
 })
 export class CreateControllerService extends CloseOnEscapeDialog {
     @Input() saving$!: Observable<boolean>;
+    @Input() controllerServiceTypes$!: Observable<DocumentedType[]>;
+    @Input() controllerServiceTypesLoadingStatus$!: Observable<ExtensionTypesLoadingStatus>;
     @Output() createControllerService: EventEmitter<DocumentedType> = new EventEmitter<DocumentedType>();
 
-    controllerServiceTypes: DocumentedType[];
-
-    constructor(@Inject(MAT_DIALOG_DATA) private dialogRequest: CreateControllerServiceDialogRequest) {
+    constructor() {
         super();
-        this.controllerServiceTypes = dialogRequest.controllerServiceTypes;
     }
 
     controllerServiceTypeSelected(controllerServiceType: DocumentedType): void {

@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.oauth2;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
@@ -25,6 +26,9 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.apache.nifi.annotation.behavior.DynamicProperties;
+import org.apache.nifi.annotation.behavior.DynamicProperty;
+import org.apache.nifi.annotation.behavior.SupportsSensitiveDynamicProperties;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnDisabled;
@@ -38,16 +42,17 @@ import org.apache.nifi.components.Validator;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.controller.VerifiableControllerService;
+import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.proxy.ProxyConfiguration;
+import org.apache.nifi.proxy.ProxyConfigurationService;
 import org.apache.nifi.proxy.ProxySpec;
 import org.apache.nifi.ssl.SSLContextProvider;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.Proxy;
@@ -55,19 +60,29 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.X509TrustManager;
 
+@SupportsSensitiveDynamicProperties
 @Tags({"oauth2", "provider", "authorization", "access token", "http"})
 @CapabilityDescription("Provides OAuth 2.0 access tokens that can be used as Bearer authorization header in HTTP requests." +
     " Can use either Resource Owner Password Credentials Grant or Client Credentials Grant." +
     " Client authentication can be done with either HTTP Basic authentication or in the request body.")
+@DynamicProperties({
+    @DynamicProperty(
+        name = "FORM.Request parameter name",
+        value = "Request parameter value",
+        expressionLanguageScope = ExpressionLanguageScope.ENVIRONMENT,
+        description = "Custom parameters that should be added to the body of the request against the token endpoint."
+    )
+})
 public class StandardOauth2AccessTokenProvider extends AbstractControllerService implements OAuth2AccessTokenProvider, VerifiableControllerService {
     public static final PropertyDescriptor AUTHORIZATION_SERVER_URL = new PropertyDescriptor.Builder()
-        .name("authorization-server-url")
-        .displayName("Authorization Server URL")
+        .name("Authorization Server URL")
         .description("The URL of the authorization server that issues access tokens.")
         .required(true)
         .addValidator(StandardValidators.URL_VALIDATOR)
@@ -75,8 +90,7 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         .build();
 
     public static final PropertyDescriptor CLIENT_AUTHENTICATION_STRATEGY = new PropertyDescriptor.Builder()
-        .name("client-authentication-strategy")
-        .displayName("Client Authentication Strategy")
+        .name("Client Authentication Strategy")
         .description("Strategy for authenticating the client against the OAuth2 token provider service.")
         .required(true)
         .allowableValues(ClientAuthenticationStrategy.class)
@@ -102,8 +116,7 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
     );
 
     public static final PropertyDescriptor GRANT_TYPE = new PropertyDescriptor.Builder()
-        .name("grant-type")
-        .displayName("Grant Type")
+        .name("Grant Type")
         .description("The OAuth2 Grant Type to be used when acquiring an access token.")
         .required(true)
         .allowableValues(RESOURCE_OWNER_PASSWORD_CREDENTIALS_GRANT_TYPE, CLIENT_CREDENTIALS_GRANT_TYPE, REFRESH_TOKEN_GRANT_TYPE)
@@ -111,8 +124,7 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         .build();
 
     public static final PropertyDescriptor USERNAME = new PropertyDescriptor.Builder()
-        .name("service-user-name")
-        .displayName("Username")
+        .name("Username")
         .description("Username on the service that is being accessed.")
         .dependsOn(GRANT_TYPE, RESOURCE_OWNER_PASSWORD_CREDENTIALS_GRANT_TYPE)
         .required(true)
@@ -121,8 +133,7 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         .build();
 
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
-        .name("service-password")
-        .displayName("Password")
+        .name("Password")
         .description("Password for the username on the service that is being accessed.")
         .dependsOn(GRANT_TYPE, RESOURCE_OWNER_PASSWORD_CREDENTIALS_GRANT_TYPE)
         .required(true)
@@ -131,9 +142,8 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         .build();
 
     public static final PropertyDescriptor REFRESH_TOKEN = new PropertyDescriptor.Builder()
-        .name("refresh-token")
-        .displayName("Refresh Token")
-        .description("Refresh Token.")
+        .name("Refresh Token")
+        .description("Refresh Token supports retrieving a new Access Token when configured")
         .dependsOn(GRANT_TYPE, REFRESH_TOKEN_GRANT_TYPE)
         .required(true)
         .sensitive(true)
@@ -142,16 +152,14 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         .build();
 
     public static final PropertyDescriptor CLIENT_ID = new PropertyDescriptor.Builder()
-        .name("client-id")
-        .displayName("Client ID")
+        .name("Client ID")
         .required(false)
         .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
         .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
         .build();
 
     public static final PropertyDescriptor CLIENT_SECRET = new PropertyDescriptor.Builder()
-        .name("client-secret")
-        .displayName("Client secret")
+        .name("Client Secret")
         .dependsOn(CLIENT_ID)
         .required(true)
         .sensitive(true)
@@ -159,41 +167,44 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         .build();
 
     public static final PropertyDescriptor SCOPE = new PropertyDescriptor.Builder()
-        .name("scope")
-        .displayName("Scope")
+        .name("Scope")
         .description("Space-delimited, case-sensitive list of scopes of the access request (as per the OAuth 2.0 specification)")
         .required(false)
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .build();
 
     public static final PropertyDescriptor RESOURCE = new PropertyDescriptor.Builder()
-        .name("resource")
-        .displayName("Resource")
+        .name("Resource")
         .description("Resource URI for the access token request defined in RFC 8707 Section 2")
         .required(false)
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .build();
 
     public static final PropertyDescriptor AUDIENCE = new PropertyDescriptor.Builder()
-        .name("audience")
-        .displayName("Audience")
+        .name("Audience")
         .description("Audience for the access token request defined in RFC 8693 Section 2.1")
         .required(false)
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .build();
 
     public static final PropertyDescriptor REFRESH_WINDOW = new PropertyDescriptor.Builder()
-        .name("refresh-window")
-        .displayName("Refresh Window")
+        .name("Refresh Window")
         .description("The service will attempt to refresh tokens expiring within the refresh window, subtracting the configured duration from the token expiration.")
         .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
         .defaultValue("0 s")
         .required(true)
         .build();
 
-    public static final PropertyDescriptor SSL_CONTEXT = new PropertyDescriptor.Builder()
-        .name("ssl-context-service")
-        .displayName("SSL Context Service")
+    public static final PropertyDescriptor DEFAULT_EXPIRATION_TIME = new PropertyDescriptor.Builder()
+        .name("Default Expiration Time")
+        .description("Expiration time to use when the returned access token does not include an expiration time.")
+        .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
+        .defaultValue("1 hour")
+        .required(true)
+        .build();
+
+    public static final PropertyDescriptor SSL_CONTEXT_SERVICE = new PropertyDescriptor.Builder()
+        .name("SSL Context Service")
         .addValidator(Validator.VALID)
         .identifiesControllerService(SSLContextProvider.class)
         .required(false)
@@ -205,12 +216,16 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         .required(true)
         .allowableValues(HttpProtocolStrategy.class)
         .defaultValue(HttpProtocolStrategy.H2_HTTP_1_1.getValue())
-        .dependsOn(SSL_CONTEXT)
+        .dependsOn(SSL_CONTEXT_SERVICE)
         .build();
 
     private static final ProxySpec[] PROXY_SPECS = {ProxySpec.HTTP_AUTH};
+    private static final List<String> OBSOLETE_CLIENT_SECRET_PROPERTY_NAMES = List.of(
+            "client-secret",
+            "Client secret"
+    );
 
-    private static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
         AUTHORIZATION_SERVER_URL,
         CLIENT_AUTHENTICATION_STRATEGY,
         GRANT_TYPE,
@@ -223,15 +238,18 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         RESOURCE,
         AUDIENCE,
         REFRESH_WINDOW,
-        SSL_CONTEXT,
+        DEFAULT_EXPIRATION_TIME,
+        SSL_CONTEXT_SERVICE,
         HTTP_PROTOCOL_STRATEGY,
         ProxyConfiguration.createProxyConfigPropertyDescriptor(PROXY_SPECS)
-    ));
+    );
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String FORM_PREFIX = "FORM.";
 
     public static final ObjectMapper ACCESS_DETAILS_MAPPER = new ObjectMapper()
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        .addMixIn(AccessToken.class, AccessTokenAdditionalParameters.class)
         .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
 
     private volatile String authorizationServerUrl;
@@ -247,41 +265,53 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
     private volatile String resource;
     private volatile String audience;
     private volatile long refreshWindowSeconds;
+    private volatile long defaultExpirationTimeSeconds;
+    private volatile Map<String, String> customFormParameters = new HashMap<>();
 
     private volatile AccessToken accessDetails;
 
     @Override
+    public void migrateProperties(final PropertyConfiguration propertyConfiguration) {
+        propertyConfiguration.renameProperty("authorization-server-url", AUTHORIZATION_SERVER_URL.getName());
+        propertyConfiguration.renameProperty("client-authentication-strategy", CLIENT_AUTHENTICATION_STRATEGY.getName());
+        propertyConfiguration.renameProperty("grant-type", GRANT_TYPE.getName());
+        propertyConfiguration.renameProperty("service-user-name", USERNAME.getName());
+        propertyConfiguration.renameProperty("service-password", PASSWORD.getName());
+        propertyConfiguration.renameProperty("refresh-token", REFRESH_TOKEN.getName());
+        propertyConfiguration.renameProperty("client-id", CLIENT_ID.getName());
+        OBSOLETE_CLIENT_SECRET_PROPERTY_NAMES.forEach(obsoletePropertyName -> propertyConfiguration.renameProperty(obsoletePropertyName, CLIENT_SECRET.getName()));
+        propertyConfiguration.renameProperty("scope", SCOPE.getName());
+        propertyConfiguration.renameProperty("resource", RESOURCE.getName());
+        propertyConfiguration.renameProperty("audience", AUDIENCE.getName());
+        propertyConfiguration.renameProperty("refresh-window", REFRESH_WINDOW.getName());
+        propertyConfiguration.renameProperty("ssl-context-service", SSL_CONTEXT_SERVICE.getName());
+        propertyConfiguration.renameProperty(ProxyConfigurationService.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyConfigurationService.PROXY_CONFIGURATION_SERVICE.getName());
+    }
+
+    @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
+    }
+
+    @Override
+    protected PropertyDescriptor getSupportedDynamicPropertyDescriptor(final String propertyDescriptorName) {
+        if (propertyDescriptorName.startsWith(FORM_PREFIX)) {
+            return new PropertyDescriptor.Builder()
+                .required(false)
+                .name(propertyDescriptorName)
+                .description("The value of the form parameter to add to the request body.")
+                .addValidator(StandardValidators.createAttributeExpressionLanguageValidator(AttributeExpression.ResultType.STRING, true))
+                .dynamic(true)
+                .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+                .build();
+        }
+
+        return null;
     }
 
     @OnEnabled
     public void onEnabled(ConfigurationContext context) {
-        authorizationServerUrl = context.getProperty(AUTHORIZATION_SERVER_URL).evaluateAttributeExpressions().getValue();
-
-        httpClient = createHttpClient(context);
-
-        clientAuthenticationStrategy = ClientAuthenticationStrategy.valueOf(context.getProperty(CLIENT_AUTHENTICATION_STRATEGY).getValue());
-        grantType = context.getProperty(GRANT_TYPE).getValue();
-        username = context.getProperty(USERNAME).evaluateAttributeExpressions().getValue();
-        password = context.getProperty(PASSWORD).getValue();
-        clientId = context.getProperty(CLIENT_ID).evaluateAttributeExpressions().getValue();
-        clientSecret = context.getProperty(CLIENT_SECRET).getValue();
-        scope = context.getProperty(SCOPE).getValue();
-        resource = context.getProperty(RESOURCE).getValue();
-        audience = context.getProperty(AUDIENCE).getValue();
-
-        if (context.getProperty(REFRESH_TOKEN).isSet()) {
-            String refreshToken = context.getProperty(REFRESH_TOKEN).evaluateAttributeExpressions().getValue();
-
-            AccessToken accessDetailsWithRefreshTokenOnly = new AccessToken();
-            accessDetailsWithRefreshTokenOnly.setRefreshToken(refreshToken);
-            accessDetailsWithRefreshTokenOnly.setExpiresIn(-1);
-
-            this.accessDetails = accessDetailsWithRefreshTokenOnly;
-        }
-
-        refreshWindowSeconds = context.getProperty(REFRESH_WINDOW).asTimePeriod(TimeUnit.SECONDS);
+        getProperties(context);
     }
 
     @OnDisabled
@@ -316,7 +346,7 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
     protected OkHttpClient createHttpClient(ConfigurationContext context) {
         OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder();
 
-        final SSLContextProvider sslContextProvider = context.getProperty(SSL_CONTEXT).asControllerService(SSLContextProvider.class);
+        final SSLContextProvider sslContextProvider = context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextProvider.class);
         if (sslContextProvider != null) {
             final X509TrustManager trustManager = sslContextProvider.createTrustManager();
             final SSLContext sslContext = sslContextProvider.createContext();
@@ -364,9 +394,82 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         return accessDetails;
     }
 
+    @Override
+    public void refreshAccessDetails() {
+        if (this.accessDetails == null || this.accessDetails.getRefreshToken() == null) {
+            acquireAccessDetails();
+        } else {
+            getLogger().debug("Refresh Access Token request started [{}]", authorizationServerUrl);
+
+            FormBody.Builder refreshTokenBuilder = new FormBody.Builder()
+                    .add("grant_type", "refresh_token")
+                    .add("refresh_token", this.accessDetails.getRefreshToken());
+
+            addFormData(refreshTokenBuilder);
+
+            AccessToken newAccessDetails = requestToken(refreshTokenBuilder);
+
+            if (newAccessDetails.getRefreshToken() == null) {
+                newAccessDetails.setRefreshToken(this.accessDetails.getRefreshToken());
+            }
+
+            this.accessDetails = newAccessDetails;
+        }
+    }
+
+    private void getProperties(ConfigurationContext context) {
+        authorizationServerUrl = context.getProperty(AUTHORIZATION_SERVER_URL).evaluateAttributeExpressions().getValue();
+
+        httpClient = createHttpClient(context);
+
+        clientAuthenticationStrategy = ClientAuthenticationStrategy.valueOf(context.getProperty(CLIENT_AUTHENTICATION_STRATEGY).getValue());
+        grantType = context.getProperty(GRANT_TYPE).getValue();
+        username = context.getProperty(USERNAME).evaluateAttributeExpressions().getValue();
+        password = context.getProperty(PASSWORD).getValue();
+        clientId = context.getProperty(CLIENT_ID).evaluateAttributeExpressions().getValue();
+        clientSecret = context.getProperty(CLIENT_SECRET).getValue();
+        scope = context.getProperty(SCOPE).getValue();
+        resource = context.getProperty(RESOURCE).getValue();
+        audience = context.getProperty(AUDIENCE).getValue();
+
+        if (context.getProperty(REFRESH_TOKEN).isSet()) {
+            String refreshToken = context.getProperty(REFRESH_TOKEN).evaluateAttributeExpressions().getValue();
+
+            AccessToken accessDetailsWithRefreshTokenOnly = new AccessToken();
+            accessDetailsWithRefreshTokenOnly.setRefreshToken(refreshToken);
+            accessDetailsWithRefreshTokenOnly.setExpiresIn(-1L);
+
+            this.accessDetails = accessDetailsWithRefreshTokenOnly;
+        }
+
+        refreshWindowSeconds = context.getProperty(REFRESH_WINDOW).asTimePeriod(TimeUnit.SECONDS);
+        defaultExpirationTimeSeconds = context.getProperty(DEFAULT_EXPIRATION_TIME).asTimePeriod(TimeUnit.SECONDS);
+
+        Map<String, String> formParameters = new HashMap<>();
+        for (PropertyDescriptor descriptor : context.getProperties().keySet()) {
+            if (!descriptor.isDynamic() || !descriptor.getName().startsWith(FORM_PREFIX)) {
+                continue;
+            }
+
+            String parameterName = descriptor.getName().substring(FORM_PREFIX.length());
+            if (parameterName.isEmpty()) {
+                continue;
+            }
+
+            String evaluatedValue = context.getProperty(descriptor).evaluateAttributeExpressions().getValue();
+            if (evaluatedValue != null) {
+                formParameters.put(parameterName, evaluatedValue);
+            }
+        }
+
+        customFormParameters = formParameters;
+    }
+
     private boolean isRefreshRequired() {
+        final long expirationTime = accessDetails.getExpiresIn() != null ? accessDetails.getExpiresIn() : defaultExpirationTimeSeconds;
+
         final Instant expirationRefreshTime = accessDetails.getFetchTime()
-                .plusSeconds(accessDetails.getExpiresIn())
+                .plusSeconds(expirationTime)
                 .minusSeconds(refreshWindowSeconds);
 
         return Instant.now().isAfter(expirationRefreshTime);
@@ -390,24 +493,6 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         this.accessDetails = requestToken(acquireTokenBuilder);
     }
 
-    private void refreshAccessDetails() {
-        getLogger().debug("Refresh Access Token request started [{}]", authorizationServerUrl);
-
-        FormBody.Builder refreshTokenBuilder = new FormBody.Builder()
-                .add("grant_type", "refresh_token")
-                .add("refresh_token", this.accessDetails.getRefreshToken());
-
-        addFormData(refreshTokenBuilder);
-
-        AccessToken newAccessDetails = requestToken(refreshTokenBuilder);
-
-        if (newAccessDetails.getRefreshToken() == null) {
-            newAccessDetails.setRefreshToken(this.accessDetails.getRefreshToken());
-        }
-
-        this.accessDetails = newAccessDetails;
-    }
-
     private void addFormData(FormBody.Builder formBuilder) {
         if (clientAuthenticationStrategy == ClientAuthenticationStrategy.REQUEST_BODY && clientId != null) {
             formBuilder.add("client_id", clientId);
@@ -422,6 +507,7 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         if (audience != null) {
             formBuilder.add("audience", audience);
         }
+        customFormParameters.forEach(formBuilder::add);
     }
 
     private AccessToken requestToken(FormBody.Builder formBuilder) {
@@ -458,6 +544,8 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
 
     @Override
     public List<ConfigVerificationResult> verify(ConfigurationContext context, ComponentLog verificationLogger, Map<String, String> variables) {
+        getProperties(context);
+
         ConfigVerificationResult.Builder builder = new ConfigVerificationResult.Builder()
                 .verificationStepName("Can acquire token");
 
@@ -470,5 +558,11 @@ public class StandardOauth2AccessTokenProvider extends AbstractControllerService
         }
 
         return Arrays.asList(builder.build());
+    }
+
+    interface AccessTokenAdditionalParameters {
+
+        @JsonAnySetter
+        void setAdditionalParameter(String key, Object value);
     }
 }

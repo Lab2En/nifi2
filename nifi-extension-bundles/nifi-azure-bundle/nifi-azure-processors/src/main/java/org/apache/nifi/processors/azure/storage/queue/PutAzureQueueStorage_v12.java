@@ -31,8 +31,6 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.proxy.ProxyConfiguration;
-import org.apache.nifi.proxy.ProxySpec;
 
 import java.io.ByteArrayOutputStream;
 import java.time.Duration;
@@ -47,7 +45,6 @@ import java.util.concurrent.TimeUnit;
 public class PutAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
     public static final PropertyDescriptor MESSAGE_TIME_TO_LIVE = new PropertyDescriptor.Builder()
             .name("Message Time To Live")
-            .displayName("Message Time To Live")
             .description("Maximum time to allow the message to be in the queue")
             .required(true)
             .defaultValue("7 days")
@@ -56,7 +53,6 @@ public class PutAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
 
     public static final PropertyDescriptor VISIBILITY_TIMEOUT = new PropertyDescriptor.Builder()
             .name("Visibility Timeout")
-            .displayName("Visibility Timeout")
             .description("The length of time during which the message will be invisible after it is read. " +
                     "If the processing unit fails to delete the message after it is read, then the message will reappear in the queue.")
             .required(true)
@@ -64,15 +60,14 @@ public class PutAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
             .build();
 
-    private static final ProxySpec[] PROXY_SPECS = {ProxySpec.HTTP, ProxySpec.SOCKS};
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             QUEUE_NAME,
             ENDPOINT_SUFFIX,
             STORAGE_CREDENTIALS_SERVICE,
             MESSAGE_TIME_TO_LIVE,
             VISIBILITY_TIMEOUT,
             REQUEST_TIMEOUT,
-            ProxyConfiguration.createProxyConfigPropertyDescriptor(PROXY_SPECS)
+            PROXY_CONFIGURATION_SERVICE
     );
 
     // 7 days is the maximum timeout as per https://learn.microsoft.com/en-us/rest/api/storageservices/get-messages
@@ -80,7 +75,7 @@ public class PutAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -153,6 +148,6 @@ public class PutAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
 
         session.transfer(flowFile, REL_SUCCESS);
         final long transmissionMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
-        session.getProvenanceReporter().send(flowFile, queueClient.getQueueUrl().toString(), transmissionMillis);
+        session.getProvenanceReporter().send(flowFile, queueClient.getQueueUrl(), transmissionMillis);
     }
 }

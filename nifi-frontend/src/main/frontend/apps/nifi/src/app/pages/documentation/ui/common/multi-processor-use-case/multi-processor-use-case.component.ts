@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input, viewChild } from '@angular/core';
+import { Component, Input, viewChild, inject } from '@angular/core';
 import { ComponentType, NiFiCommon } from '@nifi/shared';
 import { DocumentedType } from '../../../../../state/shared';
 import { Observable } from 'rxjs';
@@ -27,24 +27,20 @@ import { selectProcessorFromType } from '../../../../../state/extension-types/ex
 import { RouterLink } from '@angular/router';
 import { MultiProcessorUseCase } from '../../../state/processor-definition';
 import { MatIconButton } from '@angular/material/button';
-import { InputRequirementComponent } from '../input-requirement/input-requirement.component';
 
 @Component({
     selector: 'multi-processor-use-case',
-    standalone: true,
     templateUrl: './multi-processor-use-case.component.html',
-    imports: [MatAccordion, MatExpansionModule, MatIconButton, InputRequirementComponent, AsyncPipe, RouterLink],
+    imports: [MatAccordion, MatExpansionModule, MatIconButton, AsyncPipe, RouterLink],
     styleUrl: './multi-processor-use-case.component.scss'
 })
 export class MultiProcessorUseCaseComponent {
+    private store = inject<Store<NiFiState>>(Store);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() multiProcessorUseCases: MultiProcessorUseCase[] | null = null;
 
     useCaseAccordion = viewChild.required(MatAccordion);
-
-    constructor(
-        private store: Store<NiFiState>,
-        private nifiCommon: NiFiCommon
-    ) {}
 
     expand(): void {
         this.useCaseAccordion().openAll();

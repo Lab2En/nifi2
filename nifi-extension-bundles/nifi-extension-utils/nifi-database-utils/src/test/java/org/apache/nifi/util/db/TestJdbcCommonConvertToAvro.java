@@ -31,6 +31,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -45,8 +46,8 @@ import static org.mockito.Mockito.when;
 
 public class TestJdbcCommonConvertToAvro {
 
-    private final static boolean SIGNED = true;
-    private final static boolean UNSIGNED = false;
+    private static final boolean SIGNED = true;
+    private static final boolean UNSIGNED = false;
 
     private static int[] range(int start, int end) {
         return IntStream.rangeClosed(start, end).toArray();
@@ -58,9 +59,9 @@ public class TestJdbcCommonConvertToAvro {
         typeWithPrecisionRange.put(SMALLINT, range(1, 5));
         typeWithPrecisionRange.put(INTEGER, range(1, 9));
 
-        ArrayList<TestParams> params = new ArrayList<>();
+        List<TestParams> params = new ArrayList<>();
 
-        typeWithPrecisionRange.forEach( (sqlType, precisions) -> {
+        typeWithPrecisionRange.forEach((sqlType, precisions) -> {
             for (int precision : precisions) {
                 params.add(new TestParams(sqlType, precision, SIGNED));
                 params.add(new TestParams(sqlType, precision, UNSIGNED));
@@ -88,21 +89,18 @@ public class TestJdbcCommonConvertToAvro {
             this.signed = signed;
         }
         private String humanReadableType() {
-            switch (sqlType) {
-                case TINYINT:
-                    return "TINYINT";
-                case INTEGER:
-                    return "INTEGER";
-                case SMALLINT:
-                    return "SMALLINT";
-                case BIGINT:
-                    return "BIGINT";
-                default:
-                    return "UNKNOWN - ADD TO LIST";
-            }
+            return switch (sqlType) {
+                case TINYINT -> "TINYINT";
+                case INTEGER -> "INTEGER";
+                case SMALLINT -> "SMALLINT";
+                case BIGINT -> "BIGINT";
+                default -> "UNKNOWN - ADD TO LIST";
+            };
         }
         private String humanReadableSigned() {
-            if (signed) return "SIGNED";
+            if (signed) {
+                return "SIGNED";
+            }
             return "UNSIGNED";
         }
         @Override

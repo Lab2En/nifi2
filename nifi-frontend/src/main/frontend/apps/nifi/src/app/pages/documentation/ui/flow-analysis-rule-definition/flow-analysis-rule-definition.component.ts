@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy } from '@angular/core';
+import { Component, OnDestroy, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
@@ -33,15 +33,16 @@ import { selectFlowAnalysisRuleDefinitionState } from '../../state/flow-analysis
 
 @Component({
     selector: 'flow-analysis-rule-definition',
-    standalone: true,
     imports: [NgxSkeletonLoaderModule, ConfigurableExtensionDefinitionComponent],
     templateUrl: './flow-analysis-rule-definition.component.html',
     styleUrl: './flow-analysis-rule-definition.component.scss'
 })
 export class FlowAnalysisRuleDefinition implements OnDestroy {
+    private store = inject<Store<NiFiState>>(Store);
+
     flowAnalysisRuleDefinitionState: FlowAnalysisRuleDefinitionState | null = null;
 
-    constructor(private store: Store<NiFiState>) {
+    constructor() {
         this.store
             .select(selectDefinitionCoordinatesFromRouteForComponentType(ComponentType.FlowAnalysisRule))
             .pipe(

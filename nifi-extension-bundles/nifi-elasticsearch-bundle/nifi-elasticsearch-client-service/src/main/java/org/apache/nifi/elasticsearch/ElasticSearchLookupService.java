@@ -29,6 +29,7 @@ import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.lookup.LookupFailureException;
 import org.apache.nifi.lookup.LookupService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.record.path.FieldValue;
 import org.apache.nifi.record.path.RecordPath;
@@ -47,6 +48,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -57,15 +59,13 @@ import java.util.stream.Stream;
         description = "Retrieves an object using JSONPath from the result document and places it in the return Record at the specified Record Path.")
 public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryService implements LookupService<Record> {
     public static final PropertyDescriptor CLIENT_SERVICE = new PropertyDescriptor.Builder()
-        .name("el-rest-client-service")
-        .displayName("Client Service")
+        .name("Client Service")
         .description("An ElasticSearch client service to use for running queries.")
         .identifiesControllerService(ElasticSearchClientService.class)
         .required(true)
         .build();
     public static final PropertyDescriptor INDEX = new PropertyDescriptor.Builder()
-        .name("el-lookup-index")
-        .displayName("Index")
+        .name("Index")
         .description("The name of the index to read from")
         .required(true)
         .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -73,8 +73,7 @@ public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryServi
         .build();
 
     public static final PropertyDescriptor TYPE = new PropertyDescriptor.Builder()
-        .name("el-lookup-type")
-        .displayName("Type")
+        .name("Type")
         .description("The type of this document (used by Elasticsearch for indexing and searching)")
         .required(false)
         .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -87,7 +86,7 @@ public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryServi
     private String type;
     private ObjectMapper mapper;
 
-    private volatile ConcurrentHashMap<String, RecordPath> recordPathMappings;
+    private volatile ConcurrentMap<String, RecordPath> recordPathMappings;
 
     private final List<PropertyDescriptor> descriptors;
 
@@ -177,6 +176,14 @@ public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryServi
         }
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("el-rest-client-service", CLIENT_SERVICE.getName());
+        config.renameProperty("el-lookup-index", INDEX.getName());
+        config.renameProperty("el-lookup-type", TYPE.getName());
+    }
+
     private void validateCoordinates(final Map<String, Object> coordinates) throws LookupFailureException {
         final List<String> reasons = new ArrayList<>();
 
@@ -196,13 +203,8 @@ public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryServi
 
     @SuppressWarnings("unchecked")
     private Record getById(final String _id, final Map<String, String> context) throws IOException, LookupFailureException, SchemaNotFoundException {
-        final Map<String, Object> query = new HashMap<String, Object>() {{
-            put("query", new HashMap<String, Object>() {{
-                put("match", new HashMap<String, String>() {{
-                    put("_id", _id);
-                }});
-            }});
-        }};
+        final Map<String, Object> query = Map.of(
+            "query", Map.of("match", Map.of("_id", _id)));
 
         final String json = mapper.writeValueAsString(query);
 
@@ -214,12 +216,12 @@ public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryServi
             return null;
         }
 
-        final Map<String, Object> source = (Map<String, Object>) response.getHits().get(0).get("_source");
+        final Map<String, Object> source = (Map<String, Object>) response.getHits().getFirst().get("_source");
 
         final RecordSchema toUse = getSchema(context, source, null);
 
         Record record = new MapRecord(toUse, source);
-        if (recordPathMappings.size() > 0) {
+        if (!recordPathMappings.isEmpty()) {
             record = applyMappings(record, source);
         }
 
@@ -229,37 +231,20 @@ public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryServi
     Map<String, Object> getNested(final String key, final Object value) {
         final String path = key.substring(0, key.lastIndexOf("."));
 
-        return new HashMap<String, Object>() {{
-            put("path", path);
-            put("query", new HashMap<String, Object>() {{
-                put("match", new HashMap<String, Object>() {{
-                    put(key, value);
-                }});
-            }});
-        }};
+        return Map.of("path", path, "query", Map.of("match", Map.of(key, value)));
     }
 
     private Map<String, Object> buildQuery(final Map<String, Object> coordinates) {
-        final Map<String, Object> query = new HashMap<String, Object>() {{
-            put("bool", new HashMap<String, Object>() {{
-                put("must", coordinates.entrySet().stream()
-                    .map(e -> new HashMap<String, Object>() {{
-                        if (e.getKey().contains(".")) {
-                            put("nested", getNested(e.getKey(), e.getValue()));
-                        } else {
-                            put("match", new HashMap<String, Object>() {{
-                                put(e.getKey(), e.getValue());
-                            }});
-                        }
-                    }}).collect(Collectors.toList())
-                );
-            }});
-        }};
+        final Map<String, Object> query = Map.of("bool",
+                Map.of("must", coordinates.entrySet().stream()
+                        .map(e -> e.getKey().contains(".")
+                                        ? Map.of("nested", getNested(e.getKey(), e.getValue()))
+                                        : Map.of("match", Map.of(e.getKey(), e.getValue()))
+                        ).toList()
+                )
+        );
 
-        return new HashMap<String, Object>() {{
-            put("size", 1);
-            put("query", query);
-        }};
+        return Map.of("size", 1, "query", query);
     }
 
     @SuppressWarnings("unchecked")
@@ -271,10 +256,10 @@ public class ElasticSearchLookupService extends JsonInferenceSchemaRegistryServi
             if (response.getNumberOfHits() == 0) {
                 return null;
             } else {
-                final Map<String, Object> source = (Map<String, Object>) response.getHits().get(0).get("_source");
+                final Map<String, Object> source = (Map<String, Object>) response.getHits().getFirst().get("_source");
                 final RecordSchema toUse = getSchema(context, source, null);
                 Record record = new MapRecord(toUse, source);
-                if (recordPathMappings.size() > 0) {
+                if (!recordPathMappings.isEmpty()) {
                     record = applyMappings(record, source);
                 }
 

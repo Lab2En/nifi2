@@ -16,16 +16,15 @@
  */
 package org.apache.nifi.web.security.jwt.resolver;
 
-import org.apache.commons.lang3.StringUtils;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.web.security.http.SecurityCookieName;
 import org.apache.nifi.web.security.http.SecurityHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.web.util.WebUtils;
-
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * Bearer Token Resolver prefers the HTTP Authorization Header and then evaluates the Authorization Cookie when found
@@ -45,8 +44,8 @@ public class StandardBearerTokenResolver implements BearerTokenResolver {
         String bearerToken = null;
 
         final String header = request.getHeader(SecurityHeader.AUTHORIZATION.getHeader());
-        if (StringUtils.startsWithIgnoreCase(header, BEARER_PREFIX)) {
-            bearerToken = StringUtils.removeStartIgnoreCase(header, BEARER_PREFIX);
+        if (Strings.CI.startsWith(header, BEARER_PREFIX)) {
+            bearerToken = Strings.CI.removeStart(header, BEARER_PREFIX);
         } else {
             final Cookie cookie = WebUtils.getCookie(request, SecurityCookieName.AUTHORIZATION_BEARER.getName());
             if (cookie == null) {

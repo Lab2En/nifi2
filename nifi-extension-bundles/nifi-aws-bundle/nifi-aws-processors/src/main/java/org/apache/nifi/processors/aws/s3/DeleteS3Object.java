@@ -16,10 +16,6 @@
  */
 package org.apache.nifi.processors.aws.s3;
 
-import com.amazonaws.AmazonServiceException;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.DeleteObjectRequest;
-import com.amazonaws.services.s3.model.DeleteVersionRequest;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
@@ -31,15 +27,21 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.util.StandardValidators;
+import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static org.apache.nifi.processors.aws.util.RegionUtilV1.S3_REGION;
-
+import static org.apache.nifi.processors.aws.region.RegionUtil.CUSTOM_REGION_WITH_FF_EL;
+import static org.apache.nifi.processors.aws.region.RegionUtil.REGION;
+import static org.apache.nifi.processors.aws.s3.util.S3Util.getResourceUrl;
+import static org.apache.nifi.processors.aws.s3.util.S3Util.nullIfBlank;
 
 @SupportsBatching
 @WritesAttributes({
@@ -48,7 +50,7 @@ import static org.apache.nifi.processors.aws.util.RegionUtilV1.S3_REGION;
         @WritesAttribute(attribute = "s3.statusCode", description = "The HTTP error code (if available) from the failed operation"),
         @WritesAttribute(attribute = "s3.errorCode", description = "The S3 moniker of the failed operation"),
         @WritesAttribute(attribute = "s3.errorMessage", description = "The S3 exception message from the failed operation")})
-@SeeAlso({PutS3Object.class, FetchS3Object.class, ListS3.class, CopyS3Object.class, GetS3ObjectMetadata.class, TagS3Object.class})
+@SeeAlso({PutS3Object.class, FetchS3Object.class, ListS3.class, CopyS3Object.class, GetS3ObjectMetadata.class, GetS3ObjectTags.class, TagS3Object.class})
 @Tags({"Amazon", "S3", "AWS", "Archive", "Delete"})
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @CapabilityDescription("Deletes a file from an Amazon S3 Bucket. If attempting to delete a file that does not exist, FlowFile is routed to success.")
@@ -62,31 +64,35 @@ public class DeleteS3Object extends AbstractS3Processor {
             .required(false)
             .build();
 
-    public static final List<PropertyDescriptor> properties = List.of(
+    public static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             BUCKET_WITH_DEFAULT_VALUE,
             KEY,
             AWS_CREDENTIALS_PROVIDER_SERVICE,
-            S3_REGION,
+            REGION,
+            CUSTOM_REGION_WITH_FF_EL,
             TIMEOUT,
             VERSION_ID,
-            FULL_CONTROL_USER_LIST,
-            READ_USER_LIST,
-            WRITE_USER_LIST,
-            READ_ACL_LIST,
-            WRITE_ACL_LIST,
-            OWNER,
             SSL_CONTEXT_SERVICE,
             ENDPOINT_OVERRIDE,
-            SIGNER_OVERRIDE,
-            S3_CUSTOM_SIGNER_CLASS_NAME,
-            S3_CUSTOM_SIGNER_MODULE_LOCATION,
-        PROXY_CONFIGURATION_SERVICE);
+            PROXY_CONFIGURATION_SERVICE
+    );
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+
+        config.removeProperty(FULL_CONTROL_USER_LIST.getName());
+        config.removeProperty(READ_USER_LIST.getName());
+        config.removeProperty(OBSOLETE_WRITE_USER_LIST);
+        config.removeProperty(READ_ACL_LIST.getName());
+        config.removeProperty(WRITE_ACL_LIST.getName());
+        config.removeProperty(OBSOLETE_OWNER);
+    }
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) {
@@ -95,9 +101,9 @@ public class DeleteS3Object extends AbstractS3Processor {
             return;
         }
 
-        final AmazonS3Client s3;
+        final S3Client client;
         try {
-            s3 = getS3Client(context, flowFile.getAttributes());
+            client = getClient(context, flowFile.getAttributes());
         } catch (Exception e) {
             getLogger().error("Failed to initialize S3 client", e);
             flowFile = session.penalize(flowFile);
@@ -113,24 +119,23 @@ public class DeleteS3Object extends AbstractS3Processor {
 
         // Deletes a key on Amazon S3
         try {
-            if (versionId == null) {
-                final DeleteObjectRequest r = new DeleteObjectRequest(bucket, key);
-                // This call returns success if object doesn't exist
-                s3.deleteObject(r);
-            } else {
-                final DeleteVersionRequest r = new DeleteVersionRequest(bucket, key, versionId);
-                s3.deleteVersion(r);
-            }
-        } catch (final IllegalArgumentException | AmazonServiceException ase) {
-            flowFile = extractExceptionDetails(ase, session, flowFile);
-            getLogger().error("Failed to delete S3 Object for {}; routing to failure", flowFile, ase);
+            final DeleteObjectRequest request = DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .versionId(nullIfBlank(versionId))
+                    .build();
+            // This call returns success if object doesn't exist
+            client.deleteObject(request);
+        } catch (final IllegalArgumentException | SdkException e) {
+            flowFile = extractExceptionDetails(e, session, flowFile);
+            getLogger().error("Failed to delete S3 Object for {}; routing to failure", flowFile, e);
             flowFile = session.penalize(flowFile);
             session.transfer(flowFile, REL_FAILURE);
             return;
         }
 
         session.transfer(flowFile, REL_SUCCESS);
-        final String url = s3.getResourceUrl(bucket, key);
+        final String url = getResourceUrl(client, bucket, key);
         final long transferMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
         getLogger().info("Successfully delete S3 Object for {} in {} millis; routing to success", flowFile, transferMillis);
         session.getProvenanceReporter().invokeRemoteProcess(flowFile, url, "Object deleted");

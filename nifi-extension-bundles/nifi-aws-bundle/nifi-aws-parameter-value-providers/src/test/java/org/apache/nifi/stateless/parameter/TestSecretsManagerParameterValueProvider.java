@@ -16,10 +16,6 @@
  */
 package org.apache.nifi.stateless.parameter;
 
-import com.amazonaws.services.secretsmanager.AWSSecretsManager;
-import com.amazonaws.services.secretsmanager.model.GetSecretValueRequest;
-import com.amazonaws.services.secretsmanager.model.GetSecretValueResult;
-import com.amazonaws.services.secretsmanager.model.ResourceNotFoundException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -33,6 +29,10 @@ import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
+import software.amazon.awssdk.services.secretsmanager.model.ResourceNotFoundException;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -63,7 +63,7 @@ public class TestSecretsManagerParameterValueProvider {
     private AwsSecretsManagerParameterValueProvider provider;
 
     @Mock
-    private AWSSecretsManager secretsManager;
+    private SecretsManagerClient secretsManager;
 
     @BeforeEach
     public void init() throws IOException {
@@ -122,6 +122,34 @@ public class TestSecretsManagerParameterValueProvider {
         assertNull(provider.getParameterValue("Does not exist", PARAMETER));
     }
 
+    @Test
+    public void testGetParameterValueWithNonStringValues() {
+        // JSON with string, number, boolean, and null values
+        final String secretString = "{ \"stringParam\": \"stringValue\", \"numberParam\": 5432, \"booleanParam\": true, \"nullParam\": null }";
+        mockGetSecretValueWithRawJson("MixedSecret", secretString);
+
+        provider.init(createContext(CONFIG_FILE, null, Collections.emptyMap()));
+
+        assertEquals("stringValue", provider.getParameterValue("MixedSecret", "stringParam"));
+        assertEquals("5432", provider.getParameterValue("MixedSecret", "numberParam"));
+        assertEquals("true", provider.getParameterValue("MixedSecret", "booleanParam"));
+        assertNull(provider.getParameterValue("MixedSecret", "nullParam"));
+    }
+
+    @Test
+    public void testGetParameterValueWithNestedObjectsReturnsNull() {
+        // JSON with nested objects and arrays that should return null
+        final String secretString = "{ \"validParam\": \"validValue\", \"nestedObject\": { \"inner\": \"value\" }, \"arrayParam\": [1, 2, 3] }";
+        mockGetSecretValueWithRawJson("NestedSecret", secretString);
+
+        provider.init(createContext(CONFIG_FILE, null, Collections.emptyMap()));
+
+        assertEquals("validValue", provider.getParameterValue("NestedSecret", "validParam"));
+        // Nested objects and arrays should return null
+        assertNull(provider.getParameterValue("NestedSecret", "nestedObject"));
+        assertNull(provider.getParameterValue("NestedSecret", "arrayParam"));
+    }
+
     private void runGetParameterValueTest(final String configFileName) throws JsonProcessingException {
         runGetParameterValueTest(CONTEXT, PARAMETER, configFileName);
     }
@@ -144,14 +172,22 @@ public class TestSecretsManagerParameterValueProvider {
     private void mockGetSecretValue(final String context, final String parameterName, final String secretValue, final boolean hasSecretString, final boolean resourceNotFound)
             throws JsonProcessingException {
         if (resourceNotFound) {
-            when(secretsManager.getSecretValue(argThat(matchesGetSecretValueRequest(context)))).thenThrow(new ResourceNotFoundException("Not found"));
+            when(secretsManager.getSecretValue(argThat(matchesGetSecretValueRequest(context)))).thenThrow(ResourceNotFoundException.builder().message("Not found").build());
         } else {
-            GetSecretValueResult result = new GetSecretValueResult();
+            GetSecretValueResponse.Builder builder = GetSecretValueResponse.builder();
             if (hasSecretString) {
-                result = result.withSecretString(getSecretString(parameterName, secretValue));
+                builder.secretString(getSecretString(parameterName, secretValue));
             }
-            when(secretsManager.getSecretValue(argThat(matchesGetSecretValueRequest(context)))).thenReturn(result);
+            GetSecretValueResponse response = builder.build();
+            when(secretsManager.getSecretValue(argThat(matchesGetSecretValueRequest(context)))).thenReturn(response);
         }
+    }
+
+    private void mockGetSecretValueWithRawJson(final String context, final String rawJsonSecretString) {
+        final GetSecretValueResponse response = GetSecretValueResponse.builder()
+                .secretString(rawJsonSecretString)
+                .build();
+        when(secretsManager.getSecretValue(argThat(matchesGetSecretValueRequest(context)))).thenReturn(response);
     }
 
     private static String getSecretName(final String context) {
@@ -217,7 +253,7 @@ public class TestSecretsManagerParameterValueProvider {
 
         @Override
         public boolean matches(final GetSecretValueRequest argument) {
-            return argument != null && argument.getSecretId().equals(secretId);
+            return argument != null && argument.secretId().equals(secretId);
         }
     }
 }

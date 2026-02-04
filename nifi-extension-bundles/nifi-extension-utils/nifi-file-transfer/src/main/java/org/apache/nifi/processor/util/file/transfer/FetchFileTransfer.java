@@ -40,7 +40,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,6 +59,7 @@ public abstract class FetchFileTransfer extends AbstractProcessor {
     public static final AllowableValue COMPLETION_MOVE = new AllowableValue("Move File", "Move File", "Move the file to the directory specified by the <Move Destination Directory> property");
     public static final AllowableValue COMPLETION_DELETE = new AllowableValue("Delete File", "Delete File", "Deletes the original file from the remote system");
     public static final String FAILURE_REASON_ATTRIBUTE = "fetch.failure.reason";
+    public static final String OLD_FILE_NOT_FOUND_LOG_LEVEL_PROPERTY_NAME = "fetchfiletransfer-notfound-loglevel";
 
     public static final PropertyDescriptor HOSTNAME = new PropertyDescriptor.Builder()
         .name("Hostname")
@@ -117,8 +117,7 @@ public abstract class FetchFileTransfer extends AbstractProcessor {
         .build();
 
     public static final PropertyDescriptor FILE_NOT_FOUND_LOG_LEVEL = new PropertyDescriptor.Builder()
-        .displayName("Log level when file not found")
-        .name("fetchfiletransfer-notfound-loglevel")
+        .name("Log Level When File Not Found")
         .description("Log level to use in case the file does not exist when the processor is triggered")
         .allowableValues(LogLevel.values())
         .defaultValue(LogLevel.ERROR.toString()) // backward compatibility support
@@ -142,6 +141,22 @@ public abstract class FetchFileTransfer extends AbstractProcessor {
         .description("Any FlowFile that could not be fetched from the remote server due to insufficient permissions will be transferred to this Relationship.")
         .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        HOSTNAME,
+        UNDEFAULTED_PORT,
+        REMOTE_FILENAME,
+        COMPLETION_STRATEGY,
+        MOVE_DESTINATION_DIR,
+        MOVE_CREATE_DIRECTORY
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        REL_SUCCESS,
+        REL_NOT_FOUND,
+        REL_PERMISSION_DENIED,
+        REL_COMMS_FAILURE
+    );
+
     private final Map<Tuple<String, Integer>, BlockingQueue<FileTransferIdleWrapper>> fileTransferMap = new HashMap<>();
     private final long IDLE_CONNECTION_MILLIS = TimeUnit.SECONDS.toMillis(10L); // amount of time to wait before closing an idle connection
     private volatile long lastClearTime = System.currentTimeMillis();
@@ -149,12 +164,7 @@ public abstract class FetchFileTransfer extends AbstractProcessor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_SUCCESS);
-        relationships.add(REL_NOT_FOUND);
-        relationships.add(REL_PERMISSION_DENIED);
-        relationships.add(REL_COMMS_FAILURE);
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @OnScheduled
@@ -203,14 +213,7 @@ public abstract class FetchFileTransfer extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(HOSTNAME);
-        properties.add(UNDEFAULTED_PORT);
-        properties.add(REMOTE_FILENAME);
-        properties.add(COMPLETION_STRATEGY);
-        properties.add(MOVE_DESTINATION_DIR);
-        properties.add(MOVE_CREATE_DIRECTORY);
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -343,7 +346,7 @@ public abstract class FetchFileTransfer extends AbstractProcessor {
         if (COMPLETION_DELETE.getValue().equalsIgnoreCase(completionStrategy)) {
             try {
                 transfer.deleteFile(flowFile, null, filename);
-            } catch (final FileNotFoundException e) {
+            } catch (final FileNotFoundException ignored) {
                 // file doesn't exist -- effectively the same as removing it. Move on.
             } catch (final IOException ioe) {
                 getLogger().warn("Successfully fetched the content for {} from {}:{}{} but failed to remove the remote file due to {}",

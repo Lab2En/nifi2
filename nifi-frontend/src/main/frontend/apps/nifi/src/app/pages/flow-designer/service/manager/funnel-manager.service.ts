@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable, OnDestroy } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 import * as d3 from 'd3';
 import { PositionBehavior } from '../behavior/position-behavior.service';
 import { CanvasState } from '../../state';
@@ -29,11 +29,16 @@ import {
     selectTransitionRequired
 } from '../../state/flow/flow.selectors';
 import { Dimension } from '../../state/shared';
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType } from '@nifi/shared';
 import { filter, Subject, switchMap, takeUntil } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class FunnelManager implements OnDestroy {
+    private store = inject<Store<CanvasState>>(Store);
+    private positionBehavior = inject(PositionBehavior);
+    private selectableBehavior = inject(SelectableBehavior);
+    private editableBehavior = inject(EditableBehavior);
+
     private destroyed$: Subject<boolean> = new Subject();
 
     private dimensions: Dimension = {
@@ -44,13 +49,6 @@ export class FunnelManager implements OnDestroy {
     private funnels: [] = [];
     private funnelContainer: any = null;
     private transitionRequired = false;
-
-    constructor(
-        private store: Store<CanvasState>,
-        private positionBehavior: PositionBehavior,
-        private selectableBehavior: SelectableBehavior,
-        private editableBehavior: EditableBehavior
-    ) {}
 
     private select() {
         return this.funnelContainer.selectAll('g.funnel').data(this.funnels, function (d: any) {

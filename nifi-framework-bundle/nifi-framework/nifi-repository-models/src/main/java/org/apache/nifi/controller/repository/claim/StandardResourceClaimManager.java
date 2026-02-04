@@ -156,7 +156,7 @@ public class StandardResourceClaimManager implements ResourceClaimManager {
             try {
                 while (!destructableClaims.offer(claim, 30, TimeUnit.MINUTES)) {
                 }
-            } catch (final InterruptedException ie) {
+            } catch (final InterruptedException ignored) {
             }
         }
     }
@@ -175,7 +175,7 @@ public class StandardResourceClaimManager implements ResourceClaimManager {
                 destination.add(firstClaim);
                 destructableClaims.drainTo(destination, maxElements - 1);
             }
-        } catch (final InterruptedException e) {
+        } catch (final InterruptedException ignored) {
         }
     }
 
@@ -203,6 +203,7 @@ public class StandardResourceClaimManager implements ResourceClaimManager {
         }
     }
 
+    @Override
     public boolean isDestructable(final ResourceClaim claim) {
         if (claim == null) {
             return false;

@@ -73,7 +73,10 @@ import java.util.regex.Pattern;
 @TriggerWhenEmpty
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
 @Tags({"local", "files", "filesystem", "ingest", "ingress", "get", "source", "input"})
-@CapabilityDescription("Creates FlowFiles from files in a directory.  NiFi will ignore files it doesn't have at least read permissions for.")
+@CapabilityDescription("""
+        Reads files from a directory and streams them into the contents of new FlowFiles.
+        NiFi will ignore files it doesn't have at least read permissions for.
+        """)
 @WritesAttributes({
     @WritesAttribute(attribute = "filename", description = "The filename is set to the name of the file on disk"),
     @WritesAttribute(attribute = "path", description = "The path is set to the relative path of the file's directory on disk. For example, "
@@ -119,10 +122,12 @@ public class GetFile extends AbstractProcessor {
             .build();
     public static final PropertyDescriptor KEEP_SOURCE_FILE = new PropertyDescriptor.Builder()
             .name("Keep Source File")
-            .description("If true, the file is not deleted after it has been copied to the Content Repository; "
-                    + "this causes the file to be picked up continually and is useful for testing purposes.  "
-                    + "If not keeping original NiFi will need write permissions on the directory it is pulling "
-                    + "from otherwise it will ignore the file.")
+            .description("""
+                    If true, the file is not deleted after it has been copied to the Content Repository;
+                    this causes the file to be picked up continually and is useful for testing purposes.
+                    If not keeping the source file, NiFi will need write permissions on the directory
+                    where the file is located in order to delete it; otherwise the file will be ignored.
+                    """)
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("false")
@@ -175,10 +180,12 @@ public class GetFile extends AbstractProcessor {
             .build();
     public static final PropertyDescriptor POLLING_INTERVAL = new PropertyDescriptor.Builder()
             .name("Polling Interval")
-            .description("Indicates how long to wait before performing a directory listing")
+            .description("""
+                    Indicates the amount of time between performing directory listings to find new files
+                    that appear in the Input Directory""")
             .required(true)
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
-            .defaultValue("0 sec")
+            .defaultValue("30 sec")
             .build();
     public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Batch Size")
@@ -188,7 +195,7 @@ public class GetFile extends AbstractProcessor {
             .defaultValue("10")
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             DIRECTORY,
             FILE_FILTER,
             PATH_FILTER,
@@ -226,7 +233,7 @@ public class GetFile extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -286,7 +293,7 @@ public class GetFile extends AbstractProcessor {
                 }
 
                 //Verify that if we're not keeping original that we have write permissions on the directory the file is in
-                if (keepOriginal == false && !Files.isWritable(file.toPath().getParent())) {
+                if (!keepOriginal && !Files.isWritable(file.toPath().getParent())) {
                     return false;
                 }
                 return filePattern.matcher(file.getName()).matches();
@@ -334,14 +341,14 @@ public class GetFile extends AbstractProcessor {
                     attributes.put(FILE_LAST_MODIFY_TIME_ATTRIBUTE, dateTimeFormatter.format(attrs.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault())));
                     attributes.put(FILE_CREATION_TIME_ATTRIBUTE, dateTimeFormatter.format(attrs.creationTime().toInstant().atZone(ZoneId.systemDefault())));
                     attributes.put(FILE_LAST_ACCESS_TIME_ATTRIBUTE, dateTimeFormatter.format(attrs.lastAccessTime().toInstant().atZone(ZoneId.systemDefault())));
-                } catch (Exception ignore) {
+                } catch (Exception ignored) {
                 } // allow other attributes if these fail
             }
             if (store.supportsFileAttributeView("owner")) {
                 try {
                     FileOwnerAttributeView view = Files.getFileAttributeView(file, FileOwnerAttributeView.class);
                     attributes.put(FILE_OWNER_ATTRIBUTE, view.getOwner().getName());
-                } catch (Exception ignore) {
+                } catch (Exception ignored) {
                 } // allow other attributes if these fail
             }
             if (store.supportsFileAttributeView("posix")) {
@@ -349,10 +356,10 @@ public class GetFile extends AbstractProcessor {
                     PosixFileAttributeView view = Files.getFileAttributeView(file, PosixFileAttributeView.class);
                     attributes.put(FILE_PERMISSIONS_ATTRIBUTE, PosixFilePermissions.toString(view.readAttributes().permissions()));
                     attributes.put(FILE_GROUP_ATTRIBUTE, view.readAttributes().group().getName());
-                } catch (Exception ignore) {
+                } catch (Exception ignored) {
                 } // allow other attributes if these fail
             }
-        } catch (IOException ioe) {
+        } catch (IOException ignored) {
             // well then this FlowFile gets none of these attributes
         }
 
@@ -420,9 +427,6 @@ public class GetFile extends AbstractProcessor {
                 final Path filePath = file.toPath();
                 final Path relativePath = directoryPath.relativize(filePath.getParent());
                 String relativePathString = relativePath.toString() + "/";
-                if (relativePathString.isEmpty()) {
-                    relativePathString = "./";
-                }
                 final Path absPath = filePath.toAbsolutePath();
                 final String absPathString = absPath.getParent().toString() + "/";
 

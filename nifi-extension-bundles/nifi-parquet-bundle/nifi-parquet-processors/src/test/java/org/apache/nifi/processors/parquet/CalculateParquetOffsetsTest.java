@@ -17,19 +17,6 @@
 
 package org.apache.nifi.processors.parquet;
 
-import static java.util.Collections.singletonMap;
-import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.PROP_RECORDS_PER_SPLIT;
-import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.PROP_ZERO_CONTENT_OUTPUT;
-import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.REL_SUCCESS;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.apache.nifi.parquet.utils.ParquetAttribute;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
@@ -37,17 +24,27 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static java.util.Collections.singletonMap;
+import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.PROP_RECORDS_PER_SPLIT;
+import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.PROP_ZERO_CONTENT_OUTPUT;
+import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.REL_SUCCESS;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 public class CalculateParquetOffsetsTest {
 
     private static final Path PARQUET_PATH = Paths.get("src/test/resources/TestParquetReader.parquet");
     private static final Path NOT_PARQUET_PATH = Paths.get("src/test/resources/core-site.xml");
 
-    private static final Map<String, String> PRESERVED_ATTRIBUTES = new HashMap<String, String>() {
-        {
-            put("foo", "bar");
-            put("example", "value");
-        }
-    };
+    private static final Map<String, String> PRESERVED_ATTRIBUTES = Map.of("foo", "bar", "example", "value");
 
     private TestRunner runner;
 
@@ -65,11 +62,11 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "10");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
-        results.get(0).assertContentEquals(PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "10");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
+        results.getFirst().assertContentEquals(PARQUET_PATH);
 
-        PRESERVED_ATTRIBUTES.forEach(results.get(0)::assertAttributeEquals);
+        PRESERVED_ATTRIBUTES.forEach(results.getFirst()::assertAttributeEquals);
     }
 
     @Test
@@ -99,9 +96,9 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "5");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
-        results.get(0).assertContentEquals(PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "5");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
+        results.getFirst().assertContentEquals(PARQUET_PATH);
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "5");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "5");
@@ -119,9 +116,9 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "8");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
-        results.get(0).assertContentEquals(PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "8");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
+        results.getFirst().assertContentEquals(PARQUET_PATH);
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "2");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "8");
@@ -133,20 +130,18 @@ public class CalculateParquetOffsetsTest {
     @Test
     public void testSubPartitioningWithCountAndOffset() throws Exception {
         runner.setProperty(PROP_RECORDS_PER_SPLIT, "3");
-        runner.enqueue(PARQUET_PATH, createAttributes(new HashMap<String, String>() {
-            {
-                put(ParquetAttribute.RECORD_COUNT, "7");
-                put(ParquetAttribute.RECORD_OFFSET, "2");
-            }
-        }));
+        runner.enqueue(PARQUET_PATH, createAttributes(Map.of(
+                ParquetAttribute.RECORD_COUNT, "7",
+                ParquetAttribute.RECORD_OFFSET, "2"
+        )));
         runner.run();
         runner.assertAllFlowFilesTransferred(REL_SUCCESS, 3);
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "2");
-        results.get(0).assertContentEquals(PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "2");
+        results.getFirst().assertContentEquals(PARQUET_PATH);
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "5");
@@ -168,9 +163,9 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "2");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
-        results.get(0).assertContentEquals(PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "2");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
+        results.getFirst().assertContentEquals(PARQUET_PATH);
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "1");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "2");
@@ -188,9 +183,9 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "5");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "3");
-        results.get(0).assertContentEquals(PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "5");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "3");
+        results.getFirst().assertContentEquals(PARQUET_PATH);
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "2");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "8");
@@ -209,9 +204,9 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "8");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
-        results.get(0).assertContentEquals("");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "8");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
+        results.getFirst().assertContentEquals("");
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "2");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "8");
@@ -247,9 +242,9 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
-        results.get(0).assertContentEquals("");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
+        results.getFirst().assertContentEquals("");
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "1");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "3");
@@ -261,20 +256,18 @@ public class CalculateParquetOffsetsTest {
     @Test
     public void testEmptyInputWithOffsetAndCountAttributes() {
         runner.setProperty(PROP_RECORDS_PER_SPLIT, "3");
-        runner.enqueue("", createAttributes(new HashMap<String, String>() {
-            {
-                put(ParquetAttribute.RECORD_OFFSET, "2");
-                put(ParquetAttribute.RECORD_COUNT, "4");
-            }
-        }));
+        runner.enqueue("", createAttributes(Map.of(
+                ParquetAttribute.RECORD_OFFSET, "2",
+                ParquetAttribute.RECORD_COUNT, "4"
+        )));
         runner.run();
         runner.assertAllFlowFilesTransferred(REL_SUCCESS, 2);
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "2");
-        results.get(0).assertContentEquals("");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "2");
+        results.getFirst().assertContentEquals("");
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "1");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "5");
@@ -310,9 +303,9 @@ public class CalculateParquetOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
-        results.get(0).assertContentEquals(NOT_PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "0");
+        results.getFirst().assertContentEquals(NOT_PARQUET_PATH);
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "1");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "3");
@@ -324,20 +317,18 @@ public class CalculateParquetOffsetsTest {
     @Test
     public void testUnrecognizedInputWithOffsetAndCountAttributes() throws IOException {
         runner.setProperty(PROP_RECORDS_PER_SPLIT, "3");
-        runner.enqueue(NOT_PARQUET_PATH, createAttributes(new HashMap<String, String>() {
-            {
-                put(ParquetAttribute.RECORD_OFFSET, "2");
-                put(ParquetAttribute.RECORD_COUNT, "4");
-            }
-        }));
+        runner.enqueue(NOT_PARQUET_PATH, createAttributes(Map.of(
+                ParquetAttribute.RECORD_OFFSET, "2",
+                ParquetAttribute.RECORD_COUNT, "4"
+        )));
         runner.run();
         runner.assertAllFlowFilesTransferred(REL_SUCCESS, 2);
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "2");
-        results.get(0).assertContentEquals(NOT_PARQUET_PATH);
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "3");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "2");
+        results.getFirst().assertContentEquals(NOT_PARQUET_PATH);
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "1");
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_OFFSET, "5");
@@ -346,9 +337,8 @@ public class CalculateParquetOffsetsTest {
         results.forEach(flowFile -> PRESERVED_ATTRIBUTES.forEach(flowFile::assertAttributeEquals));
     }
 
-    private HashMap<String, String> createAttributes(Map<String, String> additionalAttributes) {
-        return new HashMap<String, String>(PRESERVED_ATTRIBUTES) {{
-            putAll(additionalAttributes);
-        }};
+    private Map<String, String> createAttributes(Map<String, String> additionalAttributes) {
+        return Stream.concat(PRESERVED_ATTRIBUTES.entrySet().stream(), additionalAttributes.entrySet().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 }

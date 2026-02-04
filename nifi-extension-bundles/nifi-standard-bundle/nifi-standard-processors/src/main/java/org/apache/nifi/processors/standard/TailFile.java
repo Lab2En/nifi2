@@ -41,13 +41,13 @@ import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.components.state.StateMap;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.standard.TailFile.TailFileState.StateKeys;
 import org.apache.nifi.scheduling.SchedulingStrategy;
@@ -141,8 +141,7 @@ public class TailFile extends AbstractProcessor {
             + "data in the File to Tail that has already been written.");
 
     static final PropertyDescriptor BASE_DIRECTORY = new Builder()
-            .name("tail-base-directory")
-            .displayName("Base directory")
+            .name("Base Directory")
             .description("Base directory used to look for files to tail. This property is required when using Multifile mode.")
             .expressionLanguageSupported(ENVIRONMENT)
             .addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
@@ -150,21 +149,19 @@ public class TailFile extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor MODE = new Builder()
-            .name("tail-mode")
-            .displayName("Tailing mode")
+            .name("Tailing Mode")
             .description("Mode to use: single file will tail only one file, multiple file will look for a list of file. In Multiple mode"
                     + " the Base directory is required.")
             .expressionLanguageSupported(NONE)
             .required(true)
             .allowableValues(MODE_SINGLEFILE, MODE_MULTIFILE)
-            .defaultValue(MODE_SINGLEFILE.getValue())
+            .defaultValue(MODE_SINGLEFILE)
             .build();
 
     static final PropertyDescriptor FILENAME = new Builder()
-            .displayName("File(s) to Tail")
-            .name("File to Tail")
+            .name("Files to Tail")
             .description("Path of the file to tail in case of single file mode. If using multifile mode, regular expression to find files "
-                    + "to tail in the base directory. In case recursivity is set to true, the regular expression will be used to match the "
+                    + "to tail in the base directory. In case recursive is set to true, the regular expression will be used to match the "
                     + "path starting from the base directory (see additional details for examples).")
             .expressionLanguageSupported(ENVIRONMENT)
             .addValidator(StandardValidators.createRegexValidator(0, Integer.MAX_VALUE, true))
@@ -197,13 +194,12 @@ public class TailFile extends AbstractProcessor {
         .build();
 
     static final PropertyDescriptor STATE_LOCATION = new Builder()
-            .displayName("State Location")
-            .name("File Location") //retained name of property for backward compatibility of configs
+            .name("State Location")
             .description("Specifies where the state is located either local or cluster so that state can be stored "
                     + "appropriately in order to ensure that all data is consumed without duplicating data upon restart of NiFi")
             .required(true)
             .allowableValues(LOCATION_LOCAL, LOCATION_REMOTE)
-            .defaultValue(LOCATION_LOCAL.getValue())
+            .defaultValue(LOCATION_LOCAL)
             .build();
 
     static final PropertyDescriptor START_POSITION = new Builder()
@@ -211,13 +207,12 @@ public class TailFile extends AbstractProcessor {
             .description("When the Processor first begins to tail data, this property specifies where the Processor should begin reading data. Once data has been ingested from a file, "
                     + "the Processor will continue from the last point from which it has received data.")
             .allowableValues(START_BEGINNING_OF_TIME, START_CURRENT_FILE, START_CURRENT_TIME)
-            .defaultValue(START_CURRENT_FILE.getValue())
+            .defaultValue(START_CURRENT_FILE)
             .required(true)
             .build();
 
     static final PropertyDescriptor RECURSIVE = new Builder()
-            .name("tailfile-recursive-lookup")
-            .displayName("Recursive lookup")
+            .name("Recursive Lookup")
             .description("When using Multiple files mode, this property defines if files must be listed recursively or not"
                     + " in the base directory.")
             .allowableValues("true", "false")
@@ -226,8 +221,7 @@ public class TailFile extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor LOOKUP_FREQUENCY = new Builder()
-            .name("tailfile-lookup-frequency")
-            .displayName("Lookup frequency")
+            .name("Lookup Frequency")
             .description("Only used in Multiple files mode. It specifies the minimum "
                     + "duration the processor will wait before listing again the files to tail.")
             .required(false)
@@ -236,8 +230,7 @@ public class TailFile extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor MAXIMUM_AGE = new Builder()
-            .name("tailfile-maximum-age")
-            .displayName("Maximum age")
+            .name("Maximum Age")
             .description("Only used in Multiple files mode. It specifies the necessary "
                     + "minimum duration to consider that no new messages will be appended in a file regarding its last "
                     + "modification date. This should not be set too low to avoid duplication of data in case new messages "
@@ -248,8 +241,7 @@ public class TailFile extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor REREAD_ON_NUL = new Builder()
-            .name("reread-on-nul")
-            .displayName("Reread when NUL encountered")
+            .name("Reread on NUL Encountered")
             .description("If this option is set to 'true', when a NUL character is read, the processor will yield and try to read the same part again later. "
                 + "(Note: Yielding may delay the processing of other files tailed by this processor, not just the one with the NUL character.) "
                 + "The purpose of this flag is to allow users to handle cases where reading a file may return temporary NUL values. "
@@ -263,7 +255,6 @@ public class TailFile extends AbstractProcessor {
 
     static final PropertyDescriptor LINE_START_PATTERN = new Builder()
         .name("Line Start Pattern")
-        .displayName("Line Start Pattern")
         .description("A Regular Expression to match against the start of a log line. If specified, any line that matches the expression, and any following lines, will be buffered until another line" +
             " matches the Expression. In doing this, we can avoid splitting apart multi-line messages in the file. This assumes that the data is in UTF-8 format.")
         .required(false)
@@ -274,7 +265,6 @@ public class TailFile extends AbstractProcessor {
 
     static final PropertyDescriptor MAX_BUFFER_LENGTH = new Builder()
         .name("Max Buffer Size")
-        .displayName("Max Buffer Size")
         .description("When using the Line Start Pattern, there may be situations in which the data in the file being tailed never matches the Regular Expression. This would result in the processor " +
             "buffering all data from the tailed file, which can quickly exhaust the heap. To avoid this, the Processor will buffer only up to this amount of data before flushing the buffer, even if" +
             " it means ingesting partial data from the file.")
@@ -286,16 +276,15 @@ public class TailFile extends AbstractProcessor {
         .build();
 
     static final PropertyDescriptor PRE_ALLOCATED_BUFFER_SIZE = new Builder()
-            .name("pre-allocated-buffer-size")
-            .displayName("Pre-Allocated Buffer Size")
-            .description("Sets the amount of memory that is pre-allocated for each tailed file.")
+            .name("Preallocated Buffer Size")
+            .description("Sets the amount of memory that is preallocated for each tailed file.")
             .required(true)
             .addValidator(DATA_SIZE_VALIDATOR)
             .expressionLanguageSupported(NONE)
             .defaultValue("65536 B")
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             MODE,
             FILENAME,
             ROLLING_FILENAME_PATTERN,
@@ -317,7 +306,9 @@ public class TailFile extends AbstractProcessor {
             .description("All FlowFiles are routed to this Relationship.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        REL_SUCCESS
+    );
 
     private volatile Map<String, TailFileObject> states = new HashMap<>();
     private final AtomicLong lastLookup = new AtomicLong(0L);
@@ -331,7 +322,7 @@ public class TailFile extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -398,10 +389,13 @@ public class TailFile extends AbstractProcessor {
 
     @OnScheduled
     public void compileRegex(final ProcessContext context) {
-        final String regex = context.getProperty(LINE_START_PATTERN).getValue();
-        lineStartPattern = (regex == null) ? null : Pattern.compile(regex);
+        if (context.getProperty(MODE).getValue().equals(MODE_SINGLEFILE.getValue())) {
+            final String patternString = context.getProperty(LINE_START_PATTERN).getValue();
+            lineStartPattern = patternString == null ? null : Pattern.compile(patternString);
+        }
 
-        this.maxBufferBytes = context.getProperty(MAX_BUFFER_LENGTH).asDataSize(DataUnit.B).longValue();
+        this.maxBufferBytes = lineStartPattern == null
+                ? Long.MAX_VALUE : context.getProperty(MAX_BUFFER_LENGTH).asDataSize(DataUnit.B).longValue();
         this.preAllocatedBufferSize = context.getProperty(PRE_ALLOCATED_BUFFER_SIZE).asDataSize(DataUnit.B).intValue();
     }
 
@@ -717,6 +711,19 @@ public class TailFile extends AbstractProcessor {
         }
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("tail-base-directory", BASE_DIRECTORY.getName());
+        config.renameProperty("tail-mode", MODE.getName());
+        config.renameProperty("File to Tail", FILENAME.getName());
+        config.renameProperty("File Location", STATE_LOCATION.getName());
+        config.renameProperty("tailfile-recursive-lookup", RECURSIVE.getName());
+        config.renameProperty("tailfile-lookup-frequency", LOOKUP_FREQUENCY.getName());
+        config.renameProperty("tailfile-maximum-age", MAXIMUM_AGE.getName());
+        config.renameProperty("reread-on-nul", REREAD_ON_NUL.getName());
+        config.renameProperty("pre-allocated-buffer-size", PRE_ALLOCATED_BUFFER_SIZE.getName());
+    }
+
     private List<String> collectKeysToBeRemoved(Map<String, String> sessionStates) {
         List<String> keysToRemove = new ArrayList<>();
         List<String> filesToRemove = sessionStates.entrySet().stream()
@@ -897,15 +904,12 @@ public class TailFile extends AbstractProcessor {
         final boolean reReadOnNul = context.getProperty(REREAD_ON_NUL).asBoolean();
 
         AtomicReference<NulCharacterEncounteredException> abort = new AtomicReference<>();
-        flowFile = session.write(flowFile, new OutputStreamCallback() {
-            @Override
-            public void process(final OutputStream rawOut) throws IOException {
-                try (final OutputStream out = new BufferedOutputStream(rawOut)) {
-                    positionHolder.set(readLines(fileReader, currentState.getBuffer(), out, chksum, reReadOnNul));
-                } catch (NulCharacterEncounteredException e) {
-                    positionHolder.set(e.getRePos());
-                    abort.set(e);
-                }
+        flowFile = session.write(flowFile, rawOut -> {
+            try (final OutputStream out = new BufferedOutputStream(rawOut)) {
+                positionHolder.set(readLines(fileReader, currentState.getBuffer(), out, chksum, reReadOnNul));
+            } catch (NulCharacterEncounteredException e) {
+                positionHolder.set(e.getRePos());
+                abort.set(e);
             }
         });
 
@@ -1031,6 +1035,7 @@ public class TailFile extends AbstractProcessor {
                                 throw new NulCharacterEncounteredException(rePos);
                             }
                         }
+                        // fall through - intentional since if reReadOnNul is false, ASCII NUL is to be treated as a regular character
                         default: {
                             if (seenCR) {
                                 seenCR = false;

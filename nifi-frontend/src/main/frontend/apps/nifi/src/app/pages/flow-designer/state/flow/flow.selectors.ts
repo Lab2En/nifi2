@@ -18,17 +18,23 @@
 import { flowFeatureKey, FlowState, SelectedComponent } from './index';
 import { createSelector } from '@ngrx/store';
 import { CanvasState, selectCanvasState } from '../index';
-import { selectCurrentRoute } from '@nifi/shared';
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType, selectCurrentRoute } from '@nifi/shared';
 
 export const selectFlowState = createSelector(selectCanvasState, (state: CanvasState) => state[flowFeatureKey]);
 
 export const selectFlowLoadingStatus = createSelector(selectFlowState, (state: FlowState) => state.status);
 
+export const selectHasFlowData = createSelector(
+    selectFlowState,
+    (state: FlowState) => state.flow.processGroupFlow.id !== ''
+);
+
 export const selectChangeVersionRequest = createSelector(
     selectFlowState,
     (state: FlowState) => state.changeVersionRequest
 );
+
+export const selectPollingProcessor = createSelector(selectFlowState, (state: FlowState) => state.pollingProcessor);
 
 export const selectSaving = createSelector(selectFlowState, (state: FlowState) => state.saving);
 
@@ -36,9 +42,12 @@ export const selectVersionSaving = createSelector(selectFlowState, (state: FlowS
 
 export const selectCurrentProcessGroupId = createSelector(selectFlowState, (state: FlowState) => state.id);
 
-export const selectRefreshRpgDetails = createSelector(selectFlowState, (state: FlowState) => state.refreshRpgDetails);
+export const selectCurrentProcessGroupRevision = createSelector(
+    selectFlowState,
+    (state: FlowState) => state.flow.revision
+);
 
-export const selectCopiedSnippet = createSelector(selectFlowState, (state: FlowState) => state.copiedSnippet);
+export const selectRefreshRpgDetails = createSelector(selectFlowState, (state: FlowState) => state.refreshRpgDetails);
 
 export const selectCurrentParameterContext = createSelector(
     selectFlowState,
@@ -248,6 +257,8 @@ export const selectControllerBulletins = createSelector(
     (state: FlowState) => state.controllerBulletins.bulletins // TODO - include others?
 );
 
+export const selectRegistryClients = createSelector(selectFlowState, (state: FlowState) => state.registryClients);
+
 export const selectNavigationCollapsed = createSelector(
     selectFlowState,
     (state: FlowState) => state.navigationCollapsed
@@ -258,11 +269,11 @@ export const selectOperationCollapsed = createSelector(selectFlowState, (state: 
 export const selectMaxZIndex = (componentType: ComponentType.Connection | ComponentType.Label) => {
     if (componentType === ComponentType.Connection) {
         return createSelector(selectConnections, (connections: any[]) =>
-            connections.reduce((maxZIndex, connection) => Math.max(maxZIndex, connection.zIndex), -1)
+            connections.reduce((maxZIndex, connection) => Math.max(maxZIndex, connection.zIndex), 0)
         );
     } else {
         return createSelector(selectLabels, (labels: any[]) =>
-            labels.reduce((maxZIndex, label) => Math.max(maxZIndex, label.zIndex), -1)
+            labels.reduce((maxZIndex, label) => Math.max(maxZIndex, label.zIndex), 0)
         );
     }
 };

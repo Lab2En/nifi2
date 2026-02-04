@@ -16,15 +16,15 @@
  */
 package org.apache.nifi.registry;
 
-import org.apache.nifi.extension.manifest.ExtensionManifest;
-
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.SchemaOutputResolver;
-import javax.xml.transform.Result;
-import javax.xml.transform.stream.StreamResult;
+import org.apache.nifi.extension.manifest.ExtensionManifest;
+
 import java.io.File;
 import java.io.IOException;
+import javax.xml.transform.Result;
+import javax.xml.transform.stream.StreamResult;
 
 /**
  * This class can be used generate an XSD for the ExtensionManifest object model.
@@ -42,6 +42,7 @@ public class GenerateExtensionManifestSchema {
 
     public static class MySchemaOutputResolver extends SchemaOutputResolver {
 
+        @Override
         public Result createOutput(String namespaceURI, String suggestedFileName) throws IOException {
             File file = new File("./target", suggestedFileName);
             StreamResult result = new StreamResult(file);

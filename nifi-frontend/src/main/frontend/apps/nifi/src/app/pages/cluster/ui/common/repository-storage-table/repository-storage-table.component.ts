@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { ClusterTable } from '../cluster-table/cluster-table.component';
 import { ClusterNodeRepositoryStorageUsage } from '../../../../../state/system-diagnostics';
 import { MatSortModule, Sort } from '@angular/material/sort';
@@ -25,12 +25,13 @@ import { MatTableModule } from '@angular/material/table';
 
 @Component({
     selector: 'repository-storage-table',
-    standalone: true,
     imports: [ClusterTableFilter, MatTableModule, MatSortModule],
     templateUrl: './repository-storage-table.component.html',
     styleUrl: './repository-storage-table.component.scss'
 })
 export class RepositoryStorageTable extends ClusterTable<ClusterNodeRepositoryStorageUsage> {
+    private nifiCommon = inject(NiFiCommon);
+
     filterableColumns: ClusterTableFilterColumn[] = [{ key: 'address', label: 'Address' }];
     displayedColumns: string[] = ['address', 'totalSpace', 'usedSpace', 'freeSpace', 'utilization'];
 
@@ -46,10 +47,6 @@ export class RepositoryStorageTable extends ClusterTable<ClusterNodeRepositorySt
                 this.displayedColumns.splice(1, 1);
             }
         }
-    }
-
-    constructor(private nifiCommon: NiFiCommon) {
-        super();
     }
 
     override filterPredicate(item: ClusterNodeRepositoryStorageUsage, filter: string): boolean {

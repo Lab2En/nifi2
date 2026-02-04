@@ -39,7 +39,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import javax.sql.DataSource;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -47,6 +46,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -169,18 +169,6 @@ public class TestDatabaseAccessPolicyProvider extends DatabaseBaseTest {
     private void createPolicy(final String identifier, final String resource, final RequestAction action) {
         final String policySql = "INSERT INTO APP_POLICY(IDENTIFIER, RESOURCE, ACTION) VALUES (?, ?, ?)";
         final int rowsUpdated = jdbcTemplate.update(policySql, identifier, resource, action.toString());
-        assertEquals(1, rowsUpdated);
-    }
-
-    private void addUserToPolicy(final String policyIdentifier, final String userIdentifier) {
-        final String policyUserSql = "INSERT INTO APP_POLICY_USER(POLICY_IDENTIFIER, USER_IDENTIFIER) VALUES (?, ?)";
-        final int rowsUpdated = jdbcTemplate.update(policyUserSql, policyIdentifier, userIdentifier);
-        assertEquals(1, rowsUpdated);
-    }
-
-    private void addGroupToPolicy(final String policyIdentifier, final String groupIdentifier) {
-        final String policyGroupSql = "INSERT INTO APP_POLICY_GROUP(POLICY_IDENTIFIER, GROUP_IDENTIFIER) VALUES (?, ?)";
-        final int rowsUpdated = jdbcTemplate.update(policyGroupSql, policyIdentifier, groupIdentifier);
         assertEquals(1, rowsUpdated);
     }
 
@@ -379,7 +367,7 @@ public class TestDatabaseAccessPolicyProvider extends DatabaseBaseTest {
 
         final Set<AccessPolicy> policies = policyProvider.getAccessPolicies();
         assertNotNull(policies);
-        assertTrue(policies.size() > 0);
+        assertFalse(policies.isEmpty());
 
         final AccessPolicy existingPolicy = policies.stream().findFirst().get();
         final AccessPolicy retrievedPolicy = policyProvider.getAccessPolicy(existingPolicy.getIdentifier());
@@ -400,7 +388,7 @@ public class TestDatabaseAccessPolicyProvider extends DatabaseBaseTest {
 
         final Set<AccessPolicy> policies = policyProvider.getAccessPolicies();
         assertNotNull(policies);
-        assertTrue(policies.size() > 0);
+        assertFalse(policies.isEmpty());
 
         final AccessPolicy existingPolicy = policies.stream().findFirst().get();
         final AccessPolicy retrievedPolicy = policyProvider.getAccessPolicy(existingPolicy.getResource(), existingPolicy.getAction());

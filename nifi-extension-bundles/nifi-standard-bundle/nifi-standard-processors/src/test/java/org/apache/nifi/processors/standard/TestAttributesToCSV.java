@@ -19,21 +19,23 @@ package org.apache.nifi.processors.standard;
 
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,11 +47,16 @@ public class TestAttributesToCSV {
     private static final String OUTPUT_SEPARATOR = ",";
     private static final String OUTPUT_MIME_TYPE = "text/csv";
     private static final String SPLIT_REGEX = OUTPUT_SEPARATOR + "(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)";
-    private static final String newline = System.getProperty("line.separator");
+    private static final String newline = System.lineSeparator();
+    private TestRunner testRunner;
+
+    @BeforeEach
+    void setUp() {
+        testRunner = TestRunners.newTestRunner(new AttributesToCSV());
+    }
 
     @Test
     public void testAttrListNoCoreNullOffNewAttrToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
@@ -59,41 +66,39 @@ public class TestAttributesToCSV {
         testRunner.enqueue(new byte[0]);
         testRunner.run();
 
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVData");
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVData", "");
+                .getFirst().assertAttributeEquals("CSVData", "");
     }
 
     @Test
     public void testAttrListNoCoreNullOffNewAttrToContent() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         //set the destination of the csv string to be an attribute
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        //use only one attribute, which does not exists, as the list of attributes to convert to csv
+        //use only one attribute, which does not exist, as the list of attributes to convert to csv
         final String NON_PRESENT_ATTRIBUTE_KEY = "beach-type";
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, NON_PRESENT_ATTRIBUTE_KEY);
         testRunner.enqueue(new byte[0]);
         testRunner.run();
 
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVData");
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVData", "");
+                .getFirst().assertAttributeEquals("CSVData", "");
     }
 
     @Test
     public void testAttrListNoCoreNullOffTwoNewAttrToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
@@ -103,18 +108,17 @@ public class TestAttributesToCSV {
         testRunner.enqueue(new byte[0]);
         testRunner.run();
 
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVData");
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVData", ",");
+                .getFirst().assertAttributeEquals("CSVData", ",");
     }
 
     @Test
     public void testAttrListNoCoreNullTwoNewAttrToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "true");
@@ -124,18 +128,17 @@ public class TestAttributesToCSV {
         testRunner.enqueue(new byte[0]);
         testRunner.run();
 
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVData");
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVData", "null,null");
+                .getFirst().assertAttributeEquals("CSVData", "null,null");
     }
 
     @Test
     public void testNoAttrListNoCoreNullOffToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         //set the destination of the csv string to be an attribute
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
@@ -143,46 +146,41 @@ public class TestAttributesToCSV {
         testRunner.enqueue(new byte[0]);
         testRunner.run();
 
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVData");
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVData", "");
+                .getFirst().assertAttributeEquals("CSVData", "");
     }
 
     @Test
     public void testNoAttrListNoCoreNullToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "true");
         testRunner.enqueue(new byte[0]);
         testRunner.run();
 
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVData");
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVData", "");
+                .getFirst().assertAttributeEquals("CSVData", "");
     }
 
 
     @Test
-    public void testNoAttrListCoreNullOffToContent() throws IOException {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
+    public void testNoAttrListCoreNullOffToContent() {
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_OVERWRITE_CONTENT);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "true");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        final Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-        }};
+        final Map<String, String> attrs = Map.of("beach-name", "Malibu Beach", "beach-location", "California, US",
+            "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -192,13 +190,13 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertEquals(OUTPUT_MIME_TYPE, flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
         final byte[] contentData = testRunner.getContentAsByteArray(flowFile);
 
-        final String contentDataString = new String(contentData, "UTF-8");
+        final String contentDataString = new String(contentData, StandardCharsets.UTF_8);
 
         Set<String> contentValues = new HashSet<>(getStrings(contentDataString));
 
@@ -214,15 +212,11 @@ public class TestAttributesToCSV {
 
     @Test
     public void testNoAttrListCoreNullOffToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "true");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach", "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -232,7 +226,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -252,17 +246,13 @@ public class TestAttributesToCSV {
     }
 
     @Test
-    public void testNoAttrListNoCoreNullOffToContent() throws IOException {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
+    public void testNoAttrListNoCoreNullOffToContent() {
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_OVERWRITE_CONTENT);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach", "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -272,13 +262,13 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertEquals(OUTPUT_MIME_TYPE, flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
         final byte[] contentData = testRunner.getContentAsByteArray(flowFile);
 
-        final String contentDataString = new String(contentData, "UTF-8");
+        final String contentDataString = new String(contentData, StandardCharsets.UTF_8);
         Set<String> contentValues = new HashSet<>(getStrings(contentDataString));
 
         assertEquals(3, contentValues.size());
@@ -286,24 +276,19 @@ public class TestAttributesToCSV {
         assertTrue(contentValues.contains("Malibu Beach"));
         assertTrue(contentValues.contains("\"California, US\""));
         assertTrue(contentValues.contains("\"This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim\""));
-
     }
 
 
     @Test
     public void testAttrListNoCoreNullOffToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, "beach-name,beach-location,beach-endorsement");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVAttribute!");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach", "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVAttribute!");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -313,7 +298,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -331,18 +316,15 @@ public class TestAttributesToCSV {
 
     @Test
     public void testAttrListCoreNullOffToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "true");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, "beach-name,beach-location,beach-endorsement");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach",
+                    "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVData!");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -352,7 +334,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -373,18 +355,15 @@ public class TestAttributesToCSV {
 
     @Test
     public void testAttrListNoCoreNullOffOverrideCoreByAttrListToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, "beach-name,beach-location,beach-endorsement,uuid");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach",
+                    "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVData!");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -394,7 +373,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -409,26 +388,23 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains("\"This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim\""));
 
 
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("filename")));
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("path")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("filename")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("path")));
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("uuid")));
     }
 
     @Test
     public void testAttrListFromExpCoreNullOffToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "true");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, "${myAttribs}");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-            put("myAttribs", "beach-name,beach-location,beach-endorsement");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach",
+                    "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVData!",
+                    "myAttribs", "beach-name,beach-location,beach-endorsement");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -439,7 +415,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
         //Test flow file 0 with ATTRIBUTE_LIST populated from expression language
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -458,7 +434,7 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("uuid")));
 
         //Test flow file 1 with ATTRIBUTE_LIST populated from expression language containing commas (output should be he same)
-        flowFile = flowFilesForRelationship.get(0);
+        flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -475,25 +451,21 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("filename")));
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("path")));
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("uuid")));
-
     }
 
     @Test
     public void testAttrListWithCommasInNameFromExpCoreNullOffToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "true");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, "${myAttribs}");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
 
-        Map<String, String> attrsCommaInName = new HashMap<String, String>() {{
-            put("beach,name", "Malibu Beach");
-            put("beach,location", "California, US");
-            put("beach,endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-            put("myAttribs", "\"beach,name\",\"beach,location\",\"beach,endorsement\"");
-        }};
+        Map<String, String> attrsCommaInName = Map.of("beach,name", "Malibu Beach",
+                    "beach,location", "California, US",
+                    "beach,endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVData!",
+                    "myAttribs", "\"beach,name\",\"beach,location\",\"beach,endorsement\"");
 
         testRunner.enqueue(new byte[0], attrsCommaInName);
         testRunner.run();
@@ -504,7 +476,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
         //Test flow file 0 with ATTRIBUTE_LIST populated from expression language
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -523,7 +495,7 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("uuid")));
 
         //Test flow file 1 with ATTRIBUTE_LIST populated from expression language containing commas (output should be he same)
-        flowFile = flowFilesForRelationship.get(0);
+        flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -540,25 +512,21 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("filename")));
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("path")));
         assertTrue(CSVDataValues.contains(flowFile.getAttribute("uuid")));
-
     }
 
 
     @Test
     public void testAttrListFromExpNoCoreNullOffOverrideCoreByAttrListToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, "${myAttribs}");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-            put("myAttribs", "beach-name,beach-location,beach-endorsement");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach",
+                    "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVData!",
+                    "myAttribs", "beach-name,beach-location,beach-endorsement");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -568,7 +536,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -583,26 +551,23 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains("\"This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim\""));
 
 
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("filename")));
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("path")));
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("uuid")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("filename")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("path")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("uuid")));
     }
 
     @Test
     public void testAttributesRegex() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_REGEX, "${myRegEx}");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-            put("myRegEx", "beach-.*");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach",
+                    "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVData!",
+                    "myRegEx", "beach-.*");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -612,7 +577,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -627,29 +592,26 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains("\"This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim\""));
 
 
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("filename")));
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("path")));
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("uuid")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("filename")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("path")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("uuid")));
     }
 
     @Test
     public void testAttributesRegexAndList() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_REGEX, "${myRegEx}");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_LIST, "moreInfo1,moreInfo2");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
 
-        Map<String, String> attrs = new HashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-            put("myRegEx", "beach-.*");
-            put("moreInfo1", "A+ Rating");
-            put("moreInfo2", "Avg Temp: 61f");
-        }};
+        Map<String, String> attrs = Map.of("beach-name", "Malibu Beach",
+                    "beach-location", "California, US",
+                    "beach-endorsement", "This is our family's favorite beach. We highly recommend it. \n\nThanks, Jim",
+                    "attribute-should-be-eliminated", "This should not be in CSVData!",
+                    "myRegEx", "beach-.*",
+                    "moreInfo1", "A+ Rating",
+                    "moreInfo2", "Avg Temp: 61f");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -659,7 +621,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = flowFilesForRelationship.get(0);
+        MockFlowFile flowFile = flowFilesForRelationship.getFirst();
 
         assertNull(flowFile.getAttribute(CoreAttributes.MIME_TYPE.key()));
 
@@ -675,46 +637,43 @@ public class TestAttributesToCSV {
         assertTrue(CSVDataValues.contains("A+ Rating"));
         assertTrue(CSVDataValues.contains("Avg Temp: 61f"));
 
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("filename")));
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("path")));
-        assertTrue(!CSVDataValues.contains(flowFile.getAttribute("uuid")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("filename")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("path")));
+        assertFalse(CSVDataValues.contains(flowFile.getAttribute("uuid")));
     }
 
 
     @Test
     public void testSchemaToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
         testRunner.setProperty(AttributesToCSV.INCLUDE_SCHEMA, "true");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_REGEX, "beach-.*");
 
-        Map<String, String> attrs = new LinkedHashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-        }};
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("beach-name", "Malibu Beach");
+        attrs.put("beach-location", "California, US");
+        attrs.put("attribute-should-be-eliminated", "This should not be in CSVData!");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
 
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVData");
-        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0)
+        testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst()
                 .assertAttributeExists("CSVSchema");
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVData", "Malibu Beach,\"California, US\"");
+                .getFirst().assertAttributeEquals("CSVData", "Malibu Beach,\"California, US\"");
         testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS)
-                .get(0).assertAttributeEquals("CSVSchema", "beach-name,beach-location");
+                .getFirst().assertAttributeEquals("CSVSchema", "beach-name,beach-location");
     }
 
     @Test
-    public void testSchemaToContent() throws Exception {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
+    public void testSchemaToContent() {
         //set the destination of the csv string to be an attribute
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_OVERWRITE_CONTENT);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "false");
@@ -722,11 +681,10 @@ public class TestAttributesToCSV {
         testRunner.setProperty(AttributesToCSV.INCLUDE_SCHEMA, "true");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_REGEX, "beach-.*");
 
-        Map<String, String> attrs = new LinkedHashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-        }};
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("beach-name", "Malibu Beach");
+        attrs.put("beach-location", "California, US");
+        attrs.put("attribute-should-be-eliminated", "This should not be in CSVData!");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -734,13 +692,13 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
-        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0);
+        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst();
         flowFile.assertAttributeNotExists("CSVData");
         flowFile.assertAttributeNotExists("CSVSchema");
 
         final byte[] contentData = testRunner.getContentAsByteArray(flowFile);
 
-        final String contentDataString = new String(contentData, "UTF-8");
+        final String contentDataString = new String(contentData, StandardCharsets.UTF_8);
         assertEquals(contentDataString.split(newline)[0], "beach-name,beach-location");
         assertEquals(contentDataString.split(newline)[1], "Malibu Beach,\"California, US\"");
     }
@@ -748,18 +706,16 @@ public class TestAttributesToCSV {
 
     @Test
     public void testSchemaWithCoreAttribuesToAttribute() {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_NEW_ATTRIBUTE);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "true");
         testRunner.setProperty(AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING, "false");
         testRunner.setProperty(AttributesToCSV.INCLUDE_SCHEMA, "true");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_REGEX, "beach-.*");
 
-        Map<String, String> attrs = new LinkedHashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-        }};
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("beach-name", "Malibu Beach");
+        attrs.put("beach-location", "California, US");
+        attrs.put("attribute-should-be-eliminated", "This should not be in CSVData!");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -767,7 +723,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
-        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0);
+        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst();
         flowFile.assertAttributeExists("CSVData");
         flowFile.assertAttributeExists("CSVSchema");
 
@@ -780,8 +736,7 @@ public class TestAttributesToCSV {
     }
 
     @Test
-    public void testSchemaWithCoreAttribuesToContent() throws Exception {
-        final TestRunner testRunner = TestRunners.newTestRunner(new AttributesToCSV());
+    public void testSchemaWithCoreAttribuesToContent() {
         //set the destination of the csv string to be an attribute
         testRunner.setProperty(AttributesToCSV.DESTINATION, OUTPUT_OVERWRITE_CONTENT);
         testRunner.setProperty(AttributesToCSV.INCLUDE_CORE_ATTRIBUTES, "true");
@@ -789,11 +744,10 @@ public class TestAttributesToCSV {
         testRunner.setProperty(AttributesToCSV.INCLUDE_SCHEMA, "true");
         testRunner.setProperty(AttributesToCSV.ATTRIBUTES_REGEX, "beach-.*");
 
-        Map<String, String> attrs = new LinkedHashMap<String, String>() {{
-            put("beach-name", "Malibu Beach");
-            put("beach-location", "California, US");
-            put("attribute-should-be-eliminated", "This should not be in CSVData!");
-        }};
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("beach-name", "Malibu Beach");
+        attrs.put("beach-location", "California, US");
+        attrs.put("attribute-should-be-eliminated", "This should not be in CSVData!");
 
         testRunner.enqueue(new byte[0], attrs);
         testRunner.run();
@@ -801,7 +755,7 @@ public class TestAttributesToCSV {
         testRunner.assertTransferCount(AttributesToCSV.REL_SUCCESS, 1);
         testRunner.assertTransferCount(AttributesToCSV.REL_FAILURE, 0);
 
-        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).get(0);
+        MockFlowFile flowFile = testRunner.getFlowFilesForRelationship(AttributesToCSV.REL_SUCCESS).getFirst();
         flowFile.assertAttributeNotExists("CSVData");
         flowFile.assertAttributeNotExists("CSVSchema");
 
@@ -811,12 +765,27 @@ public class TestAttributesToCSV {
 
         final byte[] contentData = testRunner.getContentAsByteArray(flowFile);
 
-        final String contentDataString = new String(contentData, "UTF-8");
+        final String contentDataString = new String(contentData, StandardCharsets.UTF_8);
         assertEquals(contentDataString.split(newline)[0], "beach-name,beach-location,path,filename,uuid");
         assertEquals(contentDataString.split(newline)[1], "Malibu Beach,\"California, US\"," + path + "," + filename + "," + uuid);
     }
+
+    @Test
+    void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("attribute-list", AttributesToCSV.ATTRIBUTES_LIST.getName()),
+                Map.entry("attributes-regex", AttributesToCSV.ATTRIBUTES_REGEX.getName()),
+                Map.entry("destination", AttributesToCSV.DESTINATION.getName()),
+                Map.entry("include-core-attributes", AttributesToCSV.INCLUDE_CORE_ATTRIBUTES.getName()),
+                Map.entry("null-value", AttributesToCSV.NULL_VALUE_FOR_EMPTY_STRING.getName()),
+                Map.entry("include-schema", AttributesToCSV.INCLUDE_SCHEMA.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = testRunner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
+    }
+
     private List<String> getStrings(String sdata) {
         return Arrays.asList(Pattern.compile(SPLIT_REGEX).split(sdata));
     }
-
 }

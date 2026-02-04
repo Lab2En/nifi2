@@ -16,44 +16,43 @@
  */
 package org.apache.nifi.processors;
 
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.nifi.annotation.lifecycle.OnStopped;
-import org.apache.nifi.processors.model.DatabaseField;
-import org.apache.nifi.processors.model.DatabaseSchema;
 import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.session.Session;
-import org.apache.iotdb.tsfile.file.metadata.enums.CompressionType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSEncoding;
-import org.apache.iotdb.tsfile.utils.Binary;
-import org.apache.iotdb.tsfile.write.record.Tablet;
-import org.apache.iotdb.tsfile.write.schema.MeasurementSchema;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
+import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.processors.model.DatabaseField;
+import org.apache.nifi.processors.model.DatabaseSchema;
 import org.apache.nifi.processors.model.ValidationResult;
 import org.apache.nifi.serialization.record.DataType;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.file.metadata.enums.CompressionType;
+import org.apache.tsfile.file.metadata.enums.TSEncoding;
+import org.apache.tsfile.utils.Binary;
+import org.apache.tsfile.write.record.Tablet;
+import org.apache.tsfile.write.schema.IMeasurementSchema;
+import org.apache.tsfile.write.schema.MeasurementSchema;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 public abstract class AbstractIoTDB extends AbstractProcessor {
     private static final int DEFAULT_IOTDB_PORT = 6667;
@@ -101,29 +100,29 @@ public abstract class AbstractIoTDB extends AbstractProcessor {
             .sensitive(true)
             .build();
 
-    protected final static Relationship REL_SUCCESS = new Relationship.Builder()
+    protected static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
             .description("Processing succeeded")
             .build();
 
-    protected final static Relationship REL_FAILURE = new Relationship.Builder()
+    protected static final Relationship REL_FAILURE = new Relationship.Builder()
             .name("failure")
             .description("Processing failed")
             .build();
 
-    private static final List<PropertyDescriptor> descriptors = new ArrayList<>();
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        IOTDB_HOST,
+        IOTDB_PORT,
+        USERNAME,
+        PASSWORD
+    );
 
-    private static final Set<Relationship> relationships = new LinkedHashSet<>();
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        REL_SUCCESS,
+        REL_FAILURE
+    );
 
     static {
-        descriptors.add(IOTDB_HOST);
-        descriptors.add(IOTDB_PORT);
-        descriptors.add(USERNAME);
-        descriptors.add(PASSWORD);
-
-        relationships.add(REL_SUCCESS);
-        relationships.add(REL_FAILURE);
-
         typeMap.put(RecordFieldType.STRING, TSDataType.TEXT);
         typeMap.put(RecordFieldType.BOOLEAN, TSDataType.BOOLEAN);
         typeMap.put(RecordFieldType.INT, TSDataType.INT32);
@@ -149,7 +148,7 @@ public abstract class AbstractIoTDB extends AbstractProcessor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @OnScheduled
@@ -184,7 +183,7 @@ public abstract class AbstractIoTDB extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return Collections.unmodifiableList(descriptors);
+        return PROPERTY_DESCRIPTORS;
     }
 
     protected TSDataType getType(RecordFieldType type) {
@@ -314,7 +313,7 @@ public abstract class AbstractIoTDB extends AbstractProcessor {
         final Map<String, Tablet> tablets = new LinkedHashMap<>();
         deviceMeasurementMap.forEach(
                 (device, measurements) -> {
-                    ArrayList<MeasurementSchema> schemas = new ArrayList<>();
+                    final List<IMeasurementSchema> schemas = new ArrayList<>();
                     for (String measurement : measurements) {
                         TSDataType dataType = schema.getDataType(measurement);
                         TSEncoding encoding = schema.getEncodingType(measurement);
@@ -334,22 +333,15 @@ public abstract class AbstractIoTDB extends AbstractProcessor {
     }
 
     protected Object convertType(Object value, TSDataType type) {
-        switch (type) {
-            case TEXT:
-                return new Binary(String.valueOf(value), StandardCharsets.UTF_8);
-            case INT32:
-                return Integer.parseInt(value.toString());
-            case INT64:
-                return Long.parseLong(value.toString());
-            case FLOAT:
-                return Float.parseFloat(value.toString());
-            case DOUBLE:
-                return Double.parseDouble(value.toString());
-            case BOOLEAN:
-                return Boolean.parseBoolean(value.toString());
-            default:
-                return null;
-        }
+        return switch (type) {
+            case TEXT -> new Binary(String.valueOf(value), StandardCharsets.UTF_8);
+            case INT32 -> Integer.parseInt(value.toString());
+            case INT64 -> Long.parseLong(value.toString());
+            case FLOAT -> Float.parseFloat(value.toString());
+            case DOUBLE -> Double.parseDouble(value.toString());
+            case BOOLEAN -> Boolean.parseBoolean(value.toString());
+            default -> null;
+        };
     }
 
     protected DatabaseSchema convertSchema(final String timeField, final RecordSchema recordSchema) {

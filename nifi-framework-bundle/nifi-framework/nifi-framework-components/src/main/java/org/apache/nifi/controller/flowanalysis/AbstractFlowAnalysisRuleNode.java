@@ -36,9 +36,9 @@ import org.apache.nifi.controller.ValidationContextFactory;
 import org.apache.nifi.controller.service.ControllerServiceNode;
 import org.apache.nifi.controller.service.ControllerServiceProvider;
 import org.apache.nifi.controller.service.StandardConfigurationContext;
+import org.apache.nifi.flowanalysis.EnforcementPolicy;
 import org.apache.nifi.flowanalysis.FlowAnalysisRule;
 import org.apache.nifi.flowanalysis.FlowAnalysisRuleState;
-import org.apache.nifi.flowanalysis.EnforcementPolicy;
 import org.apache.nifi.flowanalysis.VerifiableFlowAnalysisRule;
 import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.logging.ComponentLog;
@@ -251,7 +251,7 @@ public abstract class AbstractFlowAnalysisRuleNode extends AbstractComponentNode
     @Override
     public String toString() {
         FlowAnalysisRule flowAnalysisRule = flowAnalysisRuleRef.get().getFlowAnalysisRule();
-        try (final NarCloseable narCloseable = NarCloseable.withComponentNarLoader(getExtensionManager(), flowAnalysisRule.getClass(), flowAnalysisRule.getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(getExtensionManager(), flowAnalysisRule.getClass(), flowAnalysisRule.getIdentifier())) {
             return getFlowAnalysisRule().toString();
         }
     }
@@ -274,7 +274,7 @@ public abstract class AbstractFlowAnalysisRuleNode extends AbstractComponentNode
     private void setState(FlowAnalysisRuleState newState, Class<? extends Annotation> annotation) {
         final ConfigurationContext configContext = new StandardConfigurationContext(this, this.serviceLookup, null);
 
-        try (final NarCloseable nc = NarCloseable.withComponentNarLoader(getExtensionManager(), getFlowAnalysisRule().getClass(), getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(getExtensionManager(), getFlowAnalysisRule().getClass(), getIdentifier())) {
             ReflectionUtils.invokeMethodsWithAnnotation(annotation, getFlowAnalysisRule(), configContext);
 
             this.state = newState;
@@ -283,7 +283,7 @@ public abstract class AbstractFlowAnalysisRuleNode extends AbstractComponentNode
         } catch (Exception e) {
             final Throwable cause = e instanceof InvocationTargetException ? e.getCause() : e;
 
-            final ComponentLog componentLog = new SimpleProcessLogger(getIdentifier(), getFlowAnalysisRule(), new StandardLoggingContext(null));
+            final ComponentLog componentLog = new SimpleProcessLogger(getIdentifier(), getFlowAnalysisRule(), new StandardLoggingContext());
 
             componentLog.error("Failed to invoke {} method", cause);
 
@@ -340,7 +340,7 @@ public abstract class AbstractFlowAnalysisRuleNode extends AbstractComponentNode
                     }
                 } else {
                     // Verify the configuration, using the component's classloader
-                    try (final NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, flowAnalysisRule.getClass(), getIdentifier())) {
+                    try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, flowAnalysisRule.getClass(), getIdentifier())) {
                         results.addAll(verifiable.verify(context, logger));
                     }
                 }
@@ -366,6 +366,7 @@ public abstract class AbstractFlowAnalysisRuleNode extends AbstractComponentNode
         return results;
     }
 
+    @Override
     public Optional<ProcessGroup> getParentProcessGroup() {
         return Optional.empty();
     }

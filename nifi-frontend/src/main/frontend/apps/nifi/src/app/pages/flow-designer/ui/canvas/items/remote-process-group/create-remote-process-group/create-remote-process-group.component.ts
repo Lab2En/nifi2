@@ -15,14 +15,13 @@
  * limitations under the License.
  */
 
-import { Component, Inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { Store } from '@ngrx/store';
 import { CanvasState } from '../../../../../state';
 import { createRemoteProcessGroup } from '../../../../../state/flow/flow.actions';
 import { selectSaving } from '../../../../../state/flow/flow.selectors';
 import { AsyncPipe } from '@angular/common';
-import { ErrorBanner } from '../../../../../../../ui/common/error-banner/error-banner.component';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -38,10 +37,8 @@ import { ErrorContextKey } from '../../../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../../../ui/common/context-error-banner/context-error-banner.component';
 
 @Component({
-    standalone: true,
     imports: [
         AsyncPipe,
-        ErrorBanner,
         MatButtonModule,
         MatDialogModule,
         MatFormFieldModule,
@@ -58,15 +55,15 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
     styleUrls: ['./create-remote-process-group.component.scss']
 })
 export class CreateRemoteProcessGroup extends CloseOnEscapeDialog {
+    private dialogRequest = inject<CreateComponentRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private store = inject<Store<CanvasState>>(Store);
+
     saving$ = this.store.select(selectSaving);
 
     createRemoteProcessGroupForm: FormGroup;
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) private dialogRequest: CreateComponentRequest,
-        private formBuilder: FormBuilder,
-        private store: Store<CanvasState>
-    ) {
+    constructor() {
         super();
         this.createRemoteProcessGroupForm = this.formBuilder.group({
             urls: new FormControl('', Validators.required),

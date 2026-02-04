@@ -52,12 +52,6 @@ public class MySQLDatabaseAdapter extends GenericDatabaseAdapter {
     }
 
     @Override
-    public String unwrapIdentifier(String identifier) {
-        // Removes double quotes and back-ticks.
-        return identifier == null ? null : identifier.replaceAll("[\"`]", "");
-    }
-
-    @Override
     public boolean supportsUpsert() {
         return true;
     }
@@ -65,17 +59,6 @@ public class MySQLDatabaseAdapter extends GenericDatabaseAdapter {
     @Override
     public boolean supportsInsertIgnore() {
         return true;
-    }
-
-    /**
-     * Tells How many times the column values need to be inserted into the prepared statement. Some DBs (such as MySQL) need the values specified twice in the statement,
-     * some need only to specify them once.
-     *
-     * @return An integer corresponding to the number of times to insert column values into the prepared statement for UPSERT, or -1 if upsert is not supported.
-     */
-    @Override
-    public int getTimesToAddColumnObjectsForUpsert() {
-        return 2;
     }
 
     @Override
@@ -97,8 +80,8 @@ public class MySQLDatabaseAdapter extends GenericDatabaseAdapter {
                 .collect(Collectors.joining(", "));
 
         List<String> updateValues = new ArrayList<>();
-        for (int i = 0; i < columnNames.size(); i++) {
-            updateValues.add(columnNames.get(i) + " = ?");
+        for (String columnName : columnNames) {
+            updateValues.add(columnName + " = ?");
         }
         String parameterizedUpdateValues = String.join(", ", updateValues);
 
@@ -139,62 +122,36 @@ public class MySQLDatabaseAdapter extends GenericDatabaseAdapter {
     }
 
     @Override
-    public String getTableQuoteString() {
-        return "`";
-    }
-
-    @Override
-    public String getColumnQuoteString() {
-        return "`";
-    }
-
-    @Override
     public boolean supportsCreateTableIfNotExists() {
         return true;
     }
 
     @Override
-    public List<String> getAlterTableStatements(final String tableName, final List<ColumnDescription> columnsToAdd, final boolean quoteTableName, final boolean quoteColumnNames) {
+    public String getAlterTableStatement(final String tableName, final List<ColumnDescription> columnsToAdd) {
         List<String> columnsAndDatatypes = new ArrayList<>(columnsToAdd.size());
         for (ColumnDescription column : columnsToAdd) {
             String dataType = getSQLForDataType(column.getDataType());
             StringBuilder sb = new StringBuilder("ADD COLUMN ")
-                    .append(quoteColumnNames ? getColumnQuoteString() : "")
                     .append(column.getColumnName())
-                    .append(quoteColumnNames ? getColumnQuoteString() : "")
                     .append(" ")
                     .append(dataType);
             columnsAndDatatypes.add(sb.toString());
         }
 
         StringBuilder alterTableStatement = new StringBuilder();
-        return List.of(alterTableStatement.append("ALTER TABLE ")
-                .append(quoteTableName ? getTableQuoteString() : "")
+        return alterTableStatement.append("ALTER TABLE ")
                 .append(tableName)
-                .append(quoteTableName ? getTableQuoteString() : "")
                 .append(" ")
                 .append(String.join(", ", columnsAndDatatypes))
-                .toString());
+                .toString();
     }
 
     @Override
     public String getSQLForDataType(int sqlType) {
-        switch (sqlType) {
-            case Types.DOUBLE:
-                return "DOUBLE PRECISION";
-            case CHAR:
-            case LONGNVARCHAR:
-            case LONGVARCHAR:
-            case NCHAR:
-            case NVARCHAR:
-            case VARCHAR:
-            case CLOB:
-            case NCLOB:
-            case OTHER:
-            case SQLXML:
-                return "TEXT";
-            default:
-                return JDBCType.valueOf(sqlType).getName();
-        }
+        return switch (sqlType) {
+            case Types.DOUBLE -> "DOUBLE PRECISION";
+            case CHAR, LONGNVARCHAR, LONGVARCHAR, NCHAR, NVARCHAR, VARCHAR, CLOB, NCLOB, OTHER, SQLXML -> "TEXT";
+            default -> JDBCType.valueOf(sqlType).getName();
+        };
     }
 }

@@ -18,12 +18,12 @@ package org.apache.nifi.security.krb;
 
 import org.apache.commons.lang3.Validate;
 
+import java.io.IOException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
-import java.io.IOException;
 
 /**
  * CallbackHandler that provides the given username and password.
@@ -40,6 +40,7 @@ public class UsernamePasswordCallbackHandler implements CallbackHandler {
         Validate.notBlank(this.password);
     }
 
+    @Override
     public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
         for (final Callback callback : callbacks) {
             if (callback instanceof NameCallback) {

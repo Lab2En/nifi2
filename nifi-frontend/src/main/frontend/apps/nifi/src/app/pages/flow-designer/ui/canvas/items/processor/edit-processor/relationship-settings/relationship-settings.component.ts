@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, forwardRef } from '@angular/core';
+import { Component, forwardRef, inject } from '@angular/core';
 import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR, ReactiveFormsModule } from '@angular/forms';
 import { MatSliderModule } from '@angular/material/slider';
 
@@ -36,7 +36,6 @@ export interface RelationshipConfiguration {
 
 @Component({
     selector: 'relationship-settings',
-    standalone: true,
     templateUrl: './relationship-settings.component.html',
     imports: [
         MatSliderModule,
@@ -59,6 +58,8 @@ export interface RelationshipConfiguration {
     ]
 })
 export class RelationshipSettings implements ControlValueAccessor {
+    private nifiCommon = inject(NiFiCommon);
+
     protected readonly TextTip = TextTip;
 
     relationships!: Relationship[];
@@ -70,8 +71,6 @@ export class RelationshipSettings implements ControlValueAccessor {
     isTouched = false;
     onTouched!: () => void;
     onChange!: (relationshipConfiguration: RelationshipConfiguration) => void;
-
-    constructor(private nifiCommon: NiFiCommon) {}
 
     registerOnChange(onChange: (relationshipConfiguration: RelationshipConfiguration) => void): void {
         this.onChange = onChange;

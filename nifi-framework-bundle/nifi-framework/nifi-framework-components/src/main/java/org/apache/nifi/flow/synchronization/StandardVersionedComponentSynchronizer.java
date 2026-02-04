@@ -480,13 +480,13 @@ public class StandardVersionedComponentSynchronizer implements VersionedComponen
         if (statelessTimeout != null) {
             group.setStatelessFlowTimeout(statelessTimeout);
         }
-        if (proposed.getScheduledState() != null && ScheduledState.RUNNING.name().equals(proposed.getScheduledState().name()) ) {
+        if (proposed.getScheduledState() != null && ScheduledState.RUNNING.name().equals(proposed.getScheduledState().name())) {
             context.getComponentScheduler().startStatelessGroup(group);
         }
 
         final VersionedFlowCoordinates remoteCoordinates = proposed.getVersionedFlowCoordinates();
         if (remoteCoordinates == null) {
-            group.disconnectVersionControl(false);
+            group.disconnectVersionControl();
         } else {
             final String registryId = determineRegistryId(remoteCoordinates);
             final String branch = remoteCoordinates.getBranch();
@@ -517,7 +517,7 @@ public class StandardVersionedComponentSynchronizer implements VersionedComponen
                     .storageLocation(storageLocation)
                     .flowName(flowId)
                     .version(version)
-                    .flowSnapshot(syncOptions.isUpdateGroupVersionControlSnapshot() ? proposed : null)
+                    .flowSnapshot(null)
                     .status(new StandardVersionedFlowStatus(flowState, flowState.getDescription()))
                     .build();
 
@@ -1514,7 +1514,6 @@ public class StandardVersionedComponentSynchronizer implements VersionedComponen
                     case THROW_TIMEOUT_EXCEPTION:
                         throw e;
                     case TERMINATE:
-                    default:
                         ((ProcessorNode) component).terminate();
                         return;
                 }
@@ -2335,8 +2334,7 @@ public class StandardVersionedComponentSynchronizer implements VersionedComponen
 
         // If the current parameter context doesn't have any inherited param contexts but the versioned one does,
         // add the versioned ones.
-        if (versionedParameterContext.getInheritedParameterContexts() != null && !versionedParameterContext.getInheritedParameterContexts().isEmpty()
-            && currentParameterContext.getInheritedParameterContexts().isEmpty()) {
+        if (versionedParameterContext.getInheritedParameterContexts() != null && !versionedParameterContext.getInheritedParameterContexts().isEmpty()) {
             currentParameterContext.setInheritedParameterContexts(versionedParameterContext.getInheritedParameterContexts().stream()
                 .map(name -> selectParameterContext(versionedParameterContexts.get(name), versionedParameterContexts, parameterProviderReferences, componentIdGenerator))
                 .collect(Collectors.toList()));
@@ -3781,14 +3779,14 @@ public class StandardVersionedComponentSynchronizer implements VersionedComponen
                     reportingTask.disable();
                     break;
                 case ENABLED:
-                    if (reportingTask.getScheduledState() == org.apache.nifi.controller.ScheduledState.DISABLED) {
+                    if (reportingTask.getScheduledState() == ScheduledState.DISABLED) {
                         reportingTask.enable();
                     } else if (reportingTask.isRunning()) {
                         reportingTask.stop();
                     }
                     break;
                 case RUNNING:
-                    if (reportingTask.getScheduledState() == org.apache.nifi.controller.ScheduledState.DISABLED) {
+                    if (reportingTask.getScheduledState() == ScheduledState.DISABLED) {
                         reportingTask.enable();
                     }
                     if (!reportingTask.isRunning()) {

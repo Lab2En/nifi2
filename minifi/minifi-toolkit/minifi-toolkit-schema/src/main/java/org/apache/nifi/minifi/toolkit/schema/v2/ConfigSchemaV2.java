@@ -17,22 +17,6 @@
 
 package org.apache.nifi.minifi.toolkit.schema.v2;
 
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.COMPONENT_STATUS_REPO_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.CONTENT_REPO_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.CORE_PROPS_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.FLOWFILE_REPO_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.FLOW_CONTROLLER_PROPS_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.PROVENANCE_REPORTING_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.PROVENANCE_REPO_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.SECURITY_PROPS_KEY;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
 import org.apache.nifi.minifi.toolkit.schema.ComponentStatusRepositorySchema;
 import org.apache.nifi.minifi.toolkit.schema.ConfigSchema;
 import org.apache.nifi.minifi.toolkit.schema.ConnectionSchema;
@@ -50,6 +34,22 @@ import org.apache.nifi.minifi.toolkit.schema.common.BaseSchema;
 import org.apache.nifi.minifi.toolkit.schema.common.CollectionOverlap;
 import org.apache.nifi.minifi.toolkit.schema.common.ConvertableSchema;
 import org.apache.nifi.minifi.toolkit.schema.common.StringUtil;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.COMPONENT_STATUS_REPO_KEY;
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.CONTENT_REPO_KEY;
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.CORE_PROPS_KEY;
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.FLOWFILE_REPO_KEY;
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.FLOW_CONTROLLER_PROPS_KEY;
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.PROVENANCE_REPORTING_KEY;
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.PROVENANCE_REPO_KEY;
+import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.SECURITY_PROPS_KEY;
 
 public class ConfigSchemaV2 extends BaseSchema implements ConvertableSchema<ConfigSchema> {
     public static final int CONFIG_VERSION = 2;
@@ -125,7 +125,7 @@ public class ConfigSchemaV2 extends BaseSchema implements ConvertableSchema<Conf
         // Potential connection sources and destinations need to have unique ids
         CollectionOverlap<String> overlapResults = new CollectionOverlap<>(new HashSet<>(allProcessorIds), new HashSet<>(allRemoteInputPortIds), new HashSet<>(allInputPortIds),
                 new HashSet<>(allOutputPortIds), new HashSet<>(allFunnelIds));
-        if (overlapResults.getDuplicates().size() > 0) {
+        if (!overlapResults.getDuplicates().isEmpty()) {
             addValidationIssue(FOUND_THE_FOLLOWING_DUPLICATE_IDS + overlapResults.getDuplicates().stream().sorted().collect(Collectors.joining(", ")));
         }
 

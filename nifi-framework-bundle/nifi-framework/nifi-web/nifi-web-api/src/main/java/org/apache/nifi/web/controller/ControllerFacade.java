@@ -35,6 +35,7 @@ import org.apache.nifi.bundle.BundleCoordinate;
 import org.apache.nifi.c2.protocol.component.api.ComponentManifest;
 import org.apache.nifi.c2.protocol.component.api.ControllerServiceDefinition;
 import org.apache.nifi.c2.protocol.component.api.FlowAnalysisRuleDefinition;
+import org.apache.nifi.c2.protocol.component.api.FlowRegistryClientDefinition;
 import org.apache.nifi.c2.protocol.component.api.ParameterProviderDefinition;
 import org.apache.nifi.c2.protocol.component.api.ProcessorDefinition;
 import org.apache.nifi.c2.protocol.component.api.ReportingTaskDefinition;
@@ -42,9 +43,12 @@ import org.apache.nifi.c2.protocol.component.api.RuntimeManifest;
 import org.apache.nifi.cluster.protocol.NodeIdentifier;
 import org.apache.nifi.components.ConfigurableComponent;
 import org.apache.nifi.components.RequiredPermission;
+import org.apache.nifi.components.listen.ListenComponent;
 import org.apache.nifi.connectable.Connectable;
 import org.apache.nifi.connectable.Connection;
 import org.apache.nifi.connectable.Port;
+import org.apache.nifi.controller.ComponentNode;
+import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.controller.ContentAvailability;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.controller.Counter;
@@ -63,6 +67,7 @@ import org.apache.nifi.controller.serialization.VersionedReportingTaskImporter;
 import org.apache.nifi.controller.service.ControllerServiceNode;
 import org.apache.nifi.controller.service.ControllerServiceProvider;
 import org.apache.nifi.controller.service.ControllerServiceResolver;
+import org.apache.nifi.controller.service.StandardConfigurationContext;
 import org.apache.nifi.controller.status.ConnectionStatus;
 import org.apache.nifi.controller.status.PortStatus;
 import org.apache.nifi.controller.status.ProcessGroupStatus;
@@ -112,6 +117,7 @@ import org.apache.nifi.web.ResourceNotFoundException;
 import org.apache.nifi.web.api.dto.BundleDTO;
 import org.apache.nifi.web.api.dto.DocumentedTypeDTO;
 import org.apache.nifi.web.api.dto.DtoFactory;
+import org.apache.nifi.web.api.dto.ListenPortDTO;
 import org.apache.nifi.web.api.dto.diagnostics.ProcessorDiagnosticsDTO;
 import org.apache.nifi.web.api.dto.provenance.AttributeDTO;
 import org.apache.nifi.web.api.dto.provenance.LatestProvenanceEventsDTO;
@@ -142,6 +148,7 @@ import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
@@ -643,6 +650,15 @@ public class ControllerFacade implements Authorizable {
         return componentManifest.getParameterProviders().stream().filter(parameterProviderDefinition -> type.equals(parameterProviderDefinition.getType())).findFirst().orElse(null);
     }
 
+    public FlowRegistryClientDefinition getFlowRegistryClientDefinition(String group, String artifact, String version, String type) {
+        final ComponentManifest componentManifest = getComponentManifest(group, artifact, version);
+        final List<FlowRegistryClientDefinition> flowRegistryClientDefinitions = componentManifest.getFlowRegistryClients();
+        if (flowRegistryClientDefinitions == null) {
+            return null;
+        }
+        return flowRegistryClientDefinitions.stream().filter(flowRegistryClientDefinition -> type.equals(flowRegistryClientDefinition.getType())).findFirst().orElse(null);
+    }
+
     public FlowAnalysisRuleDefinition getFlowAnalysisRuleDefinition(String group, String artifact, String version, String type) {
         final ComponentManifest componentManifest = getComponentManifest(group, artifact, version);
         return componentManifest.getFlowAnalysisRules().stream().filter(flowAnalysisRuleDefinition -> type.equals(flowAnalysisRuleDefinition.getType())).findFirst().orElse(null);
@@ -699,6 +715,15 @@ public class ControllerFacade implements Authorizable {
         }
 
         return counter;
+    }
+
+    /**
+     * Resets all counters atomically.
+     *
+     * @return the list of reset counters
+     */
+    public List<Counter> resetAllCounters() {
+        return flowController.resetAllCounters();
     }
 
     /**
@@ -1639,7 +1664,11 @@ public class ControllerFacade implements Authorizable {
         final ProvenanceEventDTO dto = new ProvenanceEventDTO();
         dto.setId(String.valueOf(event.getEventId()));
         dto.setEventId(event.getEventId());
-        dto.setEventTime(new Date(event.getEventTime()));
+
+        final Date eventTime = new Date(event.getEventTime());
+        dto.setEventTime(eventTime);
+        dto.setEventTimestamp(eventTime.toInstant());
+
         dto.setEventType(event.getEventType().name());
         dto.setFlowFileUuid(event.getFlowFileUuid());
         dto.setFileSize(FormatUtils.formatDataSize(event.getFileSize()));
@@ -1650,12 +1679,7 @@ public class ControllerFacade implements Authorizable {
         // only include all details if not summarizing
         if (!summarize) {
             // convert the attributes
-            final Comparator<AttributeDTO> attributeComparator = new Comparator<AttributeDTO>() {
-                @Override
-                public int compare(AttributeDTO a1, AttributeDTO a2) {
-                    return Collator.getInstance(Locale.US).compare(a1.getName(), a2.getName());
-                }
-            };
+            final Comparator<AttributeDTO> attributeComparator = (a1, a2) -> Collator.getInstance(Locale.US).compare(a1.getName(), a2.getName());
 
             final SortedSet<AttributeDTO> attributes = new TreeSet<>(attributeComparator);
 
@@ -1837,6 +1861,61 @@ public class ControllerFacade implements Authorizable {
         }
 
         return results;
+    }
+
+    /**
+     * Get all user-defined data ingress ports provided by Listen Components (e.g., Processors and Controller Services)
+     *
+     * @param user the user performing the lookup
+     * @return the set of listen Ports accessible to the current user
+     */
+    public Set<ListenPortDTO> getListenPorts(final NiFiUser user) {
+
+        // Get all listen components for which the requesting user is authorized
+        final Set<ComponentNode> listenComponentNodes = flowController.getFlowManager().getAllListenComponents().stream()
+            .filter(componentNode -> componentNode.isAuthorized(authorizer, RequestAction.READ, user))
+            .collect(Collectors.toSet());
+
+        // If the current user doesn't have access to any listen components, return an empty result for ports
+        if (listenComponentNodes.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        // Now find all Listen Ports provided by the Listen Components. A listen component can provide multiple Listen Ports (e.g., ListenHTTP can have a data port and a health check port).
+        // The current Listen Ports for a component depend on configuration (e.g., port property value), so create a configuration context to provide ListenComponent.getListenPorts(context).
+        final Set<ListenPortDTO> listenPorts = new HashSet<>();
+        final ControllerServiceProvider controllerServiceProvider = flowController.getControllerServiceProvider();
+        for (final ComponentNode componentNode : listenComponentNodes) {
+            final ConfigurationContext configurationContext = new StandardConfigurationContext(componentNode, controllerServiceProvider, null);
+            final ConfigurableComponent component = componentNode.getComponent();
+            // All components are expected to be ListenComponents, so this check is just for safe casting
+            if (component instanceof ListenComponent listenComponent) {
+                listenComponent.getListenPorts(configurationContext).forEach(listenPort -> {
+                    final ListenPortDTO listenPortDTO = new ListenPortDTO();
+                    listenPortDTO.setPortName(listenPort.getPortName());
+                    listenPortDTO.setPortNumber(listenPort.getPortNumber());
+                    listenPortDTO.setTransportProtocol(listenPort.getTransportProtocol().name());
+                    listenPortDTO.setApplicationProtocols(listenPort.getApplicationProtocols());
+                    listenPortDTO.setComponentClass(componentNode.getCanonicalClassName());
+                    listenPortDTO.setComponentId(componentNode.getIdentifier());
+                    listenPortDTO.setComponentName(componentNode.getName());
+                    listenPortDTO.setParentGroupId(componentNode.getParentProcessGroup().map(ProcessGroup::getIdentifier).orElse(null));
+                    listenPortDTO.setParentGroupName(componentNode.getParentProcessGroup().map(ProcessGroup::getName).orElse(null));
+
+                    if (componentNode instanceof ProcessorNode) {
+                        listenPortDTO.setComponentType("Processor");
+                    } else if (componentNode instanceof ControllerServiceNode) {
+                        listenPortDTO.setComponentType("ControllerService");
+                    } else {
+                        logger.warn("Unexpected listen component type {}", componentNode.getClass().getCanonicalName());
+                        listenPortDTO.setComponentType(null);
+                    }
+                    listenPorts.add(listenPortDTO);
+                });
+            }
+        }
+
+        return listenPorts;
     }
 
     public void verifyComponentTypes(VersionedProcessGroup versionedFlow) {

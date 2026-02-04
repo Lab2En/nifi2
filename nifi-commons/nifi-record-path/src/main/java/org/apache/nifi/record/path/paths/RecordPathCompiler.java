@@ -36,11 +36,13 @@ import org.apache.nifi.record.path.filter.NotFilter;
 import org.apache.nifi.record.path.filter.RecordPathFilter;
 import org.apache.nifi.record.path.filter.StartsWith;
 import org.apache.nifi.record.path.functions.Anchored;
+import org.apache.nifi.record.path.functions.ArrayOf;
 import org.apache.nifi.record.path.functions.Base64Decode;
 import org.apache.nifi.record.path.functions.Base64Encode;
 import org.apache.nifi.record.path.functions.Coalesce;
 import org.apache.nifi.record.path.functions.Concat;
 import org.apache.nifi.record.path.functions.Count;
+import org.apache.nifi.record.path.functions.Divide;
 import org.apache.nifi.record.path.functions.EscapeJson;
 import org.apache.nifi.record.path.functions.FieldName;
 import org.apache.nifi.record.path.functions.FilterFunction;
@@ -48,6 +50,7 @@ import org.apache.nifi.record.path.functions.Format;
 import org.apache.nifi.record.path.functions.Hash;
 import org.apache.nifi.record.path.functions.Join;
 import org.apache.nifi.record.path.functions.MapOf;
+import org.apache.nifi.record.path.functions.Multiply;
 import org.apache.nifi.record.path.functions.PadLeft;
 import org.apache.nifi.record.path.functions.PadRight;
 import org.apache.nifi.record.path.functions.RecordOf;
@@ -62,6 +65,7 @@ import org.apache.nifi.record.path.functions.SubstringBeforeLast;
 import org.apache.nifi.record.path.functions.ToBytes;
 import org.apache.nifi.record.path.functions.ToDate;
 import org.apache.nifi.record.path.functions.ToLowerCase;
+import org.apache.nifi.record.path.functions.ToNumber;
 import org.apache.nifi.record.path.functions.ToString;
 import org.apache.nifi.record.path.functions.ToUpperCase;
 import org.apache.nifi.record.path.functions.TrimString;
@@ -107,22 +111,18 @@ public class RecordPathCompiler {
         RecordPathSegment parent = root;
         for (int i = 0; i < pathTree.getChildCount(); i++) {
             final Tree child = pathTree.getChild(i);
-            parent = RecordPathCompiler.buildPath(child, parent, absolute);
+            parent = buildPath(child, parent, absolute);
         }
 
         // If the given path tree is an operator, create a Filter Function that will be responsible for returning true/false based on the provided operation
-        switch (pathTree.getType()) {
-            case EQUAL:
-            case NOT_EQUAL:
-            case LESS_THAN:
-            case LESS_THAN_EQUAL:
-            case GREATER_THAN:
-            case GREATER_THAN_EQUAL:
+        return switch (pathTree.getType()) {
+            case EQUAL, NOT_EQUAL, LESS_THAN, LESS_THAN_EQUAL, GREATER_THAN, GREATER_THAN_EQUAL -> {
                 final RecordPathFilter filter = createFilter(pathTree, null, absolute);
-                return new FilterFunction(pathTree.getText(), filter, absolute);
-        }
+                yield new FilterFunction(pathTree.getText(), filter, absolute);
+            }
+            default -> parent;
+        };
 
-        return parent;
     }
 
     public static RecordPathSegment buildPath(final Tree tree, final RecordPathSegment parent, final boolean absolute) {
@@ -222,7 +222,13 @@ public class RecordPathCompiler {
                 return new LiteralValuePath(parent, tree.getText(), absolute);
             }
             case NUMBER: {
-                return new LiteralValuePath(parent, Integer.parseInt(tree.getText()), absolute);
+                final long value = Long.parseLong(tree.getText());
+                if (value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE) {
+                    // Originally all numbers were treated as ints. Preserving this behavior for compatibility.
+                    return new LiteralValuePath(parent, (int) value, absolute);
+                }
+
+                return new LiteralValuePath(parent, value, absolute);
             }
             case PREDICATE: {
                 final Tree operatorTree = tree.getChild(0);
@@ -281,6 +287,16 @@ public class RecordPathCompiler {
                         }
 
                         return new Concat(argPaths, absolute);
+                    }
+                    case "arrayOf": {
+                        final int numArgs = argumentListTree.getChildCount();
+
+                        final RecordPathSegment[] argPaths = new RecordPathSegment[numArgs];
+                        for (int i = 0; i < numArgs; i++) {
+                            argPaths[i] = buildPath(argumentListTree.getChild(i), null, absolute);
+                        }
+
+                        return new ArrayOf(argPaths, absolute);
                     }
                     case "mapOf": {
                         final int numArgs = argumentListTree.getChildCount();
@@ -445,6 +461,18 @@ public class RecordPathCompiler {
                         final RecordPathSegment[] args = getArgPaths(argumentListTree, 2, functionName, absolute);
                         return new Anchored(args[0], args[1], absolute);
                     }
+                    case "multiply": {
+                        final RecordPathSegment[] args = getArgPaths(argumentListTree, 2, functionName, absolute);
+                        return new Multiply(args[0], args[1], absolute);
+                    }
+                    case "divide": {
+                        final RecordPathSegment[] args = getArgPaths(argumentListTree, 2, functionName, absolute);
+                        return new Divide(args[0], args[1], absolute);
+                    }
+                    case "toNumber": {
+                        final RecordPathSegment[] args = getArgPaths(argumentListTree, 1, functionName, absolute);
+                        return new ToNumber(args[0], absolute);
+                    }
                     case "not":
                     case "contains":
                     case "containsRegex":
@@ -479,24 +507,19 @@ public class RecordPathCompiler {
     }
 
     private static RecordPathFilter createFilter(final Tree operatorTree, final RecordPathSegment parent, final boolean absolute) {
-        switch (operatorTree.getType()) {
-            case EQUAL:
-                return createBinaryOperationFilter(operatorTree, parent, EqualsFilter::new, absolute);
-            case NOT_EQUAL:
-                return createBinaryOperationFilter(operatorTree, parent, NotEqualsFilter::new, absolute);
-            case LESS_THAN:
-                return createBinaryOperationFilter(operatorTree, parent, LessThanFilter::new, absolute);
-            case LESS_THAN_EQUAL:
-                return createBinaryOperationFilter(operatorTree, parent, LessThanOrEqualFilter::new, absolute);
-            case GREATER_THAN:
-                return createBinaryOperationFilter(operatorTree, parent, GreaterThanFilter::new, absolute);
-            case GREATER_THAN_EQUAL:
-                return createBinaryOperationFilter(operatorTree, parent, GreaterThanOrEqualFilter::new, absolute);
-            case FUNCTION:
-                return createFunctionFilter(operatorTree, absolute);
-            default:
-                throw new RecordPathException("Expected an Expression of form <value> <operator> <value> to follow '[' Token but found " + operatorTree);
-        }
+        return switch (operatorTree.getType()) {
+            case EQUAL -> createBinaryOperationFilter(operatorTree, parent, EqualsFilter::new, absolute);
+            case NOT_EQUAL -> createBinaryOperationFilter(operatorTree, parent, NotEqualsFilter::new, absolute);
+            case LESS_THAN -> createBinaryOperationFilter(operatorTree, parent, LessThanFilter::new, absolute);
+            case LESS_THAN_EQUAL ->
+                createBinaryOperationFilter(operatorTree, parent, LessThanOrEqualFilter::new, absolute);
+            case GREATER_THAN -> createBinaryOperationFilter(operatorTree, parent, GreaterThanFilter::new, absolute);
+            case GREATER_THAN_EQUAL ->
+                createBinaryOperationFilter(operatorTree, parent, GreaterThanOrEqualFilter::new, absolute);
+            case FUNCTION -> createFunctionFilter(operatorTree, absolute);
+            default ->
+                    throw new RecordPathException("Expected an Expression of form <value> <operator> <value> to follow '[' Token but found " + operatorTree);
+        };
     }
 
     private static RecordPathFilter createBinaryOperationFilter(final Tree operatorTree, final RecordPathSegment parent,

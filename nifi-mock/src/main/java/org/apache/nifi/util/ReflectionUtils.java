@@ -16,15 +16,16 @@
  */
 package org.apache.nifi.util;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
 public class ReflectionUtils {
 
-    private final static Logger LOG = LoggerFactory.getLogger(ReflectionUtils.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ReflectionUtils.class);
 
     /**
      * Invokes all methods on the given instance that have been annotated with
@@ -98,7 +99,7 @@ public class ReflectionUtils {
                 final Class<?>[] argumentTypes = method.getParameterTypes();
                 if (argumentTypes.length > args.length) {
                     LOG.error("Unable to invoke method {} on {} because method expects {} parameters but only {} were given",
-                        new Object[]{method.getName(), instance, argumentTypes.length, args.length});
+                        method.getName(), instance, argumentTypes.length, args.length);
                     return false;
                 }
 
@@ -106,7 +107,7 @@ public class ReflectionUtils {
                     final Class<?> argType = argumentTypes[i];
                     if (!argType.isAssignableFrom(args[i].getClass())) {
                         LOG.error("Unable to invoke method {} on {} because method parameter {} is expected to be of type {} but argument passed was of type {}",
-                            new Object[]{method.getName(), instance, i, argType, args[i].getClass()});
+                            method.getName(), instance, i, argType, args[i].getClass());
                         return false;
                     }
                 }
@@ -122,7 +123,6 @@ public class ReflectionUtils {
                     }
                 } catch (final IllegalAccessException | IllegalArgumentException | InvocationTargetException t) {
                     LOG.error("Unable to invoke method {} on {}", method.getName(), instance, t);
-                    LOG.error("", t);
                     return false;
                 }
             }

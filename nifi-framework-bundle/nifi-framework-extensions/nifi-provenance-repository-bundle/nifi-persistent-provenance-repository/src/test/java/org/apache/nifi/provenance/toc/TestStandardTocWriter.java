@@ -16,14 +16,14 @@
  */
 package org.apache.nifi.provenance.toc;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.apache.nifi.util.file.FileUtils;
+import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
-import org.apache.nifi.util.file.FileUtils;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestStandardTocWriter {
     @Test
@@ -32,7 +32,7 @@ public class TestStandardTocWriter {
         try {
             assertTrue(tocFile.createNewFile());
 
-            try (final StandardTocWriter writer = new StandardTocWriter(tocFile, false, false)) {
+            try (final StandardTocWriter ignored = new StandardTocWriter(tocFile, false, false)) {
             }
         } finally {
             FileUtils.deleteFile(tocFile, false);

@@ -17,11 +17,6 @@
 
 package org.apache.nifi.controller.swap;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.nifi.controller.queue.QueueSize;
 import org.apache.nifi.controller.repository.SwapSummary;
 import org.apache.nifi.controller.repository.claim.ResourceClaim;
@@ -30,6 +25,11 @@ import org.apache.nifi.controller.repository.schema.ResourceClaimFieldMap;
 import org.apache.nifi.repository.schema.Record;
 import org.apache.nifi.repository.schema.RecordField;
 import org.apache.nifi.repository.schema.RecordSchema;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class SwapSummaryFieldMap implements Record {
     private final SwapSummary swapSummary;
@@ -66,24 +66,17 @@ public class SwapSummaryFieldMap implements Record {
 
     @Override
     public Object getFieldValue(final String fieldName) {
-        switch (fieldName) {
-            case SwapSchema.MAX_RECORD_ID:
-                return swapSummary.getMaxFlowFileId();
-            case SwapSchema.FLOWFILE_COUNT:
-                return swapSummary.getQueueSize().getObjectCount();
-            case SwapSchema.FLOWFILE_SIZE:
-                return swapSummary.getQueueSize().getByteCount();
-            case SwapSchema.QUEUE_IDENTIFIER:
-                return queueIdentifier;
-            case SwapSchema.RESOURCE_CLAIMS:
-                return claimCounts;
-            case SwapSchema.MIN_LAST_QUEUE_DATE:
-                return swapSummary.getMinLastQueueDate();
-            case SwapSchema.TOTAL_LAST_QUEUE_DATE:
-                return swapSummary.getTotalLastQueueDate();
-        }
+        return switch (fieldName) {
+            case SwapSchema.MAX_RECORD_ID -> swapSummary.getMaxFlowFileId();
+            case SwapSchema.FLOWFILE_COUNT -> swapSummary.getQueueSize().getObjectCount();
+            case SwapSchema.FLOWFILE_SIZE -> swapSummary.getQueueSize().getByteCount();
+            case SwapSchema.QUEUE_IDENTIFIER -> queueIdentifier;
+            case SwapSchema.RESOURCE_CLAIMS -> claimCounts;
+            case SwapSchema.MIN_LAST_QUEUE_DATE -> swapSummary.getMinLastQueueDate();
+            case SwapSchema.TOTAL_LAST_QUEUE_DATE -> swapSummary.getTotalLastQueueDate();
+            default -> null;
+        };
 
-        return null;
     }
 
     @SuppressWarnings("unchecked")

@@ -21,7 +21,9 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
+import javax.net.ssl.SSLContext;
 
 public class AggregateNiFiInstance implements NiFiInstance {
     private final List<NiFiInstance> instances;
@@ -110,6 +112,12 @@ public class AggregateNiFiInstance implements NiFiInstance {
         }
 
         return instances.get(nodeIndex - 1);
+    }
+
+    @Override
+    public Optional<SSLContext> getSslContext() {
+        final NiFiInstance firstInstance = instances.getFirst();
+        return firstInstance.getSslContext();
     }
 
     @Override

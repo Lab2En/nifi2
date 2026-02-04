@@ -34,6 +34,7 @@ import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.schema.access.SchemaField;
@@ -68,9 +69,8 @@ public class AvroRecordSetWriter extends SchemaRegistryRecordSetWriter implement
         LZO
     }
 
-    private static final PropertyDescriptor COMPRESSION_FORMAT = new Builder()
-        .name("compression-format")
-        .displayName("Compression Format")
+    static final PropertyDescriptor COMPRESSION_FORMAT = new Builder()
+        .name("Compression Format")
         .description("Compression type to use when writing Avro files. Default is None.")
         .allowableValues(CodecType.values())
         .defaultValue(CodecType.NONE.toString())
@@ -78,8 +78,7 @@ public class AvroRecordSetWriter extends SchemaRegistryRecordSetWriter implement
         .build();
 
     static final PropertyDescriptor ENCODER_POOL_SIZE = new Builder()
-        .name("encoder-pool-size")
-        .displayName("Encoder Pool Size")
+        .name("Encoder Pool Size")
         .description("Avro Writers require the use of an Encoder. Creation of Encoders is expensive, but once created, they can be reused. This property controls the maximum number of Encoders that" +
             " can be pooled and reused. Setting this value too small can result in degraded performance, but setting it higher can result in more heap being used. This property is ignored if the" +
             " Avro Writer is configured with a Schema Write Strategy of 'Embed Avro Schema'.")
@@ -93,8 +92,7 @@ public class AvroRecordSetWriter extends SchemaRegistryRecordSetWriter implement
         "The FlowFile will have the Avro schema embedded into the content, as is typical with Avro");
 
     static final PropertyDescriptor CACHE_SIZE = new PropertyDescriptor.Builder()
-        .name("cache-size")
-        .displayName("Cache Size")
+        .name("Cache Size")
         .description("Specifies how many Schemas should be cached")
         .addValidator(StandardValidators.NON_NEGATIVE_INTEGER_VALIDATOR)
         .defaultValue("1000")
@@ -155,21 +153,23 @@ public class AvroRecordSetWriter extends SchemaRegistryRecordSetWriter implement
         }
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("compression-format", COMPRESSION_FORMAT.getName());
+        config.renameProperty("encoder-pool-size", ENCODER_POOL_SIZE.getName());
+        config.renameProperty("cache-size", CACHE_SIZE.getName());
+    }
+
     private CodecFactory getCodecFactory(String property) {
         CodecType type = CodecType.valueOf(property);
-        switch (type) {
-        case BZIP2:
-            return CodecFactory.bzip2Codec();
-        case DEFLATE:
-            return CodecFactory.deflateCodec(CodecFactory.DEFAULT_DEFLATE_LEVEL);
-        case LZO:
-            return CodecFactory.xzCodec(CodecFactory.DEFAULT_XZ_LEVEL);
-        case SNAPPY:
-            return CodecFactory.snappyCodec();
-        case NONE:
-        default:
-            return CodecFactory.nullCodec();
-        }
+        return switch (type) {
+            case BZIP2 -> CodecFactory.bzip2Codec();
+            case DEFLATE -> CodecFactory.deflateCodec(CodecFactory.DEFAULT_DEFLATE_LEVEL);
+            case LZO -> CodecFactory.xzCodec(CodecFactory.DEFAULT_XZ_LEVEL);
+            case SNAPPY -> CodecFactory.snappyCodec();
+            default -> CodecFactory.nullCodec();
+        };
     }
 
     @Override

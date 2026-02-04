@@ -18,9 +18,8 @@
  */
 package org.apache.nifi.processors.parquet;
 
-
-import com.google.common.collect.ImmutableSet;
 import org.apache.avro.Schema;
+import org.apache.avro.SchemaFormatter;
 import org.apache.avro.file.DataFileStream;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
@@ -29,17 +28,18 @@ import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.DeprecationNotice;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.parquet.stream.NifiParquetOutputFile;
 import org.apache.nifi.parquet.utils.ParquetConfig;
 import org.apache.nifi.parquet.utils.ParquetUtils;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.parquet.avro.AvroParquetWriter;
@@ -49,8 +49,6 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,12 +67,13 @@ import static org.apache.nifi.parquet.utils.ParquetUtils.createParquetConfig;
         @WritesAttribute(attribute = "filename", description = "Sets the filename to the existing filename with the extension replaced by / added to by .parquet"),
         @WritesAttribute(attribute = "record.count", description = "Sets the number of records in the parquet file.")
 })
+@DeprecationNotice(reason = "ConvertAvroToParquet is no longer needed since there is the AvroReader which along with ParquetRecordSetWriter can be used in ConvertRecord to achieve the same thing.",
+        classNames = {"org.apache.nifi.processors.standard.ConvertRecord",
+                "org.apache.nifi.avro.AvroReader", "org.apache.nifi.parquet.ParquetRecordSetWriter"})
 public class ConvertAvroToParquet extends AbstractProcessor {
 
     // Attributes
     public static final String RECORD_COUNT_ATTRIBUTE = "record.count";
-
-    private volatile List<PropertyDescriptor> parquetProps;
 
     // Relationships
     static final Relationship SUCCESS = new Relationship.Builder()
@@ -87,33 +86,25 @@ public class ConvertAvroToParquet extends AbstractProcessor {
             .description("Avro content that could not be processed")
             .build();
 
-    static final Set<Relationship> RELATIONSHIPS
-            = ImmutableSet.<Relationship>builder()
-            .add(SUCCESS)
-            .add(FAILURE)
-            .build();
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
-    @Override
-    protected final void init(final ProcessorInitializationContext context) {
-
-
-        final List<PropertyDescriptor> props = new ArrayList<>();
-
-        props.add(ParquetUtils.COMPRESSION_TYPE);
-        props.add(ParquetUtils.ROW_GROUP_SIZE);
-        props.add(ParquetUtils.PAGE_SIZE);
-        props.add(ParquetUtils.DICTIONARY_PAGE_SIZE);
-        props.add(ParquetUtils.MAX_PADDING_SIZE);
-        props.add(ParquetUtils.ENABLE_DICTIONARY_ENCODING);
-        props.add(ParquetUtils.ENABLE_VALIDATION);
-        props.add(ParquetUtils.WRITER_VERSION);
-
-        this.parquetProps = Collections.unmodifiableList(props);
-    }
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        ParquetUtils.COMPRESSION_TYPE,
+        ParquetUtils.ROW_GROUP_SIZE,
+        ParquetUtils.PAGE_SIZE,
+        ParquetUtils.DICTIONARY_PAGE_SIZE,
+        ParquetUtils.MAX_PADDING_SIZE,
+        ParquetUtils.ENABLE_DICTIONARY_ENCODING,
+        ParquetUtils.ENABLE_VALIDATION,
+        ParquetUtils.WRITER_VERSION
+    );
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return parquetProps;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -143,8 +134,8 @@ public class ConvertAvroToParquet extends AbstractProcessor {
                      final DataFileStream<GenericRecord> dataFileReader = new DataFileStream<>(in, new GenericDatumReader<>())) {
 
                     Schema avroSchema = dataFileReader.getSchema();
-                    getLogger().debug(avroSchema.toString(true));
-                    ParquetWriter<GenericRecord> writer = createParquetWriter(context, flowFile, rawOut, avroSchema );
+                    getLogger().debug(SchemaFormatter.format("json/pretty", avroSchema));
+                    ParquetWriter<GenericRecord> writer = createParquetWriter(context, flowFile, rawOut, avroSchema);
 
                     try {
                         int recordCount = 0;
@@ -173,7 +164,7 @@ public class ConvertAvroToParquet extends AbstractProcessor {
 
             Map<String, String> outAttributes = new HashMap<>();
             outAttributes.put(CoreAttributes.FILENAME.key(), newFilename.toString());
-            outAttributes.put(RECORD_COUNT_ATTRIBUTE, Integer.toString(totalRecordCount.get()) );
+            outAttributes.put(RECORD_COUNT_ATTRIBUTE, Integer.toString(totalRecordCount.get()));
 
             putFlowFile = session.putAllAttributes(putFlowFile, outAttributes);
             session.transfer(putFlowFile, SUCCESS);
@@ -183,6 +174,18 @@ public class ConvertAvroToParquet extends AbstractProcessor {
             getLogger().error("Transferring to failure since failed to convert {} from Avro to Parquet", flowFile, pe);
             session.transfer(flowFile, FAILURE);
         }
+
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(ParquetUtils.OLD_ROW_GROUP_SIZE_PROPERTY_NAME, ParquetUtils.ROW_GROUP_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_PAGE_SIZE_PROPERTY_NAME, ParquetUtils.PAGE_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_DICTIONARY_PAGE_SIZE_PROPERTY_NAME, ParquetUtils.DICTIONARY_PAGE_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_MAX_PADDING_SIZE_PROPERTY_NAME, ParquetUtils.MAX_PADDING_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_ENABLE_DICTIONARY_ENCODING_PROPERTY_NAME, ParquetUtils.ENABLE_DICTIONARY_ENCODING.getName());
+        config.renameProperty(ParquetUtils.OLD_ENABLE_VALIDATION_PROPERTY_NAME, ParquetUtils.ENABLE_VALIDATION.getName());
+        config.renameProperty(ParquetUtils.OLD_WRITER_VERSION_PROPERTY_NAME, ParquetUtils.WRITER_VERSION.getName());
 
     }
 

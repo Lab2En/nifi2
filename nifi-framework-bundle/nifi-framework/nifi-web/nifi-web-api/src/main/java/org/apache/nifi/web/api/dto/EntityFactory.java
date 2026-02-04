@@ -41,8 +41,6 @@ import org.apache.nifi.web.api.entity.AccessPolicySummaryEntity;
 import org.apache.nifi.web.api.entity.ActionEntity;
 import org.apache.nifi.web.api.entity.AffectedComponentEntity;
 import org.apache.nifi.web.api.entity.AllowableValueEntity;
-import org.apache.nifi.web.api.entity.FlowRegistryBranchEntity;
-import org.apache.nifi.web.api.entity.FlowRegistryBucketEntity;
 import org.apache.nifi.web.api.entity.BulletinEntity;
 import org.apache.nifi.web.api.entity.ComponentReferenceEntity;
 import org.apache.nifi.web.api.entity.ComponentValidationResultEntity;
@@ -56,6 +54,8 @@ import org.apache.nifi.web.api.entity.ControllerServiceEntity;
 import org.apache.nifi.web.api.entity.ControllerServiceReferencingComponentEntity;
 import org.apache.nifi.web.api.entity.FlowAnalysisRuleEntity;
 import org.apache.nifi.web.api.entity.FlowBreadcrumbEntity;
+import org.apache.nifi.web.api.entity.FlowRegistryBranchEntity;
+import org.apache.nifi.web.api.entity.FlowRegistryBucketEntity;
 import org.apache.nifi.web.api.entity.FlowRegistryClientEntity;
 import org.apache.nifi.web.api.entity.FunnelEntity;
 import org.apache.nifi.web.api.entity.LabelEntity;
@@ -238,6 +238,7 @@ public final class EntityFactory {
             entity.setStatus(status);
             entity.setId(dto.getId());
             entity.setInputRequirement(dto.getInputRequirement());
+            entity.setPhysicalState(dto.getPhysicalState());
             entity.setPosition(dto.getPosition());
             if (permissions != null && permissions.getCanRead()) {
                 entity.setComponent(dto);
@@ -793,6 +794,7 @@ public final class EntityFactory {
             entity.setSourceId(dto.getSourceId());
             entity.setGroupId(dto.getGroupId());
             entity.setTimestamp(dto.getTimestamp());
+            entity.setTimestampIso(dto.getTimestampIso());
             entity.setNodeAddress(dto.getNodeAddress());
             entity.setCanRead(canRead);
             if (canRead) {

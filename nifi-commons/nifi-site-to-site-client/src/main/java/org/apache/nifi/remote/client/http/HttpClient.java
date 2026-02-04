@@ -16,17 +16,6 @@
  */
 package org.apache.nifi.remote.client.http;
 
-import java.io.IOException;
-import java.net.URI;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.remote.Peer;
 import org.apache.nifi.remote.PeerDescription;
@@ -48,6 +37,18 @@ import org.apache.nifi.remote.util.SiteToSiteRestApiClient;
 import org.apache.nifi.web.api.dto.remote.PeerDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.URI;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class HttpClient extends AbstractSiteToSiteClient implements PeerStatusProvider {
 
@@ -75,12 +76,7 @@ public class HttpClient extends AbstractSiteToSiteClient implements PeerStatusPr
             }
         });
 
-        taskExecutor.scheduleWithFixedDelay(new Runnable() {
-            @Override
-            public void run() {
-                peerSelector.refresh();
-            }
-        }, 0, 5, TimeUnit.SECONDS);
+        taskExecutor.scheduleWithFixedDelay(peerSelector::refresh, 0, 5, TimeUnit.SECONDS);
 
     }
 
@@ -109,7 +105,7 @@ public class HttpClient extends AbstractSiteToSiteClient implements PeerStatusPr
             apiClient.setCacheExpirationMillis(config.getCacheExpiration(TimeUnit.MILLISECONDS));
             apiClient.setLocalAddress(config.getLocalAddress());
 
-           return fetchRemotePeerStatuses(apiClient);
+            return fetchRemotePeerStatuses(apiClient);
         }
     }
 
@@ -122,7 +118,7 @@ public class HttpClient extends AbstractSiteToSiteClient implements PeerStatusPr
         // Each node should have the same URL structure and network reachability with the proxy configuration
         final Collection<PeerDTO> peers = apiClient.getPeers();
         logger.debug("Retrieved {} peers from {}: {}", peers.size(), apiClient.getBaseUrl(), peers);
-        if (peers.size() == 0) {
+        if (peers.isEmpty()) {
             throw new IOException("Could not get any peer to communicate with. " + apiClient.getBaseUrl() + " returned zero peers.");
         }
 
@@ -144,7 +140,7 @@ public class HttpClient extends AbstractSiteToSiteClient implements PeerStatusPr
             final String nodeApiUrl = resolveNodeApiUrl(peerStatus.getPeerDescription());
             final StringBuilder clusterUrls = new StringBuilder();
             config.getUrls().forEach(url -> {
-                if (clusterUrls.length() > 0) {
+                if (!clusterUrls.isEmpty()) {
                     clusterUrls.append(",");
                     clusterUrls.append(url);
                 }

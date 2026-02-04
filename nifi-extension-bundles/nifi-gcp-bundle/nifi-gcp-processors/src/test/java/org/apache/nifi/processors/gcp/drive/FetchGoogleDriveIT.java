@@ -16,18 +16,25 @@
  */
 package org.apache.nifi.processors.gcp.drive;
 
-import static java.lang.String.valueOf;
-import static java.util.Collections.singletonList;
-
 import com.google.api.services.drive.model.File;
+import org.apache.nifi.util.MockFlowFile;
+import org.junit.jupiter.api.Test;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.apache.nifi.util.MockFlowFile;
-import org.junit.jupiter.api.Test;
+
+import static java.lang.String.valueOf;
+import static java.util.Collections.singletonList;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.ERROR_CODE;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.FILENAME;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.ID;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.MIME_TYPE;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.SIZE;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.SIZE_AVAILABLE;
 
 /**
  * See Javadoc {@link AbstractGoogleDriveIT} for instructions how to run this test.
@@ -48,9 +55,10 @@ public class FetchGoogleDriveIT extends AbstractGoogleDriveIT<FetchGoogleDrive> 
         inputFlowFileAttributes.put(GoogleDriveAttributes.ID, file.getId());
         inputFlowFileAttributes.put(GoogleDriveAttributes.FILENAME, file.getName());
         inputFlowFileAttributes.put(GoogleDriveAttributes.SIZE, valueOf(DEFAULT_FILE_CONTENT.length()));
+        inputFlowFileAttributes.put(GoogleDriveAttributes.SIZE_AVAILABLE, "true");
         inputFlowFileAttributes.put(GoogleDriveAttributes.MIME_TYPE, "text/plain");
 
-        HashSet<Map<String, String>> expectedAttributes = new HashSet<>(singletonList(inputFlowFileAttributes));
+        Set<Map<String, String>> expectedAttributes = new HashSet<>(singletonList(inputFlowFileAttributes));
         List<String> expectedContent = singletonList(DEFAULT_FILE_CONTENT);
 
         testRunner.enqueue("unimportant_data", inputFlowFileAttributes);
@@ -69,11 +77,9 @@ public class FetchGoogleDriveIT extends AbstractGoogleDriveIT<FetchGoogleDrive> 
         inputFlowFileAttributes.put(GoogleDriveAttributes.FILENAME, "missing_filename");
 
         Set<Map<String, String>> expectedFailureAttributes = new HashSet<>(singletonList(
-                new HashMap<String, String>() {{
-                    put(GoogleDriveAttributes.ID, "missing");
-                    put(GoogleDriveAttributes.FILENAME, "missing_filename");
-                    put(GoogleDriveAttributes.ERROR_CODE, "404");
-                }}
+                Map.of(GoogleDriveAttributes.ID, "missing",
+                    GoogleDriveAttributes.FILENAME, "missing_filename",
+                    GoogleDriveAttributes.ERROR_CODE, "404")
         ));
 
         testRunner.enqueue("unimportant_data", inputFlowFileAttributes);
@@ -123,11 +129,6 @@ public class FetchGoogleDriveIT extends AbstractGoogleDriveIT<FetchGoogleDrive> 
 
     @Override
     public Set<String> getCheckedAttributeNames() {
-        Set<String> checkedAttributeNames = OutputChecker.super.getCheckedAttributeNames();
-
-        checkedAttributeNames.add(GoogleDriveAttributes.ERROR_CODE);
-        checkedAttributeNames.remove(GoogleDriveAttributes.TIMESTAMP);
-
-        return checkedAttributeNames;
+        return Set.of(ID, FILENAME, SIZE, SIZE_AVAILABLE, MIME_TYPE, ERROR_CODE);
     }
 }

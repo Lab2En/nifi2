@@ -16,9 +16,12 @@
  */
 package org.apache.nifi.web.security.configuration;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.apache.nifi.authorization.Authorizer;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.util.NiFiProperties;
+import org.apache.nifi.web.security.NiFiWebAuthenticationDetails;
+import org.apache.nifi.web.security.NiFiWebAuthenticationDetailsSource;
 import org.apache.nifi.web.security.anonymous.NiFiAnonymousAuthenticationFilter;
 import org.apache.nifi.web.security.anonymous.NiFiAnonymousAuthenticationProvider;
 import org.apache.nifi.web.security.logout.LogoutRequestManager;
@@ -27,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.authentication.AuthenticationDetailsSource;
 import org.springframework.security.authentication.AuthenticationManager;
 
 /**
@@ -35,6 +39,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 @Configuration
 @Import({
         ClientRegistrationConfiguration.class,
+        KeyPairGeneratorConfiguration.class,
         JwtAuthenticationSecurityConfiguration.class,
         JwtDecoderConfiguration.class,
         OidcSecurityConfiguration.class,
@@ -43,20 +48,15 @@ import org.springframework.security.authentication.AuthenticationManager;
 })
 public class AuthenticationSecurityConfiguration {
     private final NiFiProperties niFiProperties;
-
     private final ExtensionManager extensionManager;
-
-    private final Authorizer authorizer;
 
     @Autowired
     public AuthenticationSecurityConfiguration(
             final NiFiProperties niFiProperties,
-            final ExtensionManager extensionManager,
-            final Authorizer authorizer
+            final ExtensionManager extensionManager
     ) {
         this.niFiProperties = niFiProperties;
         this.extensionManager = extensionManager;
-        this.authorizer = authorizer;
     }
 
     @Bean
@@ -64,6 +64,7 @@ public class AuthenticationSecurityConfiguration {
         final NiFiAnonymousAuthenticationFilter anonymousAuthenticationFilter = new NiFiAnonymousAuthenticationFilter();
         anonymousAuthenticationFilter.setProperties(niFiProperties);
         anonymousAuthenticationFilter.setAuthenticationManager(authenticationManager);
+        anonymousAuthenticationFilter.setAuthenticationDetailsSource(authenticationDetailsSource());
         return anonymousAuthenticationFilter;
     }
 
@@ -86,7 +87,12 @@ public class AuthenticationSecurityConfiguration {
     }
 
     @Bean
-    public NiFiAnonymousAuthenticationProvider anonymousAuthenticationProvider() {
+    public NiFiAnonymousAuthenticationProvider anonymousAuthenticationProvider(final Authorizer authorizer) {
         return new NiFiAnonymousAuthenticationProvider(niFiProperties, authorizer);
+    }
+
+    @Bean
+    public AuthenticationDetailsSource<HttpServletRequest, NiFiWebAuthenticationDetails> authenticationDetailsSource() {
+        return new NiFiWebAuthenticationDetailsSource();
     }
 }

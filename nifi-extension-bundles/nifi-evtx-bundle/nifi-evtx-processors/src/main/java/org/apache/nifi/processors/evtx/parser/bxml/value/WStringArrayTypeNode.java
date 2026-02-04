@@ -17,14 +17,16 @@
 
 package org.apache.nifi.processors.evtx.parser.bxml.value;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import javax.xml.stream.XMLOutputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
 import org.apache.nifi.processors.evtx.parser.BinaryReader;
 import org.apache.nifi.processors.evtx.parser.ChunkHeader;
 import org.apache.nifi.processors.evtx.parser.bxml.BxmlNode;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
 
 /**
  * Node representing an array of wstring values
@@ -57,7 +59,7 @@ public class WStringArrayTypeNode extends VariantTypeNode {
         } catch (XMLStreamException e) {
             throw new IOException(e);
         }
-        value = stream.toString("UTF-8");
+        value = stream.toString(StandardCharsets.UTF_8);
     }
 
     @Override

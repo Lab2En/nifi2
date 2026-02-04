@@ -47,7 +47,7 @@ import { FlowConfigurationEffects } from './state/flow-configuration/flow-config
 import { ComponentStateEffects } from './state/component-state/component-state.effects';
 import { ErrorEffects } from './state/error/error.effects';
 import { MatSnackBarModule } from '@angular/material/snack-bar';
-import { CopyButtonComponent, PipesModule } from '@nifi/shared';
+import { CopyButtonComponent } from '@nifi/shared';
 import { DocumentationEffects } from './state/documentation/documentation.effects';
 import { ClusterSummaryEffects } from './state/cluster-summary/cluster-summary.effects';
 import { PropertyVerificationEffects } from './state/property-verification/property-verification.effects';
@@ -56,13 +56,24 @@ import { LoginConfigurationEffects } from './state/login-configuration/login-con
 import { BannerTextEffects } from './state/banner-text/banner-text.effects';
 import { MAT_TOOLTIP_DEFAULT_OPTIONS, MatTooltipDefaultOptions } from '@angular/material/tooltip';
 import { CLIPBOARD_OPTIONS, provideMarkdown } from 'ngx-markdown';
+import { CopyEffects } from './state/copy/copy.effects';
 
 const entry = localStorage.getItem('disable-animations');
-let disableAnimations: string = entry !== null ? JSON.parse(entry).item : '';
+let disableAnimations: string = '';
+
+try {
+    disableAnimations = entry !== null ? JSON.parse(entry).item : '';
+} catch (error) {
+    /* empty */
+}
 
 // honor OS settings if user has not explicitly disabled animations for the application
-if (disableAnimations !== 'true' && disableAnimations !== 'false') {
-    disableAnimations = window.matchMedia('(prefers-reduced-motion: reduce)').matches.toString();
+try {
+    if (disableAnimations !== 'true' && disableAnimations !== 'false') {
+        disableAnimations = window.matchMedia('(prefers-reduced-motion: reduce)').matches.toString();
+    }
+} catch (error) {
+    /* empty */
 }
 
 export const customTooltipDefaults: MatTooltipDefaultOptions = {
@@ -97,18 +108,20 @@ export const customTooltipDefaults: MatTooltipDefaultOptions = {
             ComponentStateEffects,
             DocumentationEffects,
             ClusterSummaryEffects,
-            PropertyVerificationEffects
+            PropertyVerificationEffects,
+            CopyEffects
         ),
         StoreDevtoolsModule.instrument({
             maxAge: 25,
             logOnly: environment.production,
-            autoPause: true
+            autoPause: true,
+            name: 'NiFi',
+            trace: !environment.production
         }),
         MatProgressSpinnerModule,
         MatNativeDateModule,
         MatDialogModule,
-        MatSnackBarModule,
-        PipesModule
+        MatSnackBarModule
     ],
     providers: [
         disableAnimations === 'true' ? provideNoopAnimations() : provideAnimations(),

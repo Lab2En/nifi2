@@ -17,14 +17,25 @@
 
 package org.apache.nifi.c2.client.service;
 
-import static java.net.NetworkInterface.getNetworkInterfaces;
-import static java.util.Collections.list;
-import static java.util.Comparator.comparing;
-import static java.util.Comparator.comparingInt;
-import static java.util.Map.entry;
-import static java.util.Objects.nonNull;
-import static java.util.stream.Collectors.toSet;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import org.apache.nifi.c2.client.C2ClientConfig;
+import org.apache.nifi.c2.client.PersistentUuidGenerator;
+import org.apache.nifi.c2.client.service.model.RuntimeInfoWrapper;
+import org.apache.nifi.c2.protocol.api.AgentInfo;
+import org.apache.nifi.c2.protocol.api.AgentManifest;
+import org.apache.nifi.c2.protocol.api.AgentRepositories;
+import org.apache.nifi.c2.protocol.api.AgentResourceConsumption;
+import org.apache.nifi.c2.protocol.api.AgentStatus;
+import org.apache.nifi.c2.protocol.api.C2Heartbeat;
+import org.apache.nifi.c2.protocol.api.DeviceInfo;
+import org.apache.nifi.c2.protocol.api.FlowInfo;
+import org.apache.nifi.c2.protocol.api.NetworkInfo;
+import org.apache.nifi.c2.protocol.api.ResourceInfo;
+import org.apache.nifi.c2.protocol.api.ResourcesGlobalHash;
+import org.apache.nifi.c2.protocol.api.SupportedOperation;
+import org.apache.nifi.c2.protocol.api.SystemInfo;
+import org.apache.nifi.c2.protocol.component.api.RuntimeManifest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.management.ManagementFactory;
@@ -35,33 +46,19 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
-import org.apache.nifi.c2.client.C2ClientConfig;
-import org.apache.nifi.c2.client.PersistentUuidGenerator;
-import org.apache.nifi.c2.client.service.model.RuntimeInfoWrapper;
-import org.apache.nifi.c2.protocol.api.AgentInfo;
-import org.apache.nifi.c2.protocol.api.AgentManifest;
-import org.apache.nifi.c2.protocol.api.AgentRepositories;
-import org.apache.nifi.c2.protocol.api.AgentResourceConsumption;
-import org.apache.nifi.c2.protocol.api.AgentStatus;
-import org.apache.nifi.c2.protocol.api.ProcessorBulletin;
-import org.apache.nifi.c2.protocol.api.ProcessorStatus;
-import org.apache.nifi.c2.protocol.api.ResourceInfo;
-import org.apache.nifi.c2.protocol.api.C2Heartbeat;
-import org.apache.nifi.c2.protocol.api.DeviceInfo;
-import org.apache.nifi.c2.protocol.api.FlowInfo;
-import org.apache.nifi.c2.protocol.api.FlowQueueStatus;
-import org.apache.nifi.c2.protocol.api.NetworkInfo;
-import org.apache.nifi.c2.protocol.api.SupportedOperation;
-import org.apache.nifi.c2.protocol.api.ResourcesGlobalHash;
-import org.apache.nifi.c2.protocol.api.SystemInfo;
-import org.apache.nifi.c2.protocol.component.api.RuntimeManifest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import static java.net.NetworkInterface.getNetworkInterfaces;
+import static java.util.Collections.list;
+import static java.util.Comparator.comparing;
+import static java.util.Comparator.comparingInt;
+import static java.util.Map.entry;
+import static java.util.Objects.nonNull;
+import static java.util.stream.Collectors.toSet;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class C2HeartbeatFactory {
 
@@ -92,7 +89,7 @@ public class C2HeartbeatFactory {
 
         heartbeat.setAgentInfo(getAgentInfo(runtimeInfoWrapper.getAgentRepositories(), runtimeInfoWrapper.getManifest()));
         heartbeat.setDeviceInfo(generateDeviceInfo());
-        heartbeat.setFlowInfo(getFlowInfo(runtimeInfoWrapper.getQueueStatus(), runtimeInfoWrapper.getProcessorBulletins(), runtimeInfoWrapper.getProcessorStatus()));
+        heartbeat.setFlowInfo(getFlowInfo(runtimeInfoWrapper));
         heartbeat.setCreated(System.currentTimeMillis());
 
         ResourceInfo resourceInfo = new ResourceInfo();
@@ -102,11 +99,12 @@ public class C2HeartbeatFactory {
         return heartbeat;
     }
 
-    private FlowInfo getFlowInfo(Map<String, FlowQueueStatus> queueStatus, List<ProcessorBulletin> processorBulletins, List<ProcessorStatus> processorStatus) {
+    private FlowInfo getFlowInfo(RuntimeInfoWrapper runtimeInfoWrapper) {
         FlowInfo flowInfo = new FlowInfo();
-        flowInfo.setQueues(queueStatus);
-        flowInfo.setProcessorBulletins(processorBulletins);
-        flowInfo.setProcessorStatuses(processorStatus);
+        flowInfo.setQueues(runtimeInfoWrapper.getQueueStatus());
+        flowInfo.setProcessorBulletins(runtimeInfoWrapper.getProcessorBulletins());
+        flowInfo.setProcessorStatuses(runtimeInfoWrapper.getProcessorStatus());
+        flowInfo.setRunStatus(runtimeInfoWrapper.getRunStatus());
         Optional.ofNullable(flowIdHolder.getFlowId()).ifPresent(flowInfo::setFlowId);
         return flowInfo;
     }

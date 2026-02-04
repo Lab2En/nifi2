@@ -16,16 +16,11 @@
  */
 package org.apache.nifi.processors.hl7;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
+import ca.uhn.hl7v2.DefaultHapiContext;
+import ca.uhn.hl7v2.HapiContext;
+import ca.uhn.hl7v2.model.Message;
+import ca.uhn.hl7v2.parser.PipeParser;
+import ca.uhn.hl7v2.validation.impl.ValidationContextFactory;
 import org.apache.nifi.annotation.behavior.DynamicProperties;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.InputRequirement;
@@ -52,15 +47,15 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.stream.io.StreamUtils;
 
-import ca.uhn.hl7v2.DefaultHapiContext;
-import ca.uhn.hl7v2.HapiContext;
-import ca.uhn.hl7v2.model.Message;
-import ca.uhn.hl7v2.parser.PipeParser;
-import ca.uhn.hl7v2.validation.impl.ValidationContextFactory;
+import java.nio.charset.Charset;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @SideEffectFree
 @SupportsBatching
@@ -94,6 +89,15 @@ public class RouteHL7 extends AbstractProcessor {
             .description("The original FlowFile that comes into this processor will be routed to this relationship, unless it is routed to 'failure'")
             .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CHARACTER_SET
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_FAILURE,
+            REL_ORIGINAL
+    );
+
     private volatile Map<Relationship, HL7Query> queries = new HashMap<>();
 
     @Override
@@ -109,9 +113,7 @@ public class RouteHL7 extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(CHARACTER_SET);
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -136,8 +138,7 @@ public class RouteHL7 extends AbstractProcessor {
     @Override
     public Set<Relationship> getRelationships() {
         final Set<Relationship> relationships = new HashSet<>(queries.keySet());
-        relationships.add(REL_FAILURE);
-        relationships.add(REL_ORIGINAL);
+        relationships.addAll(RELATIONSHIPS);
         return relationships;
     }
 
@@ -151,12 +152,7 @@ public class RouteHL7 extends AbstractProcessor {
         final Charset charset = Charset.forName(context.getProperty(CHARACTER_SET).evaluateAttributeExpressions(flowFile).getValue());
 
         final byte[] buffer = new byte[(int) flowFile.getSize()];
-        session.read(flowFile, new InputStreamCallback() {
-            @Override
-            public void process(final InputStream in) throws IOException {
-                StreamUtils.fillBuffer(in, buffer);
-            }
-        });
+        session.read(flowFile, in -> StreamUtils.fillBuffer(in, buffer));
 
         @SuppressWarnings("resource")
         final HapiContext hapiContext = new DefaultHapiContext();
@@ -205,7 +201,7 @@ public class RouteHL7 extends AbstractProcessor {
                 final List<Class<?>> returnTypes = hl7Query.getReturnTypes();
                 if (returnTypes.size() != 1) {
                     error = "RouteHL7 requires that the HL7 Query return exactly 1 element of type MESSAGE";
-                } else if (!HL7Message.class.isAssignableFrom(returnTypes.get(0))) {
+                } else if (!HL7Message.class.isAssignableFrom(returnTypes.getFirst())) {
                     error = "RouteHL7 requires that the HL7 Query return exactly 1 element of type MESSAGE";
                 }
             } catch (final HL7QueryParsingException e) {

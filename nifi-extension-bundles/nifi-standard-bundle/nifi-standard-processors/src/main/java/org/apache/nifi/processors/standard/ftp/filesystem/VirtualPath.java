@@ -70,6 +70,7 @@ public class VirtualPath {
         return new VirtualPath(path.resolve(otherPath).normalize().toString());
     }
 
+    @Override
     public String toString() {
         return path.toString();
     }
@@ -88,5 +89,10 @@ public class VirtualPath {
         }
         VirtualPath other = (VirtualPath) o;
         return path.equals(other.path);
+    }
+
+    @Override
+    public int hashCode() {
+        return path.hashCode();
     }
 }

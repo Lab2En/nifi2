@@ -25,9 +25,10 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.graph.GraphClientService;
-import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -36,9 +37,6 @@ import org.apache.nifi.util.StringUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,40 +62,35 @@ import java.util.Set;
     })
 public class ExecuteGraphQuery extends AbstractGraphExecutor {
 
-    private static final Set<Relationship> relationships;
-    private static final List<PropertyDescriptor> propertyDescriptors;
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        REL_SUCCESS,
+        REL_ORIGINAL,
+        REL_FAILURE
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        CLIENT_SERVICE,
+        QUERY
+    );
 
     public static final String EXECUTION_TIME = "query.took";
-
-    static {
-        final Set<Relationship> tempRelationships = new HashSet<>();
-        tempRelationships.add(REL_SUCCESS);
-        tempRelationships.add(REL_ORIGINAL);
-        tempRelationships.add(REL_FAILURE);
-        relationships = Collections.unmodifiableSet(tempRelationships);
-
-        final List<PropertyDescriptor> tempDescriptors = new ArrayList<>();
-        tempDescriptors.add(CLIENT_SERVICE);
-        tempDescriptors.add(QUERY);
-
-        propertyDescriptors = Collections.unmodifiableList(tempDescriptors);
-    }
 
     protected ObjectMapper mapper = new ObjectMapper();
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     private volatile GraphClientService clientService;
 
     @OnScheduled
+    @Override
     public void onScheduled(final ProcessContext context) {
         super.onScheduled(context);
         clientService = context.getProperty(CLIENT_SERVICE).asControllerService(GraphClientService.class);
@@ -150,6 +143,12 @@ public class ExecuteGraphQuery extends AbstractGraphExecutor {
             }
             context.yield();
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("graph-client-service", CLIENT_SERVICE.getName());
+        config.renameProperty("graph-query", QUERY.getName());
     }
 
     protected String getQuery(ProcessContext context, ProcessSession session, FlowFile input) {

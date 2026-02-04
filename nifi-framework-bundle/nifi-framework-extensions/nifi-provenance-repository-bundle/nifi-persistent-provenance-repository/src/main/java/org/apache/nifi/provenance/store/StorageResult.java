@@ -17,11 +17,11 @@
 
 package org.apache.nifi.provenance.store;
 
-import java.util.Collections;
-import java.util.Map;
-
 import org.apache.nifi.provenance.ProvenanceEventRecord;
 import org.apache.nifi.provenance.serialization.StorageSummary;
+
+import java.util.Collections;
+import java.util.Map;
 
 public interface StorageResult {
     /**
@@ -43,7 +43,7 @@ public interface StorageResult {
      */
     Integer getEventsRolledOver();
 
-    public static StorageResult EMPTY = new StorageResult() {
+    StorageResult EMPTY = new StorageResult() {
         @Override
         public Map<ProvenanceEventRecord, StorageSummary> getStorageLocations() {
             return Collections.emptyMap();

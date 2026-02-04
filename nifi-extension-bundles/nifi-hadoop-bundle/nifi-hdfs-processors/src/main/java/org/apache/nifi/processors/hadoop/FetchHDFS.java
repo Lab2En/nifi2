@@ -17,7 +17,7 @@
 package org.apache.nifi.processors.hadoop;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -53,11 +53,10 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.PrivilegedAction;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 @SupportsBatching
 @InputRequirement(Requirement.INPUT_REQUIRED)
@@ -101,27 +100,34 @@ public class FetchHDFS extends AbstractHadoopProcessor {
                 + "This generally indicates that the Fetch should be tried again.")
         .build();
 
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE,
+            REL_COMMS_FAILURE
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                FILENAME,
+                COMPRESSION_CODEC
+            )
+    ).toList();
+
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> props = new ArrayList<>(properties);
-        props.add(FILENAME);
-        props.add(COMPRESSION_CODEC);
-        return props;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public Set<Relationship> getRelationships() {
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_SUCCESS);
-        relationships.add(REL_FAILURE);
-        relationships.add(REL_COMMS_FAILURE);
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         FlowFile flowFile = session.get();
-        if ( flowFile == null ) {
+        if (flowFile == null) {
             return;
         }
 
@@ -167,7 +173,7 @@ public class FetchHDFS extends AbstractHadoopProcessor {
                 // Check if compression codec is defined (inferred or otherwise)
                 if (codec != null) {
                     stream = codec.createInputStream(stream);
-                    outputFilename = StringUtils.removeEnd(originalFilename, codec.getDefaultExtension());
+                    outputFilename = Strings.CS.removeEnd(originalFilename, codec.getDefaultExtension());
                 } else {
                     outputFilename = originalFilename;
                 }

@@ -16,31 +16,10 @@
  */
 package org.apache.nifi.registry.security.authorization;
 
-import java.io.File;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import javax.sql.DataSource;
-import javax.xml.XMLConstants;
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
-import javax.xml.stream.XMLStreamReader;
-import javax.xml.transform.stream.StreamSource;
-import javax.xml.validation.Schema;
-import javax.xml.validation.SchemaFactory;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.registry.extension.ExtensionClassLoader;
 import org.apache.nifi.registry.extension.ExtensionCloseable;
@@ -66,6 +45,28 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.io.File;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import javax.sql.DataSource;
+import javax.xml.XMLConstants;
+import javax.xml.stream.XMLStreamReader;
+import javax.xml.transform.stream.StreamSource;
+import javax.xml.validation.Schema;
+import javax.xml.validation.SchemaFactory;
 
 /**
  * Creates and configures Authorizers and their providers based on the configuration (authorizers.xml).
@@ -178,7 +179,7 @@ public class AuthorizerFactory implements UserGroupProviderLookup, AccessPolicyP
                         for (final org.apache.nifi.registry.security.authorization.generated.UserGroupProvider provider : authorizerConfiguration.getUserGroupProvider()) {
                             final UserGroupProvider instance = userGroupProviders.get(provider.getIdentifier());
                             final ClassLoader instanceClassLoader = instance.getClass().getClassLoader();
-                            try (final ExtensionCloseable extClosable = ExtensionCloseable.withClassLoader(instanceClassLoader)) {
+                            try (final ExtensionCloseable ignored = ExtensionCloseable.withClassLoader(instanceClassLoader)) {
                                 instance.onConfigured(loadAuthorizerConfiguration(provider.getIdentifier(), provider.getProperty()));
                             }
                         }
@@ -195,7 +196,7 @@ public class AuthorizerFactory implements UserGroupProviderLookup, AccessPolicyP
                         for (final org.apache.nifi.registry.security.authorization.generated.AccessPolicyProvider provider : authorizerConfiguration.getAccessPolicyProvider()) {
                             final AccessPolicyProvider instance = accessPolicyProviders.get(provider.getIdentifier());
                             final ClassLoader instanceClassLoader = instance.getClass().getClassLoader();
-                            try (final ExtensionCloseable extClosable = ExtensionCloseable.withClassLoader(instanceClassLoader)) {
+                            try (final ExtensionCloseable ignored = ExtensionCloseable.withClassLoader(instanceClassLoader)) {
                                 instance.onConfigured(loadAuthorizerConfiguration(provider.getIdentifier(), provider.getProperty()));
                             }
                         }
@@ -215,7 +216,7 @@ public class AuthorizerFactory implements UserGroupProviderLookup, AccessPolicyP
                             }
                             final Authorizer instance = authorizers.get(provider.getIdentifier());
                             final ClassLoader instanceClassLoader = instance.getClass().getClassLoader();
-                            try (final ExtensionCloseable extClosable = ExtensionCloseable.withClassLoader(instanceClassLoader)) {
+                            try (final ExtensionCloseable ignored = ExtensionCloseable.withClassLoader(instanceClassLoader)) {
                                 instance.onConfigured(loadAuthorizerConfiguration(provider.getIdentifier(), provider.getProperty()));
                             }
                         }
@@ -248,7 +249,7 @@ public class AuthorizerFactory implements UserGroupProviderLookup, AccessPolicyP
 
                             // configure the authorizer that is wrapped with integrity checks
                             // set the context ClassLoader the wrapped authorizer's ClassLoader
-                            try (final ExtensionCloseable extClosable = ExtensionCloseable.withClassLoader(authorizerClassLoader)) {
+                            try (final ExtensionCloseable ignored = ExtensionCloseable.withClassLoader(authorizerClassLoader)) {
                                 authorizer.onConfigured(authorizerConfigurationContext);
                             }
                         }
@@ -321,7 +322,7 @@ public class AuthorizerFactory implements UserGroupProviderLookup, AccessPolicyP
             throw new IllegalStateException("Extension not found in any of the configured class loaders: " + userGroupProviderClassName);
         }
 
-        try (final ExtensionCloseable closeable = ExtensionCloseable.withClassLoader(classLoader)) {
+        try (final ExtensionCloseable ignored = ExtensionCloseable.withClassLoader(classLoader)) {
             // attempt to load the class
             Class<?> rawUserGroupProviderClass = Class.forName(userGroupProviderClassName, true, classLoader);
             Class<? extends UserGroupProvider> userGroupProviderClass = rawUserGroupProviderClass.asSubclass(UserGroupProvider.class);
@@ -351,7 +352,7 @@ public class AuthorizerFactory implements UserGroupProviderLookup, AccessPolicyP
             throw new IllegalStateException("Extension not found in any of the configured class loaders: " + accessPolicyProviderClassName);
         }
 
-        try (final ExtensionCloseable closeable = ExtensionCloseable.withClassLoader(classLoader)) {
+        try (final ExtensionCloseable ignored = ExtensionCloseable.withClassLoader(classLoader)) {
             // attempt to load the class
             Class<?> rawAccessPolicyProviderClass = Class.forName(accessPolicyProviderClassName, true, classLoader);
             Class<? extends AccessPolicyProvider> accessPolicyClass = rawAccessPolicyProviderClass.asSubclass(AccessPolicyProvider.class);
@@ -401,7 +402,7 @@ public class AuthorizerFactory implements UserGroupProviderLookup, AccessPolicyP
             classLoader = extensionClassLoader;
         }
 
-        try (final ExtensionCloseable closeable = ExtensionCloseable.withClassLoader(classLoader)) {
+        try (final ExtensionCloseable ignored = ExtensionCloseable.withClassLoader(classLoader)) {
             // attempt to load the class
             Class<?> rawAuthorizerClass = Class.forName(authorizerClassName, true, classLoader);
             Class<? extends Authorizer> authorizerClass = rawAuthorizerClass.asSubclass(Authorizer.class);

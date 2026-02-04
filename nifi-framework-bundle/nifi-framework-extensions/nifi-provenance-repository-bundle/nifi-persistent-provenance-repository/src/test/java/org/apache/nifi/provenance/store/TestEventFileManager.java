@@ -17,14 +17,14 @@
 
 package org.apache.nifi.provenance.store;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.File;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(value = 5)
 public class TestEventFileManager {
@@ -47,7 +47,7 @@ public class TestEventFileManager {
 
             try {
                 Thread.sleep(500L);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException ignored) {
             }
             fileManager.releaseWriteLock(f1);
         });
@@ -59,7 +59,7 @@ public class TestEventFileManager {
                 while (!obtained.get()) {
                     try {
                         obtained.wait();
-                    } catch (InterruptedException e) {
+                    } catch (InterruptedException ignored) {
                     }
                 }
             }
@@ -94,7 +94,7 @@ public class TestEventFileManager {
 
             try {
                 Thread.sleep(100000L);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException ignored) {
             }
             fileManager.releaseReadLock(f1);
         });
@@ -106,7 +106,7 @@ public class TestEventFileManager {
                 while (!obtained.get()) {
                     try {
                         obtained.wait();
-                    } catch (InterruptedException e) {
+                    } catch (InterruptedException ignored) {
                     }
                 }
             }
@@ -141,7 +141,7 @@ public class TestEventFileManager {
 
             try {
                 Thread.sleep(500L);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException ignored) {
             }
             fileManager.releaseWriteLock(f1);
         });
@@ -153,7 +153,7 @@ public class TestEventFileManager {
                 while (!obtained.get()) {
                     try {
                         obtained.wait();
-                    } catch (InterruptedException e) {
+                    } catch (InterruptedException ignored) {
                     }
                 }
             }
@@ -188,7 +188,7 @@ public class TestEventFileManager {
 
             try {
                 Thread.sleep(500L);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException ignored) {
             }
             fileManager.releaseReadLock(f1);
         });
@@ -200,7 +200,7 @@ public class TestEventFileManager {
                 while (!obtained.get()) {
                     try {
                         obtained.wait();
-                    } catch (InterruptedException e) {
+                    } catch (InterruptedException ignored) {
                     }
                 }
             }

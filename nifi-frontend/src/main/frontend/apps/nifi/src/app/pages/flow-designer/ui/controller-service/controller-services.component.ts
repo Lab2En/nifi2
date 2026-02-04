@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy } from '@angular/core';
+import { Component, OnDestroy, inject, signal, computed } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { filter, Observable, switchMap, take, tap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -28,6 +28,7 @@ import {
 } from '../../state/controller-services/controller-services.selectors';
 import { ControllerServicesState } from '../../state/controller-services';
 import {
+    clearControllerServiceBulletins,
     loadControllerServices,
     navigateToAdvancedServiceUi,
     navigateToEditService,
@@ -43,7 +44,7 @@ import {
     selectControllerService
 } from '../../state/controller-services/controller-services.actions';
 import { initialState } from '../../state/controller-services/controller-services.reducer';
-import { ComponentType, isDefinedAndNotNull } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull, NiFiCommon, TextTip } from '@nifi/shared';
 import { ControllerServiceEntity } from '../../../../state/shared';
 import { BreadcrumbEntity } from '../../state/shared';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
@@ -57,10 +58,15 @@ import { DocumentationRequest } from '../../../../state/documentation';
 @Component({
     selector: 'controller-services',
     templateUrl: './controller-services.component.html',
-    styleUrls: ['./controller-services.component.scss']
+    styleUrls: ['./controller-services.component.scss'],
+    standalone: false
 })
 export class ControllerServices implements OnDestroy {
-    serviceState$ = this.store.select(selectControllerServicesState);
+    private store = inject<Store<NiFiState>>(Store);
+    private nifiCommon = inject(NiFiCommon);
+
+    // Convert observables to signals
+    serviceState = this.store.selectSignal(selectControllerServicesState);
     selectedServiceId$ = this.store.select(selectControllerServiceIdFromRoute);
     currentUser$ = this.store.select(selectCurrentUser);
     flowConfiguration$: Observable<FlowConfiguration> = this.store
@@ -69,7 +75,42 @@ export class ControllerServices implements OnDestroy {
 
     private currentProcessGroupId!: string;
 
-    constructor(private store: Store<NiFiState>) {
+    // Expose TextTip for template
+    protected readonly TextTip = TextTip;
+
+    // Filter state
+    showCurrentScopeOnly = signal(false);
+
+    // Computed filtered controller services using signals
+    filteredControllerServices = computed(() => {
+        const serviceState = this.serviceState();
+        if (!serviceState) {
+            return [];
+        }
+
+        const services = serviceState.controllerServices;
+
+        if (!this.showCurrentScopeOnly()) {
+            return services;
+        }
+
+        // Filter to show only services defined in the current process group
+        const filterFn = this.definedByCurrentGroup(serviceState.breadcrumb);
+        return services.filter(filterFn);
+    });
+
+    // Computed property to determine if we should show the filter
+    shouldShowFilter = computed(() => {
+        const serviceState = this.serviceState();
+        if (!serviceState) {
+            return false;
+        }
+
+        // Don't show filter if we're at the root process group (no parent breadcrumb)
+        return !!serviceState.breadcrumb.parentBreadcrumb;
+    });
+
+    constructor() {
         // load the controller services using the process group id from the route
         this.store
             .select(selectProcessGroupIdFromRoute)
@@ -254,7 +295,8 @@ export class ControllerServices implements OnDestroy {
         this.store.dispatch(
             getComponentStateAndOpenDialog({
                 request: {
-                    componentUri: entity.uri,
+                    componentType: ComponentType.ControllerService,
+                    componentId: entity.id,
                     componentName: entity.component.name,
                     canClear: entity.component.state === 'DISABLED'
                 }
@@ -320,6 +362,36 @@ export class ControllerServices implements OnDestroy {
                 }
             })
         );
+    }
+
+    clearBulletinsControllerService(entity: ControllerServiceEntity): void {
+        // Get the most recent bulletin timestamp from the entity's bulletins
+        // This will be reconstructed from the time-only string to a full timestamp
+        const fromTimestamp = this.nifiCommon.getMostRecentBulletinTimestamp(entity.bulletins || []);
+        if (fromTimestamp === null) {
+            return; // no bulletins to clear
+        }
+
+        this.store.dispatch(
+            clearControllerServiceBulletins({
+                request: {
+                    uri: entity.uri,
+                    fromTimestamp,
+                    componentId: entity.id,
+                    componentType: ComponentType.ControllerService
+                }
+            })
+        );
+    }
+
+    // Filter methods
+    toggleFilter(): void {
+        this.showCurrentScopeOnly.set(!this.showCurrentScopeOnly());
+    }
+
+    getFilterTooltip(breadcrumb: BreadcrumbEntity): string {
+        const processGroupName = breadcrumb.permissions.canRead ? breadcrumb.breadcrumb.name : breadcrumb.id;
+        return `Only show the Controller Services defined in the current Process Group: '${processGroupName}'`;
     }
 
     ngOnDestroy(): void {

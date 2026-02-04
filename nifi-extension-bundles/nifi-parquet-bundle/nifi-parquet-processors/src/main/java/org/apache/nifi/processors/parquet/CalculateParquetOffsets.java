@@ -17,17 +17,6 @@
 
 package org.apache.nifi.processors.parquet;
 
-import static java.util.Collections.singletonList;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
@@ -39,7 +28,7 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.parquet.stream.NifiParquetInputFile;
+import org.apache.nifi.parquet.shared.NifiParquetInputFile;
 import org.apache.nifi.parquet.utils.ParquetAttribute;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -49,6 +38,14 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.ParquetFileReader;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 @Tags({"parquet", "split", "partition", "break apart", "efficient processing", "load balance", "cluster"})
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
@@ -109,12 +106,14 @@ public class CalculateParquetOffsets extends AbstractProcessor {
             .description("FlowFiles, with special attributes that represent a chunk of the input file.")
             .build();
 
-    static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             PROP_RECORDS_PER_SPLIT,
             PROP_ZERO_CONTENT_OUTPUT
     );
 
-    static final Set<Relationship> RELATIONSHIPS = new HashSet<>(singletonList(REL_SUCCESS));
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -133,7 +132,7 @@ public class CalculateParquetOffsets extends AbstractProcessor {
             return;
         }
 
-        final long partitionSize = context.getProperty(PROP_RECORDS_PER_SPLIT).asLong();
+        final long partitionSize = context.getProperty(PROP_RECORDS_PER_SPLIT).evaluateAttributeExpressions(inputFlowFile).asLong();
         final boolean zeroContentOutput = context.getProperty(PROP_ZERO_CONTENT_OUTPUT).asBoolean();
 
         final long recordOffset = Optional.ofNullable(inputFlowFile.getAttribute(ParquetAttribute.RECORD_OFFSET))
@@ -203,12 +202,8 @@ public class CalculateParquetOffsets extends AbstractProcessor {
             results.add(
                     session.putAllAttributes(
                             outputFlowFile,
-                            new HashMap<String, String>() {
-                                {
-                                    put(ParquetAttribute.RECORD_OFFSET, Long.toString(recordOffset + addedOffset));
-                                    put(ParquetAttribute.RECORD_COUNT, Long.toString(Math.min(partitionSize, recordCount - addedOffset)));
-                                }
-                            }
+                            Map.of(ParquetAttribute.RECORD_OFFSET, Long.toString(recordOffset + addedOffset),
+                                    ParquetAttribute.RECORD_COUNT, Long.toString(Math.min(partitionSize, recordCount - addedOffset)))
                     )
             );
         }

@@ -16,9 +16,13 @@
  */
 package org.apache.nifi.jms.processors;
 
+import jakarta.jms.ConnectionFactory;
+import jakarta.jms.Message;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.annotation.lifecycle.OnUnscheduled;
+import org.apache.nifi.annotation.notification.OnPrimaryNodeStateChange;
+import org.apache.nifi.annotation.notification.PrimaryNodeState;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.ValidationContext;
@@ -38,6 +42,7 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Processor;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.scheduling.ExecutionNode;
 import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
 import org.springframework.jms.connection.CachingConnectionFactory;
@@ -45,8 +50,6 @@ import org.springframework.jms.connection.SingleConnectionFactory;
 import org.springframework.jms.connection.UserCredentialsConnectionFactoryAdapter;
 import org.springframework.jms.core.JmsTemplate;
 
-import jakarta.jms.ConnectionFactory;
-import jakarta.jms.Message;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -54,6 +57,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -111,8 +115,7 @@ public abstract class AbstractJMSProcessor<T extends JMSWorker> extends Abstract
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
     static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
-            .name("character-set")
-            .displayName("Character Set")
+            .name("Character Set")
             .description("The name of the character set to use to construct or interpret TextMessages")
             .required(true)
             .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR)
@@ -155,15 +158,13 @@ public abstract class AbstractJMSProcessor<T extends JMSWorker> extends Abstract
     );
 
     static final PropertyDescriptor BASE_RECORD_READER = new PropertyDescriptor.Builder()
-            .name("record-reader")
-            .displayName("Record Reader")
+            .name("Record Reader")
             .identifiesControllerService(RecordReaderFactory.class)
             .required(false)
             .build();
 
     static final PropertyDescriptor BASE_RECORD_WRITER = new PropertyDescriptor.Builder()
-            .name("record-writer")
-            .displayName("Record Writer")
+            .name("Record Writer")
             .identifiesControllerService(RecordSetWriterFactory.class)
             .dependsOn(BASE_RECORD_READER)
             .required(true)
@@ -171,6 +172,8 @@ public abstract class AbstractJMSProcessor<T extends JMSWorker> extends Abstract
 
     private volatile IJMSConnectionFactoryProvider connectionFactoryProvider;
     private volatile BlockingQueue<T> workerPool;
+    private volatile boolean runOnPrimary;
+    private final AtomicBoolean shutdownWorkers = new AtomicBoolean(false);
     private final AtomicInteger clientIdCounter = new AtomicInteger(1);
 
     protected static String getClientId(ProcessContext context) {
@@ -191,11 +194,34 @@ public abstract class AbstractJMSProcessor<T extends JMSWorker> extends Abstract
     @Override
     public void migrateProperties(final PropertyConfiguration config) {
         config.removeProperty("Session Cache size");
+        config.renameProperty("character-set", CHARSET.getName());
+        config.renameProperty("record-reader", BASE_RECORD_READER.getName());
+        config.renameProperty("record-writer", BASE_RECORD_WRITER.getName());
+        config.renameProperty(JndiJmsConnectionFactoryProperties.OLD_JNDI_INITIAL_CONTEXT_FACTORY_PROPERTY_NAME, JndiJmsConnectionFactoryProperties.JNDI_INITIAL_CONTEXT_FACTORY.getName());
+        config.renameProperty(JndiJmsConnectionFactoryProperties.OLD_JNDI_PROVIDER_URL_PROPERTY_NAME, JndiJmsConnectionFactoryProperties.JNDI_PROVIDER_URL.getName());
+        config.renameProperty(JndiJmsConnectionFactoryProperties.OLD_JNDI_CONNECTION_FACTORY_NAME_PROPERTY_NAME, JndiJmsConnectionFactoryProperties.JNDI_CONNECTION_FACTORY_NAME.getName());
+        config.renameProperty(JndiJmsConnectionFactoryProperties.OLD_JNDI_CLIENT_LIBRARIES_PROPERTY_NAME, JndiJmsConnectionFactoryProperties.JNDI_CLIENT_LIBRARIES.getName());
+        config.renameProperty(JndiJmsConnectionFactoryProperties.OLD_JNDI_PRINCIPAL_PROPERTY_NAME, JndiJmsConnectionFactoryProperties.JNDI_PRINCIPAL.getName());
+        config.renameProperty(JndiJmsConnectionFactoryProperties.OLD_JNDI_CREDENTIALS_PROPERTY_NAME, JndiJmsConnectionFactoryProperties.JNDI_CREDENTIALS.getName());
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_CONNECTION_FACTORY_IMPL_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_CONNECTION_FACTORY_IMPL.getName());
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_CLIENT_LIBRARIES_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_CLIENT_LIBRARIES.getName());
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_BROKER_URI_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_BROKER_URI.getName());
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_SSL_CONTEXT_SERVICE_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_SSL_CONTEXT_SERVICE.getName());
     }
 
     @Override
     protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
         return new ConnectionFactoryConfigValidator(validationContext).validateConnectionFactoryConfig();
+    }
+
+    @OnPrimaryNodeStateChange
+    public void onPrimaryNodeChange(final PrimaryNodeState newState) {
+        if (isScheduled() && runOnPrimary && newState.equals(PrimaryNodeState.PRIMARY_NODE_REVOKED)) {
+            shutdownWorkers.set(true);
+            close();
+        } else {
+            shutdownWorkers.set(false);
+        }
     }
 
     @Override
@@ -239,13 +265,17 @@ public abstract class AbstractJMSProcessor<T extends JMSWorker> extends Abstract
                 worker.jmsTemplate.setDeliveryMode(Message.DEFAULT_DELIVERY_MODE);
                 worker.jmsTemplate.setTimeToLive(Message.DEFAULT_TIME_TO_LIVE);
                 worker.jmsTemplate.setPriority(Message.DEFAULT_PRIORITY);
-                workerPool.offer(worker);
+                if (!shutdownWorkers.get()) {
+                    workerPool.offer(worker);
+                } else {
+                    worker.shutdown();
+                }
             }
         }
     }
 
     @OnScheduled
-    public void setupConnectionFactoryProvider(final ProcessContext context) {
+    public void setup(final ProcessContext context) {
         if (context.getProperty(CF_SERVICE).isSet()) {
             connectionFactoryProvider = context.getProperty(CF_SERVICE).asControllerService(JMSConnectionFactoryProviderDefinition.class);
         } else if (context.getProperty(JndiJmsConnectionFactoryProperties.JNDI_CONNECTION_FACTORY_NAME).isSet()) {
@@ -255,18 +285,16 @@ public abstract class AbstractJMSProcessor<T extends JMSWorker> extends Abstract
         } else {
             throw new ProcessException("No Connection Factory configured.");
         }
+
+        workerPool = new LinkedBlockingQueue<>(context.getMaxConcurrentTasks());
+        runOnPrimary = context.getExecutionNode().equals(ExecutionNode.PRIMARY);
+        shutdownWorkers.set(false);
     }
 
     @OnUnscheduled
     public void shutdownConnectionFactoryProvider(final ProcessContext context) {
         connectionFactoryProvider = null;
     }
-
-    @OnScheduled
-    public void setupWorkerPool(final ProcessContext context) {
-        workerPool = new LinkedBlockingQueue<>(context.getMaxConcurrentTasks());
-    }
-
 
     @OnStopped
     public void close() {

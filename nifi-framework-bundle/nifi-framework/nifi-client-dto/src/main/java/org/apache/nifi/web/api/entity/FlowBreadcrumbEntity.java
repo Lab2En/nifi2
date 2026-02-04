@@ -17,10 +17,9 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.PermissionsDTO;
 import org.apache.nifi.web.api.dto.flow.FlowBreadcrumbDTO;
-
-import jakarta.xml.bind.annotation.XmlRootElement;
 
 /**
  * A serialized representation of this class can be placed in the entity body of a request or response to or from the API. This particular entity holds a reference to a FlowBreadcrumbDTO.
@@ -96,7 +95,7 @@ public class FlowBreadcrumbEntity extends Entity {
 
     @Schema(
             description = "The current state of the Process Group, as it relates to the Versioned Flow",
-            allowableValues = "LOCALLY_MODIFIED, STALE, LOCALLY_MODIFIED_AND_STALE, UP_TO_DATE, SYNC_FAILURE",
+            allowableValues = {"LOCALLY_MODIFIED", "STALE", "LOCALLY_MODIFIED_AND_STALE", "UP_TO_DATE", "SYNC_FAILURE"},
             accessMode = Schema.AccessMode.READ_ONLY
     )
     public String getVersionedFlowState() {

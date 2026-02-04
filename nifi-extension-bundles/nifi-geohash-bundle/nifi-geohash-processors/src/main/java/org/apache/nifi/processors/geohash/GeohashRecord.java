@@ -16,22 +16,25 @@
  */
 package org.apache.nifi.processors.geohash;
 
+import ch.hsr.geohash.GeoHash;
+import ch.hsr.geohash.WGS84Point;
+import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.SideEffectFree;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
-import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.DeprecationNotice;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.record.path.FieldValue;
@@ -39,33 +42,25 @@ import org.apache.nifi.record.path.RecordPath;
 import org.apache.nifi.record.path.RecordPathResult;
 import org.apache.nifi.record.path.util.RecordPathCache;
 import org.apache.nifi.record.path.validation.RecordPathValidator;
-
 import org.apache.nifi.schema.access.SchemaNotFoundException;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.RecordReader;
 import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
-import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.WriteResult;
-
-import ch.hsr.geohash.GeoHash;
-import ch.hsr.geohash.WGS84Point;
+import org.apache.nifi.serialization.record.Record;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
+@DeprecationNotice(reason = "NIFI-14846: Minimal usage and maintenance since initial implementation")
 @SideEffectFree
 @SupportsBatching
 @Tags({"geo", "geohash", "record"})
@@ -92,8 +87,7 @@ public class GeohashRecord extends AbstractProcessor {
     }
 
     public static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
-            .name("mode")
-            .displayName("Mode")
+            .name("Mode")
             .description("Specifies whether to encode latitude/longitude to geohash or decode geohash to latitude/longitude")
             .required(true)
             .allowableValues(ProcessingMode.values())
@@ -101,8 +95,7 @@ public class GeohashRecord extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor ROUTING_STRATEGY = new PropertyDescriptor.Builder()
-            .name("routing-strategy")
-            .displayName("Routing Strategy")
+            .name("Routing Strategy")
             .description("Specifies how to route flowfiles after encoding or decoding being performed. "
                     + "SKIP will enrich those records that can be enriched and skip the rest. "
                     + "The SKIP strategy will route a flowfile to failure only if unable to parse the data. "
@@ -117,24 +110,21 @@ public class GeohashRecord extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
-            .name("record-reader")
-            .displayName("Record Reader")
+            .name("Record Reader")
             .description("Specifies the record reader service to use for reading incoming data")
             .required(true)
             .identifiesControllerService(RecordReaderFactory.class)
             .build();
 
     public static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
-            .name("record-writer")
-            .displayName("Record Writer")
+            .name("Record Writer")
             .description("Specifies the record writer service to use for writing data")
             .required(true)
             .identifiesControllerService(RecordSetWriterFactory.class)
             .build();
 
     public static final PropertyDescriptor LATITUDE_RECORD_PATH = new PropertyDescriptor.Builder()
-            .name("latitude-record-path")
-            .displayName("Latitude Record Path")
+            .name("Latitude Record Path")
             .description("In the ENCODE mode, this property specifies the record path to retrieve the latitude values. "
                     + "Latitude values should be in the range of [-90, 90]; invalid values will be logged at warn level. "
                     + "In the DECODE mode, this property specifies the record path to put the latitude value")
@@ -144,8 +134,7 @@ public class GeohashRecord extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor LONGITUDE_RECORD_PATH = new PropertyDescriptor.Builder()
-            .name("longitude-record-path")
-            .displayName("Longitude Record Path")
+            .name("Longitude Record Path")
             .description("In the ENCODE mode, this property specifies the record path to retrieve the longitude values; "
                     + "Longitude values should be in the range of [-180, 180]; invalid values will be logged at warn level. "
                     + "In the DECODE mode, this property specifies the record path to put the longitude value")
@@ -155,8 +144,7 @@ public class GeohashRecord extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor GEOHASH_RECORD_PATH = new PropertyDescriptor.Builder()
-            .name("geohash-record-path")
-            .displayName("Geohash Record Path")
+            .name("Geohash Record Path")
             .description("In the ENCODE mode, this property specifies the record path to put the geohash value; "
                     + "in the DECODE mode, this property specifies the record path to retrieve the geohash value")
             .required(true)
@@ -165,8 +153,7 @@ public class GeohashRecord extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor GEOHASH_FORMAT = new PropertyDescriptor.Builder()
-            .name("geohash-format")
-            .displayName("Geohash Format")
+            .name("Geohash Format")
             .description("In the ENCODE mode, this property specifies the desired format for encoding geohash; "
                     + "in the DECODE mode, this property specifies the format of geohash provided")
             .required(true)
@@ -175,8 +162,7 @@ public class GeohashRecord extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor GEOHASH_LEVEL = new PropertyDescriptor.Builder()
-            .name("geohash-level")
-            .displayName("Geohash Level")
+            .name("Geohash Level")
             .description("The integer precision level(1-12) desired for encoding geohash")
             .required(true)
             .addValidator(StandardValidators.createLongValidator(1, 12, true))
@@ -209,35 +195,43 @@ public class GeohashRecord extends AbstractProcessor {
             .description("The original input flowfile will be sent to this relationship")
             .build();
 
-    private static final List<PropertyDescriptor> RECORD_PATH_PROPERTIES = Collections.unmodifiableList(Arrays.asList(
-            LATITUDE_RECORD_PATH, LONGITUDE_RECORD_PATH, GEOHASH_RECORD_PATH
-    ));
+    private static final List<PropertyDescriptor> RECORD_PATH_PROPERTIES = List.of(
+            LATITUDE_RECORD_PATH,
+            LONGITUDE_RECORD_PATH,
+            GEOHASH_RECORD_PATH
+    );
 
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(REL_SUCCESS, REL_ORIGINAL, REL_FAILURE)));
-    private static final Set<Relationship> SPLIT_RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(REL_MATCHED, REL_NOT_MATCHED, REL_ORIGINAL, REL_FAILURE)));
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_ORIGINAL,
+            REL_FAILURE
+    );
+
+    private static final Set<Relationship> SPLIT_RELATIONSHIPS = Set.of(
+            REL_MATCHED,
+            REL_NOT_MATCHED,
+            REL_ORIGINAL,
+            REL_FAILURE
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            MODE,
+            RECORD_READER,
+            RECORD_WRITER,
+            ROUTING_STRATEGY,
+            LATITUDE_RECORD_PATH,
+            LONGITUDE_RECORD_PATH,
+            GEOHASH_RECORD_PATH,
+            GEOHASH_FORMAT,
+            GEOHASH_LEVEL
+    );
 
     private RoutingStrategyExecutor routingStrategyExecutor;
     private static boolean isSplit;
-    private static Integer enrichedCount, unenrichedCount;
+    private static Integer enrichedCount;
+    private static Integer unenrichedCount;
 
     private final RecordPathCache cache = new RecordPathCache(100);
-
-    private List<PropertyDescriptor> descriptors;
-
-    @Override
-    protected void init(final ProcessorInitializationContext context) {
-        descriptors = new ArrayList<>();
-        descriptors.add(MODE);
-        descriptors.add(RECORD_READER);
-        descriptors.add(RECORD_WRITER);
-        descriptors.add(ROUTING_STRATEGY);
-        descriptors.add(LATITUDE_RECORD_PATH);
-        descriptors.add(LONGITUDE_RECORD_PATH);
-        descriptors.add(GEOHASH_RECORD_PATH);
-        descriptors.add(GEOHASH_FORMAT);
-        descriptors.add(GEOHASH_LEVEL);
-        descriptors = Collections.unmodifiableList(descriptors);
-    }
 
     @Override
     public void onPropertyModified(final PropertyDescriptor descriptor, final String oldValue, final String newValue) {
@@ -253,7 +247,7 @@ public class GeohashRecord extends AbstractProcessor {
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return descriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled
@@ -269,8 +263,6 @@ public class GeohashRecord extends AbstractProcessor {
             case SPLIT:
                 routingStrategyExecutor = new SplitRoutingStrategyExecutor();
                 break;
-            default:
-                throw new AssertionError();
         }
         enrichedCount = 0;
         unenrichedCount = 0;
@@ -315,7 +307,6 @@ public class GeohashRecord extends AbstractProcessor {
                 notMatchedWriter.beginRecordSet();
             }
 
-            int level = context.getProperty(GEOHASH_LEVEL).evaluateAttributeExpressions(input).asInteger();
             final String rawLatitudePath = context.getProperty(LATITUDE_RECORD_PATH).evaluateAttributeExpressions(input).getValue();
             RecordPath latitudePath = cache.getCompiled(rawLatitudePath);
             final String rawLongitudePath = context.getProperty(LONGITUDE_RECORD_PATH).evaluateAttributeExpressions(input).getValue();
@@ -328,6 +319,8 @@ public class GeohashRecord extends AbstractProcessor {
 
                 try {
                     if (encode) {
+                        int level = context.getProperty(GEOHASH_LEVEL).evaluateAttributeExpressions(input).asInteger();
+
                         Object encodedGeohash = getEncodedGeohash(latitudePath, longitudePath, record, format, level);
                         updated = updateRecord(GEOHASH_RECORD_PATH, encodedGeohash, record, paths);
                     } else {
@@ -371,6 +364,19 @@ public class GeohashRecord extends AbstractProcessor {
 
         //Transfer Flowfiles by routing strategy
         routingStrategyExecutor.transferFlowFiles(session, input, output, notMatched);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("mode", MODE.getName());
+        config.renameProperty("routing-strategy", ROUTING_STRATEGY.getName());
+        config.renameProperty("record-reader", RECORD_READER.getName());
+        config.renameProperty("record-writer", RECORD_WRITER.getName());
+        config.renameProperty("latitude-record-path", LATITUDE_RECORD_PATH.getName());
+        config.renameProperty("longitude-record-path", LONGITUDE_RECORD_PATH.getName());
+        config.renameProperty("geohash-record-path", GEOHASH_RECORD_PATH.getName());
+        config.renameProperty("geohash-format", GEOHASH_FORMAT.getName());
+        config.renameProperty("geohash-level", GEOHASH_LEVEL.getName());
     }
 
     private interface RoutingStrategyExecutor {
@@ -449,7 +455,7 @@ public class GeohashRecord extends AbstractProcessor {
         Optional<FieldValue> latitudeField = latitudeResult.getSelectedFields().findFirst();
         Optional<FieldValue> longitudeField = longitudeResult.getSelectedFields().findFirst();
 
-        if (!latitudeField.isPresent() || !longitudeField.isPresent()) {
+        if (latitudeField.isEmpty() || longitudeField.isEmpty()) {
             return null;
         }
 
@@ -466,21 +472,18 @@ public class GeohashRecord extends AbstractProcessor {
         double realLongValue = Double.parseDouble(longitudeVal.toString());
         GeoHash gh = GeoHash.withCharacterPrecision(realLatValue, realLongValue, level);
 
-        switch (format) {
-            case BINARY:
-                return gh.toBinaryString();
-            case LONG:
-                return gh.longValue();
-            default:
-                return gh.toBase32();
-        }
+        return switch (format) {
+            case BINARY -> gh.toBinaryString();
+            case LONG -> gh.longValue();
+            default -> gh.toBase32();
+        };
     }
 
     private WGS84Point getDecodedPointFromGeohash(RecordPath geohashPath, Record record, GeohashFormat format) {
         RecordPathResult geohashResult = geohashPath.evaluate(record);
         Optional<FieldValue> geohashField = geohashResult.getSelectedFields().findFirst();
 
-        if (!geohashField.isPresent()) {
+        if (geohashField.isEmpty()) {
             return null;
         }
 
@@ -491,19 +494,14 @@ public class GeohashRecord extends AbstractProcessor {
         }
 
         String geohashString = geohashVal.toString();
-        GeoHash decodedHash;
-
-        switch (format) {
-            case BINARY:
-                decodedHash = GeoHash.fromBinaryString(geohashString);
-                break;
-            case LONG:
+        GeoHash decodedHash = switch (format) {
+            case BINARY -> GeoHash.fromBinaryString(geohashString);
+            case LONG -> {
                 String binaryString = Long.toBinaryString(Long.parseLong(geohashString));
-                decodedHash = GeoHash.fromBinaryString(binaryString);
-                break;
-            default:
-                decodedHash = GeoHash.fromGeohashString(geohashString);
-        }
+                yield GeoHash.fromBinaryString(binaryString);
+            }
+            default -> GeoHash.fromGeohashString(geohashString);
+        };
 
         return decodedHash.getBoundingBoxCenter();
     }
@@ -516,13 +514,13 @@ public class GeohashRecord extends AbstractProcessor {
         RecordPathResult result = path.evaluate(record);
 
         final Optional<FieldValue> fieldValueOption = result.getSelectedFields().findFirst();
-        if (!fieldValueOption.isPresent()) {
+        if (fieldValueOption.isEmpty()) {
             return false;
         }
 
         final FieldValue fieldValue = fieldValueOption.get();
 
-        if (!fieldValue.getParent().isPresent() || fieldValue.getParent().get().getValue() == null) {
+        if (fieldValue.getParent().isEmpty() || fieldValue.getParent().get().getValue() == null) {
             return false;
         }
 

@@ -36,6 +36,7 @@ yarn-error.log
 /libpeerconnection.log
 testem.log
 /typings
+/.tool-versions
 
 # System files
 .DS_Store
@@ -45,3 +46,7 @@ Thumbs.db
 .nx/cache
 .nx/workspace-data
 .angular
+
+migrations.json
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md

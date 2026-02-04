@@ -16,9 +16,6 @@
  */
 package org.apache.nifi.registry.web.api;
 
-import java.util.List;
-import java.util.SortedSet;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.extensions.Extension;
@@ -27,7 +24,6 @@ import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -38,11 +34,11 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.nifi.extension.ExtensionMetadata;
 import org.apache.nifi.registry.event.EventService;
 import org.apache.nifi.registry.exception.ResourceNotFoundException;
 import org.apache.nifi.registry.extension.bundle.BundleVersionFilterParams;
 import org.apache.nifi.registry.extension.bundle.BundleVersionMetadata;
+import org.apache.nifi.registry.extension.component.ExtensionMetadata;
 import org.apache.nifi.registry.extension.repo.ExtensionRepoArtifact;
 import org.apache.nifi.registry.extension.repo.ExtensionRepoBucket;
 import org.apache.nifi.registry.extension.repo.ExtensionRepoExtensionMetadata;
@@ -53,6 +49,9 @@ import org.apache.nifi.registry.web.service.ServiceFacade;
 import org.apache.nifi.registry.web.service.StreamingContent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.SortedSet;
 
 @Component
 @Path("/extension-repository")
@@ -72,10 +71,8 @@ public class ExtensionRepoResource extends ApplicationResource {
     @Operation(
             summary = "Get extension repo buckets",
             description = "Gets the names of the buckets the current user is authorized for in order to browse the repo by bucket. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoBucket.class))))
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoBucket.class)))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
@@ -95,22 +92,21 @@ public class ExtensionRepoResource extends ApplicationResource {
     @Operation(
             summary = "Get extension repo groups",
             description = "Gets the groups in the extension repository in the given bucket. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoGroup.class)))),
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoGroup.class)))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
-                    @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)}
+                    @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
+            }
     )
     public Response getExtensionRepoGroups(
             @PathParam("bucketName")
@@ -127,22 +123,20 @@ public class ExtensionRepoResource extends ApplicationResource {
     @Operation(
             summary = "Get extension repo artifacts",
             description = "Gets the artifacts in the extension repository in the given bucket and group. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoArtifact.class)))),
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoArtifact.class)))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoArtifacts(
@@ -162,22 +156,21 @@ public class ExtensionRepoResource extends ApplicationResource {
     @Operation(
             summary = "Get extension repo versions",
             description = "Gets the versions in the extension repository for the given bucket, group, and artifact. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoVersionSummary.class)))),
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionRepoVersionSummary.class)))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
-                    @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)}
+                    @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
+            }
     )
     public Response getExtensionRepoVersions(
             @PathParam("bucketName")
@@ -199,22 +192,20 @@ public class ExtensionRepoResource extends ApplicationResource {
     @Operation(
             summary = "Get extension repo version",
             description = "Gets information about the version in the given bucket, group, and artifact. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ExtensionRepoVersion.class))),
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ExtensionRepoVersion.class))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoVersion(
@@ -239,22 +230,20 @@ public class ExtensionRepoResource extends ApplicationResource {
     @Operation(
             summary = "Get extension repo extensions",
             description = "Gets information about the extensions in the given bucket, group, artifact, and version. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionMetadata.class)))),
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(array = @ArraySchema(schema = @Schema(implementation = ExtensionMetadata.class)))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoVersionExtensions(
@@ -283,22 +272,20 @@ public class ExtensionRepoResource extends ApplicationResource {
             summary = "Get extension repo extension",
             description = "Gets information about the extension with the given name in " +
                     "the given bucket, group, artifact, and version. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = org.apache.nifi.extension.manifest.Extension.class))),
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = org.apache.nifi.extension.manifest.Extension.class))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoVersionExtension(
@@ -327,21 +314,20 @@ public class ExtensionRepoResource extends ApplicationResource {
             summary = "Get extension repo extension docs",
             description = "Gets the documentation for the extension with the given name in " +
                     "the given bucket, group, artifact, and version. " + NON_GUARANTEED_ENDPOINT,
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200"),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoVersionExtensionDocs(
@@ -369,21 +355,20 @@ public class ExtensionRepoResource extends ApplicationResource {
             summary = "Get extension repo extension details",
             description = "Gets the additional details documentation for the extension with the given name in " +
                     "the given bucket, group, artifact, and version. " + NON_GUARANTEED_ENDPOINT,
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200"),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoVersionExtensionAdditionalDetailsDocs(
@@ -410,22 +395,20 @@ public class ExtensionRepoResource extends ApplicationResource {
     @Operation(
             summary = "Get extension repo version content",
             description = "Gets the binary content of the bundle with the given bucket, group, artifact, and version. " + NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = byte[].class))),
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = byte[].class))),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoVersionContent(
@@ -457,21 +440,20 @@ public class ExtensionRepoResource extends ApplicationResource {
             summary = "Get extension repo version checksum",
             description = "Gets the hex representation of the SHA-256 digest for the binary content of the bundle " +
                     "with the given bucket, group, artifact, and version." + NON_GUARANTEED_ENDPOINT,
-            extensions = {
-                    @Extension(
-                            name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
-                    )
-            }
-    )
-    @ApiResponses(
-            {
+            responses = {
+                    @ApiResponse(responseCode = "200"),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),
                     @ApiResponse(responseCode = "404", description = HttpStatusMessages.MESSAGE_404),
                     @ApiResponse(responseCode = "409", description = HttpStatusMessages.MESSAGE_409)
+            },
+            extensions = {
+                    @Extension(
+                            name = "access-policy", properties = {
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/buckets/{bucketId}")}
+                    )
             }
     )
     public Response getExtensionRepoVersionSha256(
@@ -496,10 +478,9 @@ public class ExtensionRepoResource extends ApplicationResource {
             summary = "Get global extension repo version checksum",
             description = "Gets the hex representation of the SHA-256 digest for the binary content with the given bucket, group, artifact, and version. " +
                     "Since the same group-artifact-version can exist in multiple buckets, this will return the checksum of the first one returned. " +
-                    "This will be consistent since the checksum must be the same when existing in multiple buckets. " + NON_GUARANTEED_ENDPOINT
-    )
-    @ApiResponses(
-            {
+                    "This will be consistent since the checksum must be the same when existing in multiple buckets. " + NON_GUARANTEED_ENDPOINT,
+            responses = {
+                    @ApiResponse(responseCode = "200"),
                     @ApiResponse(responseCode = "400", description = HttpStatusMessages.MESSAGE_400),
                     @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
                     @ApiResponse(responseCode = "403", description = HttpStatusMessages.MESSAGE_403),

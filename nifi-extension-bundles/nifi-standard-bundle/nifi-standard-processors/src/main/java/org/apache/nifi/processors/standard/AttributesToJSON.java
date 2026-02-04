@@ -33,6 +33,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -108,8 +109,7 @@ public class AttributesToJSON extends AbstractProcessor {
 
 
     public static final PropertyDescriptor ATTRIBUTES_REGEX = new PropertyDescriptor.Builder()
-            .name("attributes-to-json-regex")
-            .displayName("Attributes Regular Expression")
+            .name("Attributes Regular Expression")
             .description("Regular expression that will be evaluated against the flow file attributes to select "
                     + "the matching attributes. This property can be used in combination with the attributes "
                     + "list property.")
@@ -149,7 +149,6 @@ public class AttributesToJSON extends AbstractProcessor {
 
     public static final PropertyDescriptor JSON_HANDLING_STRATEGY = new PropertyDescriptor.Builder()
             .name("JSON Handling Strategy")
-            .displayName("JSON Handling Strategy")
             .description("Strategy to use for handling attributes which contain nested JSON.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
@@ -159,7 +158,6 @@ public class AttributesToJSON extends AbstractProcessor {
 
     public static final PropertyDescriptor PRETTY_PRINT = new PropertyDescriptor.Builder()
             .name("Pretty Print")
-            .displayName("Pretty Print")
             .description("Apply pretty print formatting to the output.")
             .required(true)
             .allowableValues("true", "false")
@@ -167,7 +165,7 @@ public class AttributesToJSON extends AbstractProcessor {
             .dependsOn(DESTINATION, DESTINATION_CONTENT)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             ATTRIBUTES_LIST,
             ATTRIBUTES_REGEX,
             DESTINATION,
@@ -198,7 +196,7 @@ public class AttributesToJSON extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -215,7 +213,7 @@ public class AttributesToJSON extends AbstractProcessor {
     protected Map<String, Object> buildAttributesMapForFlowFile(FlowFile ff, Set<String> attributes, Set<String> attributesToRemove,
             boolean nullValForEmptyString, Pattern attPattern) {
         Map<String, Object> result;
-        //If list of attributes specified get only those attributes. Otherwise write them all
+        //If list of attributes specified get only those attributes. Otherwise, write them all
         if (attributes != null || attPattern != null) {
             result = new LinkedHashMap<>();
             if (attributes != null) {
@@ -248,7 +246,7 @@ public class AttributesToJSON extends AbstractProcessor {
     }
 
     private Set<String> buildAtrs(String atrList) {
-        //If list of attributes specified get only those attributes. Otherwise write them all
+        //If list of attributes specified get only those attributes. Otherwise, write them all
         if (StringUtils.isNotBlank(atrList)) {
             String[] ats = StringUtils.split(atrList, AT_LIST_SEPARATOR);
             if (ats != null) {
@@ -270,8 +268,8 @@ public class AttributesToJSON extends AbstractProcessor {
         attributes = buildAtrs(context.getProperty(ATTRIBUTES_LIST).getValue());
         nullValueForEmptyString = context.getProperty(NULL_VALUE_FOR_EMPTY_STRING).asBoolean();
         destinationContent = DESTINATION_CONTENT.equals(context.getProperty(DESTINATION).getValue());
-        final boolean prettyPrint = context.getProperty(PRETTY_PRINT).asBoolean();
-        objectWriter = destinationContent && prettyPrint ? OBJECT_MAPPER.writerWithDefaultPrettyPrinter() : OBJECT_MAPPER.writer();
+        final boolean prettyPrint = destinationContent && context.getProperty(PRETTY_PRINT).asBoolean();
+        objectWriter = prettyPrint ? OBJECT_MAPPER.writerWithDefaultPrettyPrinter() : OBJECT_MAPPER.writer();
         jsonHandlingStrategy = context.getProperty(JSON_HANDLING_STRATEGY).asAllowableValue(JsonHandlingStrategy.class);
 
         if (context.getProperty(ATTRIBUTES_REGEX).isSet()) {
@@ -306,6 +304,11 @@ public class AttributesToJSON extends AbstractProcessor {
             getLogger().error(e.getMessage());
             session.transfer(original, REL_FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("attributes-to-json-regex", ATTRIBUTES_REGEX.getName());
     }
 
     private Map<String, Object> getFormattedAttributes(Map<String, Object> flowFileAttributes) throws JsonProcessingException {

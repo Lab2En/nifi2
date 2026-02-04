@@ -18,8 +18,8 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
+
 import java.util.Set;
 
 @XmlType(name = "runStatusDetails")
@@ -56,7 +56,7 @@ public class ProcessorRunStatusDetailsDTO {
     }
 
     @Schema(description = "The run status of the processor",
-        allowableValues = RUNNING + ", " + STOPPED + ", " + INVALID + ", " + VALIDATING + ", " + DISABLED
+        allowableValues = {RUNNING, STOPPED, INVALID, VALIDATING, DISABLED}
     )
     public String getRunStatus() {
         return runStatus;

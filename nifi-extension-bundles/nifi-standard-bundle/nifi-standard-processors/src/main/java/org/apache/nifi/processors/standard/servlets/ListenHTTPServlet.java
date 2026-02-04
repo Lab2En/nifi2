@@ -29,6 +29,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.MediaType;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.StandardFlowFileMediaType;
@@ -48,13 +49,12 @@ import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
 import org.apache.nifi.serialization.record.RecordSet;
-import org.apache.nifi.stream.io.StreamThrottler;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.FlowFileUnpackager;
 import org.apache.nifi.util.FlowFileUnpackagerV1;
 import org.apache.nifi.util.FlowFileUnpackagerV2;
 import org.apache.nifi.util.FlowFileUnpackagerV3;
-import org.eclipse.jetty.ee10.servlet.ServletContextRequest;
+import org.eclipse.jetty.ee11.servlet.ServletContextRequest;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -113,7 +113,6 @@ public class ListenHTTPServlet extends HttpServlet {
     private Pattern authorizedIssuerPattern;
     private Pattern headerPattern;
     private ConcurrentMap<String, FlowFileEntryTimeWrapper> flowFileMap;
-    private StreamThrottler streamThrottler;
     private String basePath;
     private int returnCode;
     private long multipartRequestMaxSize;
@@ -133,14 +132,14 @@ public class ListenHTTPServlet extends HttpServlet {
         this.authorizedIssuerPattern = (Pattern) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_AUTHORITY_ISSUER_PATTERN);
         this.headerPattern = (Pattern) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_HEADER_PATTERN);
         this.flowFileMap = (ConcurrentMap<String, FlowFileEntryTimeWrapper>) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_FLOWFILE_MAP);
-        this.streamThrottler = (StreamThrottler) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_STREAM_THROTTLER);
         this.basePath = (String) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_BASE_PATH);
         this.returnCode = (int) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_RETURN_CODE);
         this.multipartRequestMaxSize = (long) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_MULTIPART_REQUEST_MAX_SIZE);
         this.multipartReadBufferSize = (int) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_MULTIPART_READ_BUFFER_SIZE);
         this.port = (int) context.getAttribute(ListenHTTP.CONTEXT_ATTRIBUTE_PORT);
         this.readerFactory = processContext.getProperty(ListenHTTP.RECORD_READER).asControllerService(RecordReaderFactory.class);
-        this.writerFactory = processContext.getProperty(ListenHTTP.RECORD_WRITER).asControllerService(RecordSetWriterFactory.class);
+        this.writerFactory = readerFactory != null
+                ? processContext.getProperty(ListenHTTP.RECORD_WRITER).asControllerService(RecordSetWriterFactory.class) : null;
     }
 
     public void setPort(final int port) {
@@ -148,7 +147,7 @@ public class ListenHTTPServlet extends HttpServlet {
     }
 
     @Override
-    protected void doHead(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
+    public void doHead(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
         if (request.getLocalPort() == port) {
             response.addHeader(ACCEPT_ENCODING_NAME, ACCEPT_ENCODING_VALUE);
             response.addHeader(ACCEPT_HEADER_NAME, ACCEPT_HEADER_VALUE);
@@ -158,24 +157,8 @@ public class ListenHTTPServlet extends HttpServlet {
         }
     }
 
-    private void notAllowed(final HttpServletRequest request, final HttpServletResponse response) throws IOException {
-        response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Method Not Allowed");
-    }
-
     @Override
-    protected void doTrace(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
-        notAllowed(request, response);
-        logger.debug("Denying TRACE request; method not allowed.");
-    }
-
-    @Override
-    protected void doOptions(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
-        notAllowed(request, response);
-        logger.debug("Denying OPTIONS request; method not allowed.");
-    }
-
-    @Override
-    protected void doPost(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
+    public void doPost(final HttpServletRequest request, final HttpServletResponse response) throws ServletException, IOException {
 
         if (request.getLocalPort() != port) {
             super.doPost(request, response);
@@ -190,7 +173,7 @@ public class ListenHTTPServlet extends HttpServlet {
             if (sessionFactory == null) {
                 try {
                     Thread.sleep(10);
-                } catch (final InterruptedException e) {
+                } catch (final InterruptedException ignored) {
                 }
             }
         } while (sessionFactory == null);
@@ -248,7 +231,7 @@ public class ListenHTTPServlet extends HttpServlet {
             if (destinationVersion != null) {
                 try {
                     protocolVersion = Integer.valueOf(destinationVersion);
-                } catch (final NumberFormatException e) {
+                } catch (final NumberFormatException ignored) {
                     // Value was invalid. Treat as if the header were missing.
                 }
             }
@@ -257,9 +240,7 @@ public class ListenHTTPServlet extends HttpServlet {
             final boolean createHold = Boolean.parseBoolean(request.getHeader(FLOWFILE_CONFIRMATION_HEADER));
             final String contentType = request.getContentType();
 
-            final InputStream unthrottled = contentGzipped ? new GZIPInputStream(request.getInputStream()) : request.getInputStream();
-
-            final InputStream in = (streamThrottler == null) ? unthrottled : streamThrottler.newThrottledInputStream(unthrottled);
+            final InputStream in = contentGzipped ? new GZIPInputStream(request.getInputStream()) : request.getInputStream();
 
             if (logger.isDebugEnabled()) {
                 logger.debug("Received request from {}, createHold={}, content-type={}, gzip={}", request.getRemoteHost(), createHold, contentType, contentGzipped);
@@ -344,7 +325,6 @@ public class ListenHTTPServlet extends HttpServlet {
     private Set<FlowFile> handleRequest(final HttpServletRequest request, final ProcessSession session, String foundSubject, String foundIssuer,
                                         final boolean destinationIsLegacyNiFi, final String contentType, final InputStream in) throws IOException {
         FlowFile flowFile;
-        String holdUuid = null;
         final AtomicBoolean hasMoreData = new AtomicBoolean(false);
         final FlowFileUnpackager unpackager = getFlowFileUnpackager(contentType);
 
@@ -378,17 +358,15 @@ public class ListenHTTPServlet extends HttpServlet {
 
             // put metadata on flowfile
             final String nameVal = request.getHeader(CoreAttributes.FILENAME.key());
-            if (StringUtils.isNotBlank(nameVal)) {
+            // Favor filename extracted from unpackager over filename in header
+            if (StringUtils.isBlank(attributes.get(CoreAttributes.FILENAME.key())) && StringUtils.isNotBlank(nameVal)) {
                 attributes.put(CoreAttributes.FILENAME.key(), nameVal);
             }
 
-            String sourceSystemFlowFileIdentifier = attributes.get(CoreAttributes.UUID.key());
+            String sourceSystemFlowFileIdentifier = request.getHeader(CoreAttributes.UUID.key()) == null
+                    ? attributes.remove(CoreAttributes.UUID.key()) : request.getHeader(CoreAttributes.UUID.key());
             if (sourceSystemFlowFileIdentifier != null) {
-                sourceSystemFlowFileIdentifier = "urn:nifi:" + sourceSystemFlowFileIdentifier;
-
-                // If we receveied a UUID, we want to give the FlowFile a new UUID and register the sending system's
-                // identifier as the SourceSystemFlowFileIdentifier field in the Provenance RECEIVE event
-                attributes.put(CoreAttributes.UUID.key(), UUID.randomUUID().toString());
+                sourceSystemFlowFileIdentifier = "urn:nifi:" + sourceSystemFlowFileIdentifier; //NOPMD
             }
 
             flowFile = session.putAllAttributes(flowFile, attributes);
@@ -397,9 +375,6 @@ public class ListenHTTPServlet extends HttpServlet {
             session.getProvenanceReporter().receive(flowFile, request.getRequestURL().toString(), sourceSystemFlowFileIdentifier, details, transferMillis);
             flowFileSet.add(flowFile);
 
-            if (holdUuid == null) {
-                holdUuid = flowFile.getAttribute(CoreAttributes.UUID.key());
-            }
         } while (hasMoreData.get());
         return flowFileSet;
     }
@@ -440,15 +415,14 @@ public class ListenHTTPServlet extends HttpServlet {
 
             final AsyncContext asyncContext = request.startAsync();
             session.commitAsync(() -> {
-                        response.setStatus(this.returnCode);
-                        asyncContext.complete();
-                    }, t -> {
-                        logger.error("Failed to commit session. Returning error response to Remote Host: [{}] Port [{}] SubjectDN [{}] IssuerDN [{}]",
-                                request.getRemoteHost(), request.getRemotePort(), foundSubject, foundIssuer, t);
-                        response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                        asyncContext.complete();
-                    }
-            );
+                response.setStatus(this.returnCode);
+                asyncContext.complete();
+            }, t -> {
+                logger.error("Failed to commit session. Returning error response to Remote Host: [{}] Port [{}] SubjectDN [{}] IssuerDN [{}]",
+                        request.getRemoteHost(), request.getRemotePort(), foundSubject, foundIssuer, t);
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                asyncContext.complete();
+            });
         }
     }
 
@@ -483,7 +457,7 @@ public class ListenHTTPServlet extends HttpServlet {
             unpackager = new FlowFileUnpackagerV3();
         } else if (StandardFlowFileMediaType.VERSION_2.getMediaType().equals(contentType)) {
             unpackager = new FlowFileUnpackagerV2();
-        } else if (StringUtils.startsWith(contentType, StandardFlowFileMediaType.VERSION_UNSPECIFIED.getMediaType())) {
+        } else if (Strings.CS.startsWith(contentType, StandardFlowFileMediaType.VERSION_UNSPECIFIED.getMediaType())) {
             unpackager = new FlowFileUnpackagerV1();
         } else {
             unpackager = null;
@@ -494,7 +468,7 @@ public class ListenHTTPServlet extends HttpServlet {
     private void addMatchingRequestHeaders(final HttpServletRequest request, final Map<String, String> attributes) {
         // put arbitrary headers on flow file
         for (Enumeration<String> headerEnum = request.getHeaderNames();
-             headerEnum.hasMoreElements(); ) {
+             headerEnum.hasMoreElements();) {
             String headerName = headerEnum.nextElement();
             if (headerPattern != null && headerPattern.matcher(headerName).matches()) {
                 String headerValue = request.getHeader(headerName);

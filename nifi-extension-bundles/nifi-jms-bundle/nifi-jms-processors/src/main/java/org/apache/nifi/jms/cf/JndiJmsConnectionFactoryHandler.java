@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.jms.cf;
 
+import jakarta.jms.ConnectionFactory;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.controller.ConfigurationContext;
@@ -23,15 +24,13 @@ import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.exception.ProcessException;
 
-import jakarta.jms.ConnectionFactory;
-import javax.naming.Context;
-import javax.naming.InitialContext;
-import javax.naming.NamingException;
 import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Hashtable;
 import java.util.Set;
+import javax.naming.Context;
+import javax.naming.InitialContext;
+import javax.naming.NamingException;
 
 import static org.apache.nifi.jms.cf.JndiJmsConnectionFactoryProperties.JNDI_CONNECTION_FACTORY_NAME;
 import static org.apache.nifi.jms.cf.JndiJmsConnectionFactoryProperties.JNDI_CREDENTIALS;
@@ -94,7 +93,7 @@ public class JndiJmsConnectionFactoryHandler extends CachedJMSConnectionFactoryH
 
 
     private Context createInitialContext() throws NamingException {
-        final Hashtable<String, String> env = new Hashtable<>();
+        final Hashtable<String, String> env = new Hashtable<>(); //NOPMD
         env.put(Context.INITIAL_CONTEXT_FACTORY, context.getProperty(JNDI_INITIAL_CONTEXT_FACTORY).evaluateAttributeExpressions().getValue().trim());
         env.put(Context.PROVIDER_URL, context.getProperty(JNDI_PROVIDER_URL).evaluateAttributeExpressions().getValue().trim());
 
@@ -121,17 +120,14 @@ public class JndiJmsConnectionFactoryHandler extends CachedJMSConnectionFactoryH
     }
 
     private static Object instrumentWithClassLoader(final Object obj, final ClassLoader classLoader, final Class<?>... interfaces) {
-        final InvocationHandler invocationHandler = new InvocationHandler() {
-            @Override
-            public Object invoke(final Object proxy, final Method method, final Object[] args) throws Throwable {
-                final Thread thread = Thread.currentThread();
-                final ClassLoader currentClassLoader = thread.getContextClassLoader();
-                try {
-                    thread.setContextClassLoader(classLoader);
-                    return method.invoke(obj, args);
-                } finally {
-                    thread.setContextClassLoader(currentClassLoader);
-                }
+        final InvocationHandler invocationHandler = (proxy, method, args) -> {
+            final Thread thread = Thread.currentThread();
+            final ClassLoader currentClassLoader = thread.getContextClassLoader();
+            try {
+                thread.setContextClassLoader(classLoader);
+                return method.invoke(obj, args);
+            } finally {
+                thread.setContextClassLoader(currentClassLoader);
             }
         };
 

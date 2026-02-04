@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { CanvasUtils } from './canvas-utils.service';
 import { Store } from '@ngrx/store';
 import { CanvasState } from '../state';
@@ -51,7 +51,7 @@ import {
     terminateThreads,
     updatePositions
 } from '../state/flow/flow.actions';
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType } from '@nifi/shared';
 import {
     ConfirmStopVersionControlRequest,
     MoveComponentRequest,
@@ -76,6 +76,13 @@ import { BackNavigation } from '../../../state/navigation';
 
 @Injectable({ providedIn: 'root' })
 export class CanvasContextMenu implements ContextMenuDefinitionProvider {
+    private store = inject<Store<CanvasState>>(Store);
+    private canvasUtils = inject(CanvasUtils);
+    private client = inject(Client);
+    private canvasView = inject(CanvasView);
+    private canvasActionsService = inject(CanvasActionsService);
+    private draggableBehavior = inject(DraggableBehavior);
+
     private updatePositionRequestId = 0;
 
     readonly VERSION_MENU = {
@@ -279,7 +286,7 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
         id: 'upstream-downstream',
         menuItems: [
             {
-                condition: (selection: any) => {
+                condition: () => {
                     // TODO - hasUpstream
                     return false;
                 },
@@ -290,7 +297,7 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
                 }
             },
             {
-                condition: (selection: any) => {
+                condition: () => {
                     // TODO - hasDownstream
                     return false;
                 },
@@ -702,9 +709,6 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
                 isSeparator: true
             },
             {
-                condition: (selection: d3.Selection<any, any, any, any>) => {
-                    return this.canvasUtils.supportsFlowVersioning(selection);
-                },
                 text: 'Version',
                 subMenuId: this.VERSION_MENU.id
             },
@@ -783,7 +787,7 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
                     this.store.dispatch(
                         runOnce({
                             request: {
-                                uri: d.uri,
+                                id: d.id,
                                 revision: this.client.getRevision(d)
                             }
                         })
@@ -930,7 +934,8 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
                         getComponentStateAndOpenDialog({
                             request: {
                                 componentName: selectionData.component.name,
-                                componentUri: selectionData.uri,
+                                componentType: ComponentType.Processor,
+                                componentId: selectionData.id,
                                 canClear: this.canvasUtils.isConfigurable(selection)
                             }
                         })
@@ -1205,6 +1210,12 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
                 action: this.canvasActionsService.getActionFunction('changeColor')
             },
             {
+                condition: this.canvasActionsService.getConditionFunction('clearBulletins'),
+                clazz: 'fa fa-eraser',
+                text: 'Clear Bulletins',
+                action: this.canvasActionsService.getActionFunction('clearBulletins')
+            },
+            {
                 condition: (selection: d3.Selection<any, any, any, any>) => {
                     return this.canvasUtils.canRead(selection) && this.canvasUtils.isRemoteProcessGroup(selection);
                 },
@@ -1366,14 +1377,7 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
 
     private allMenus: Map<string, ContextMenuDefinition>;
 
-    constructor(
-        private store: Store<CanvasState>,
-        private canvasUtils: CanvasUtils,
-        private client: Client,
-        private canvasView: CanvasView,
-        private canvasActionsService: CanvasActionsService,
-        private draggableBehavior: DraggableBehavior
-    ) {
+    constructor() {
         this.allMenus = new Map<string, ContextMenuDefinition>();
         this.allMenus.set(this.ROOT_MENU.id, this.ROOT_MENU);
         this.allMenus.set(this.PROVENANCE_REPLAY.id, this.PROVENANCE_REPLAY);

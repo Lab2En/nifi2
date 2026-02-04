@@ -16,20 +16,21 @@
  */
 package org.apache.nifi.util;
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.text.StringEscapeUtils;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
-import org.apache.commons.text.StringEscapeUtils;
-
 public class FlowFilePackagerV1 implements FlowFilePackager {
 
     public static final String FILENAME_ATTRIBUTES = "flowfile.attributes";
     public static final String FILENAME_CONTENT = "flowfile.content";
+    @SuppressWarnings("PMD.AvoidUsingOctalValues")
     public static final int DEFAULT_TAR_PERMISSIONS = 0644;
 
     private final int tarPermissions;

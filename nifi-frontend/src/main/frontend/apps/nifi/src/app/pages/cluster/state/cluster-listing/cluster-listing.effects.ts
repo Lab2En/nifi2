@@ -15,21 +15,21 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { ActionCreator, Creator, Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
 import { ErrorHelper } from '../../../../service/error-helper.service';
+import { initialClusterState } from './cluster-listing.reducer';
 import { Router } from '@angular/router';
 import * as ClusterListingActions from './cluster-listing.actions';
 import { catchError, filter, from, map, of, switchMap, take, tap } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
-import { selectClusterListingStatus } from './cluster-listing.selectors';
+import { selectClusterListingLoadedTimestamp } from './cluster-listing.selectors';
 import { reloadSystemDiagnostics } from '../../../../state/system-diagnostics/system-diagnostics.actions';
 import { ClusterService } from '../../service/cluster.service';
 import { MatDialog } from '@angular/material/dialog';
-import { YesNoDialog } from '../../../../ui/common/yes-no-dialog/yes-no-dialog.component';
-import { LARGE_DIALOG, MEDIUM_DIALOG, SMALL_DIALOG } from 'libs/shared/src';
+import { LARGE_DIALOG, MEDIUM_DIALOG, SMALL_DIALOG, YesNoDialog } from '@nifi/shared';
 import { ClusterNodeDetailDialog } from '../../ui/cluster-node-listing/cluster-node-detail-dialog/cluster-node-detail-dialog.component';
 import * as ErrorActions from '../../../../state/error/error.actions';
 import { SelectClusterNodeRequest } from './index';
@@ -38,24 +38,28 @@ import { concatLatestFrom } from '@ngrx/operators';
 
 @Injectable()
 export class ClusterListingEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<NiFiState>,
-        private errorHelper: ErrorHelper,
-        private router: Router,
-        private clusterService: ClusterService,
-        private dialog: MatDialog
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<NiFiState>>(Store);
+    private errorHelper = inject(ErrorHelper);
+    private router = inject(Router);
+    private clusterService = inject(ClusterService);
+    private dialog = inject(MatDialog);
 
     loadClusterListing$ = createEffect(() =>
         this.actions$.pipe(
             ofType(ClusterListingActions.loadClusterListing),
-            concatLatestFrom(() => [this.store.select(selectClusterListingStatus)]),
-            switchMap(([, listingStatus]) =>
+            concatLatestFrom(() => [this.store.select(selectClusterListingLoadedTimestamp)]),
+            switchMap(([, loadedTimestamp]) =>
                 from(this.clusterService.getClusterListing()).pipe(
                     map((response) => ClusterListingActions.loadClusterListingSuccess({ response: response.cluster })),
                     catchError((errorResponse: HttpErrorResponse) =>
-                        of(this.errorHelper.handleLoadingError(listingStatus, errorResponse))
+                        of(
+                            ClusterListingActions.loadClusterListingError({
+                                errorResponse,
+                                loadedTimestamp,
+                                status: loadedTimestamp !== initialClusterState.loadedTimestamp ? 'success' : 'pending'
+                            })
+                        )
                     )
                 )
             )
@@ -75,6 +79,13 @@ export class ClusterListingEffects {
                     }
                 })
             )
+        )
+    );
+
+    loadClusterListingError$ = createEffect(() =>
+        this.actions$.pipe(
+            ofType(ClusterListingActions.loadClusterListingError),
+            map((action) => this.errorHelper.handleLoadingError(action.status === 'success', action.errorResponse))
         )
     );
 

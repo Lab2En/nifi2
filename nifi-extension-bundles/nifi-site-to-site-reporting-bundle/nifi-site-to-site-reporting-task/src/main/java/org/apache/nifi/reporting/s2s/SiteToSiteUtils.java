@@ -16,28 +16,29 @@
  */
 package org.apache.nifi.reporting.s2s;
 
-import java.net.Proxy;
-import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLContext;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.Validator;
 import org.apache.nifi.components.state.StateManager;
 import org.apache.nifi.context.PropertyContext;
-import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.proxy.ProxyConfiguration;
 import org.apache.nifi.proxy.ProxyConfigurationService;
 import org.apache.nifi.proxy.ProxySpec;
+import org.apache.nifi.remote.SiteToSiteEventReporter;
 import org.apache.nifi.remote.client.SiteToSiteClient;
 import org.apache.nifi.remote.protocol.SiteToSiteTransportProtocol;
 import org.apache.nifi.remote.protocol.http.HttpProxy;
-import org.apache.nifi.remote.util.SiteToSiteRestApiClient;
+import org.apache.nifi.remote.util.ClusterUrlParser;
 import org.apache.nifi.reporting.ReportingContext;
 import org.apache.nifi.ssl.SSLContextProvider;
+
+import java.net.Proxy;
+import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
 
 public class SiteToSiteUtils {
 
@@ -46,10 +47,10 @@ public class SiteToSiteUtils {
     public static final String OBSOLETE_PROXY_PORT = "s2s-http-proxy-port";
     public static final String OBSOLETE_PROXY_USERNAME = "s2s-http-proxy-username";
     public static final String OBSOLETE_PROXY_PASSWORD = "s2s-http-proxy-password";
+    public static final String OBSOLETE_TRANSPORT_PROTOCOL = "s2s-transport-protocol";
 
     public static final PropertyDescriptor DESTINATION_URL = new PropertyDescriptor.Builder()
             .name("Destination URL")
-            .displayName("Destination URL")
             .description("The URL of the destination NiFi instance or, if clustered, a comma-separated list of address in the format "
                     + "of http(s)://host:port/nifi. This destination URL will only be used to initiate the Site-to-Site connection. The "
                     + "data sent by this reporting task will be load-balanced on all the nodes of the destination (if clustered).")
@@ -59,7 +60,6 @@ public class SiteToSiteUtils {
             .build();
     public static final PropertyDescriptor PORT_NAME = new PropertyDescriptor.Builder()
             .name("Input Port Name")
-            .displayName("Input Port Name")
             .description("The name of the Input Port to deliver data to.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -67,14 +67,12 @@ public class SiteToSiteUtils {
             .build();
     public static final PropertyDescriptor SSL_CONTEXT = new PropertyDescriptor.Builder()
             .name("SSL Context Service")
-            .displayName("SSL Context Service")
             .description("The SSL Context Service to use when communicating with the destination. If not specified, communications will not be secure.")
             .required(false)
             .identifiesControllerService(SSLContextProvider.class)
             .build();
     public static final PropertyDescriptor INSTANCE_URL = new PropertyDescriptor.Builder()
             .name("Instance URL")
-            .displayName("Instance URL")
             .description("The URL of this instance to use in the Content URI of each event.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -83,7 +81,6 @@ public class SiteToSiteUtils {
             .build();
     public static final PropertyDescriptor COMPRESS = new PropertyDescriptor.Builder()
             .name("Compress Events")
-            .displayName("Compress Events")
             .description("Indicates whether or not to compress the data being sent.")
             .required(true)
             .allowableValues("true", "false")
@@ -91,7 +88,6 @@ public class SiteToSiteUtils {
             .build();
     public static final PropertyDescriptor TIMEOUT = new PropertyDescriptor.Builder()
             .name("Communications Timeout")
-            .displayName("Communications Timeout")
             .description("Specifies how long to wait to a response from the destination before deciding that an error has occurred and canceling the transaction")
             .required(true)
             .defaultValue("30 secs")
@@ -99,15 +95,13 @@ public class SiteToSiteUtils {
             .build();
     public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Batch Size")
-            .displayName("Batch Size")
             .description("Specifies how many records to send in a single batch, at most.")
             .required(true)
             .defaultValue("1000")
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
             .build();
     public static final PropertyDescriptor TRANSPORT_PROTOCOL = new PropertyDescriptor.Builder()
-            .name("s2s-transport-protocol")
-            .displayName("Transport Protocol")
+            .name("Transport Protocol")
             .description("Specifies which transport protocol to use for Site-to-Site communication.")
             .required(true)
             .allowableValues(SiteToSiteTransportProtocol.values())
@@ -129,7 +123,7 @@ public class SiteToSiteUtils {
     public static SiteToSiteClient getClient(PropertyContext reportContext, ComponentLog logger, StateManager stateManager) {
         final SSLContextProvider sslContextProvider = reportContext.getProperty(SiteToSiteUtils.SSL_CONTEXT).asControllerService(SSLContextProvider.class);
         final SSLContext sslContext = sslContextProvider == null ? null : sslContextProvider.createContext();
-        final EventReporter eventReporter = (EventReporter) (severity, category, message) -> {
+        final SiteToSiteEventReporter eventReporter = (severity, category, message) -> {
             switch (severity) {
                 case WARNING:
                     logger.warn(message);
@@ -162,7 +156,7 @@ public class SiteToSiteUtils {
             stateManager = ((ReportingContext) reportContext).getStateManager();
         }
         return new SiteToSiteClient.Builder()
-                .urls(SiteToSiteRestApiClient.parseClusterUrls(destinationUrl))
+                .urls(ClusterUrlParser.parseClusterUrls(destinationUrl))
                 .portName(reportContext.getProperty(SiteToSiteUtils.PORT_NAME).getValue())
                 .useCompression(reportContext.getProperty(SiteToSiteUtils.COMPRESS).asBoolean())
                 .eventReporter(eventReporter)
@@ -179,7 +173,7 @@ public class SiteToSiteUtils {
         public ValidationResult validate(final String subject, final String input, final ValidationContext context) {
             final String value = context.newPropertyValue(input).evaluateAttributeExpressions().getValue();
             try {
-                SiteToSiteRestApiClient.parseClusterUrls(value);
+                ClusterUrlParser.parseClusterUrls(value);
                 return new ValidationResult.Builder()
                         .input(input)
                         .subject(subject)

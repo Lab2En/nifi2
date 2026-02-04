@@ -21,6 +21,8 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.Relationship;
@@ -45,7 +47,10 @@ public abstract class AbstractAzureDataLakeStorageProcessor extends AbstractProc
             .description("Files that could not be written to Azure storage for some reason are transferred to this relationship")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
     public static final String TEMP_FILE_DIRECTORY = "_nifitempdirectory";
 
@@ -74,5 +79,11 @@ public abstract class AbstractAzureDataLakeStorageProcessor extends AbstractProc
         final ADLSCredentialsDetails credentialsDetails = credentialsService.getCredentialsDetails(attributes);
 
         return clientFactory.getStorageClient(credentialsDetails);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(AzureStorageUtils.OLD_ADLS_CREDENTIALS_SERVICE_DESCRIPTOR_NAME, AzureStorageUtils.ADLS_CREDENTIALS_SERVICE.getName());
+        ProxyServiceMigration.renameProxyConfigurationServiceProperty(config);
     }
 }

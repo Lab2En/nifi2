@@ -16,12 +16,8 @@
  */
 package org.apache.nifi;
 
-import org.apache.nifi.annotation.lifecycle.OnShutdown;
 import org.apache.nifi.components.ConfigurableComponent;
 import org.apache.nifi.init.ConfigurableComponentInitializer;
-import org.apache.nifi.init.ReflectionUtils;
-import org.apache.nifi.mock.MockComponentLogger;
-import org.apache.nifi.mock.MockConfigurationContext;
 import org.apache.nifi.mock.MockFlowRegistryClientInitializationContext;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.nar.NarCloseable;
@@ -45,19 +41,8 @@ public class FlowRegistryClientInitializer implements ConfigurableComponentIniti
     public void initialize(final ConfigurableComponent component) throws InitializationException {
         FlowRegistryClient flowRegistryClient = (FlowRegistryClient) component;
         FlowRegistryClientInitializationContext context = new MockFlowRegistryClientInitializationContext();
-        try (NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), context.getIdentifier())) {
+        try (NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), context.getIdentifier())) {
             flowRegistryClient.initialize(context);
-        }
-    }
-
-    @Override
-    public void teardown(final ConfigurableComponent component) {
-        FlowRegistryClient flowRegistryClient = (FlowRegistryClient) component;
-        try (NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), component.getIdentifier())) {
-            final MockConfigurationContext context = new MockConfigurationContext();
-            ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnShutdown.class, flowRegistryClient, new MockComponentLogger(), context);
-        } finally {
-            extensionManager.removeInstanceClassLoader(component.getIdentifier());
         }
     }
 }

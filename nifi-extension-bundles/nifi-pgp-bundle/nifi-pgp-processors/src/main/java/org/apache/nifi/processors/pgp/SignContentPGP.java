@@ -17,6 +17,8 @@
 package org.apache.nifi.processors.pgp;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
+import org.apache.nifi.annotation.behavior.SideEffectFree;
+import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -27,6 +29,8 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.pgp.service.api.PGPPrivateKeyService;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -39,14 +43,16 @@ import org.apache.nifi.processors.pgp.attributes.HashAlgorithm;
 import org.apache.nifi.processors.pgp.attributes.SigningStrategy;
 import org.apache.nifi.processors.pgp.exception.PGPProcessException;
 import org.apache.nifi.processors.pgp.io.EncodingStreamCallback;
-import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPLiteralDataGenerator;
 import org.bouncycastle.openpgp.PGPOnePassSignature;
 import org.bouncycastle.openpgp.PGPPrivateKey;
+import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPSignature;
 import org.bouncycastle.openpgp.PGPSignatureGenerator;
 import org.bouncycastle.openpgp.PGPUtil;
+import org.bouncycastle.openpgp.operator.KeyFingerPrintCalculator;
+import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator;
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentSignerBuilder;
 
 import java.io.IOException;
@@ -55,7 +61,6 @@ import java.io.OutputStream;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,6 +69,8 @@ import java.util.Set;
 /**
  * Sign Content using Open Pretty Good Privacy Private Keys
  */
+@SideEffectFree
+@SupportsBatching
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @Tags({"PGP", "GPG", "OpenPGP", "Encryption", "Signing", "RFC 4880"})
 @CapabilityDescription("Sign content using OpenPGP Private Keys")
@@ -92,8 +99,7 @@ public class SignContentPGP extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor FILE_ENCODING = new PropertyDescriptor.Builder()
-            .name("file-encoding")
-            .displayName("File Encoding")
+            .name("File Encoding")
             .description("File Encoding for signing")
             .required(true)
             .defaultValue(FileEncoding.BINARY.name())
@@ -101,8 +107,7 @@ public class SignContentPGP extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor HASH_ALGORITHM = new PropertyDescriptor.Builder()
-            .name("hash-algorithm")
-            .displayName("Hash Algorithm")
+            .name("Hash Algorithm")
             .description("Hash Algorithm for signing")
             .required(true)
             .defaultValue(HashAlgorithm.SHA512.name())
@@ -110,8 +115,7 @@ public class SignContentPGP extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor SIGNING_STRATEGY = new PropertyDescriptor.Builder()
-            .name("signing-strategy")
-            .displayName("Signing Strategy")
+            .name("Signing Strategy")
             .description("Strategy for writing files to success after signing")
             .required(true)
             .defaultValue(SigningStrategy.SIGNED.name())
@@ -123,25 +127,26 @@ public class SignContentPGP extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor PRIVATE_KEY_SERVICE = new PropertyDescriptor.Builder()
-            .name("private-key-service")
-            .displayName("Private Key Service")
+            .name("Private Key Service")
             .description("PGP Private Key Service for generating content signatures")
             .identifiesControllerService(PGPPrivateKeyService.class)
             .required(true)
             .build();
 
     public static final PropertyDescriptor PRIVATE_KEY_ID = new PropertyDescriptor.Builder()
-            .name("private-key-id")
-            .displayName("Private Key ID")
+            .name("Private Key ID")
             .description("PGP Private Key Identifier formatted as uppercase hexadecimal string of 16 characters used for signing")
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .addValidator(StandardValidators.NON_EMPTY_EL_VALIDATOR)
             .required(true)
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = new HashSet<>(Arrays.asList(SUCCESS, FAILURE));
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FILE_ENCODING,
             HASH_ALGORITHM,
             SIGNING_STRATEGY,
@@ -171,11 +176,11 @@ public class SignContentPGP extends AbstractProcessor {
      */
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     /**
-     * On Trigger generates signatures for Flow File contents using private keys
+     * On Trigger generates signatures for FlowFile contents using private keys
      *
      * @param context Process Context
      * @param session Process Session
@@ -196,6 +201,15 @@ public class SignContentPGP extends AbstractProcessor {
             getLogger().error("Signing Failed {}", flowFile, e);
             session.transfer(flowFile, FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("file-encoding", FILE_ENCODING.getName());
+        config.renameProperty("hash-algorithm", HASH_ALGORITHM.getName());
+        config.renameProperty("signing-strategy", SIGNING_STRATEGY.getName());
+        config.renameProperty("private-key-service", PRIVATE_KEY_SERVICE.getName());
+        config.renameProperty("private-key-id", PRIVATE_KEY_ID.getName());
     }
 
     private SignatureStreamCallback getStreamCallback(final ProcessContext context, final FlowFile flowFile) {
@@ -288,7 +302,9 @@ public class SignContentPGP extends AbstractProcessor {
             final int keyAlgorithm = privateKey.getPublicKeyPacket().getAlgorithm();
             final SecureRandom secureRandom = new SecureRandom();
             final JcaPGPContentSignerBuilder builder = new JcaPGPContentSignerBuilder(keyAlgorithm, hashAlgorithm.getId()).setSecureRandom(secureRandom);
-            final PGPSignatureGenerator signatureGenerator = new PGPSignatureGenerator(builder);
+            final KeyFingerPrintCalculator keyFingerprintCalculator = new JcaKeyFingerprintCalculator();
+            final PGPPublicKey pgpPublicKey = new PGPPublicKey(privateKey.getPublicKeyPacket(), keyFingerprintCalculator);
+            final PGPSignatureGenerator signatureGenerator = new PGPSignatureGenerator(builder, pgpPublicKey);
             signatureGenerator.init(PGPSignature.BINARY_DOCUMENT, privateKey);
             return signatureGenerator;
         }

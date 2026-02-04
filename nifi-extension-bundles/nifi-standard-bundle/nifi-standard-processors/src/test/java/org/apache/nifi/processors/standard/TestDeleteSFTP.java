@@ -27,11 +27,11 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,13 +42,14 @@ class TestDeleteSFTP {
     private static final int BATCH_SIZE = 2;
 
     private final TestRunner runner = TestRunners.newTestRunner(DeleteSFTP.class);
-    private final SSHTestServer sshTestServer = new SSHTestServer();
+    private SSHTestServer sshTestServer;
     private Path sshServerRootPath;
 
     @BeforeEach
-    void setRunner() throws IOException {
+    void setRunner(@TempDir final Path rootPath) throws IOException {
+        sshTestServer = new SSHTestServer(rootPath);
         sshTestServer.startServer();
-        sshServerRootPath = Paths.get(sshTestServer.getVirtualFileSystemPath()).toAbsolutePath();
+        sshServerRootPath = rootPath;
 
         runner.setProperty(SFTPTransfer.HOSTNAME, sshTestServer.getHost());
         runner.setProperty(SFTPTransfer.PORT, Integer.toString(sshTestServer.getSSHPort()));
@@ -95,7 +96,7 @@ class TestDeleteSFTP {
     }
 
     @Test
-    void sendsFlowFileToNotFoundWhenDirectoryDoesNotExist() {
+    void sendsFlowFileToNotFoundWhenDeletingAFileAndDirectoryDoesNotExist() {
         final Path directoryPath = sshServerRootPath.resolve("rel/path");
         final String filename = "not-exist.txt";
         final Path fileToDelete = directoryPath.resolve(filename);
@@ -109,7 +110,7 @@ class TestDeleteSFTP {
     }
 
     @Test
-    void sendsFlowFileToFailureWhenTargetIsADirectory() throws IOException {
+    void sendsFlowFileToFailureWhenDeletingAFileAndTargetIsADirectory() throws IOException {
         Path fileToDelete = Files.createDirectories(sshServerRootPath.resolve("a/directory"));
         enqueue(fileToDelete);
         assertExists(fileToDelete);
@@ -119,6 +120,38 @@ class TestDeleteSFTP {
         assertExists(fileToDelete);
         runner.assertAllFlowFilesTransferred(DeleteSFTP.REL_FAILURE);
         runner.assertPenalizeCount(1);
+    }
+
+    @Test
+    void sendsFlowFileToFailureWhenDeletingADirectoryAndDirectoryIsNotEmpty() throws IOException {
+        final String directoryToDelete = "someDirectory";
+        final Path someDirectoryPath = Files.createDirectories(sshServerRootPath.resolve(directoryToDelete));
+        final Path someFilePath = someDirectoryPath.resolve("someFile");
+        Files.writeString(someFilePath, "some text");
+        assertExists(someDirectoryPath);
+
+        enqueue(someFilePath);
+        runner.setProperty(DeleteSFTP.REMOVAL_STRATEGY, DeleteSFTP.RemovalStrategy.DIRECTORY.getValue());
+        runner.run();
+
+        assertExists(someDirectoryPath);
+        runner.assertAllFlowFilesTransferred(DeleteSFTP.REL_FAILURE);
+        runner.assertPenalizeCount(1);
+    }
+
+    @Test
+    void sendsFlowFileToSuccessWhenDeletingADirectoryAndDirectoryIsEmpty() throws IOException {
+        final String directoryToDelete = "someDirectory";
+        final Path someDirectoryPath = Files.createDirectories(sshServerRootPath.resolve(directoryToDelete));
+        final Path someFilePath = someDirectoryPath.resolve("someFile");
+        assertExists(someDirectoryPath);
+
+        enqueue(someFilePath);
+        runner.setProperty(DeleteSFTP.REMOVAL_STRATEGY, DeleteSFTP.RemovalStrategy.DIRECTORY.getValue());
+        runner.run();
+
+        assertNotExists(someDirectoryPath);
+        runner.assertAllFlowFilesTransferred(DeleteSFTP.REL_SUCCESS);
     }
 
     @Test
@@ -175,10 +208,10 @@ class TestDeleteSFTP {
     }
 
     private static void assertNotExists(Path filePath) {
-        assertTrue(Files.notExists(filePath), () -> "File " + filePath + "still exists");
+        assertTrue(Files.notExists(filePath), () -> "File %s still exists".formatted(filePath));
     }
 
     private static void assertExists(Path filePath) {
-        assertTrue(Files.exists(filePath), () -> "File " + filePath + "does not exist");
+        assertTrue(Files.exists(filePath), () -> "File %s does not exist".formatted(filePath));
     }
 }

@@ -18,27 +18,31 @@
 package org.apache.nifi.oauth2;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 
 public class AccessToken {
     private String accessToken;
     private String refreshToken;
     private String tokenType;
-    private long expiresIn;
-    private String scopes;
+    private Long expiresIn;
+    private String scope;
 
     private final Instant fetchTime;
 
+    private final Map<String, Object> additionalParameters = new HashMap<>();
+
     public AccessToken() {
-        this.fetchTime = Instant.now();
+        this.fetchTime = now();
     }
 
-    public AccessToken(String accessToken, String refreshToken, String tokenType, long expiresIn, String scopes) {
+    public AccessToken(String accessToken, String refreshToken, String tokenType, Long expiresIn, String scope) {
         this();
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
         this.tokenType = tokenType;
         this.expiresIn = expiresIn;
-        this.scopes = scopes;
+        this.scope = scope;
     }
 
     public String getAccessToken() {
@@ -65,20 +69,20 @@ public class AccessToken {
         this.tokenType = tokenType;
     }
 
-    public long getExpiresIn() {
+    public Long getExpiresIn() {
         return expiresIn;
     }
 
-    public void setExpiresIn(long expiresIn) {
+    public void setExpiresIn(Long expiresIn) {
         this.expiresIn = expiresIn;
     }
 
-    public String getScopes() {
-        return scopes;
+    public String getScope() {
+        return scope;
     }
 
-    public void setScopes(String scopes) {
-        this.scopes = scopes;
+    public void setScope(String scope) {
+        this.scope = scope;
     }
 
     public Instant getFetchTime() {
@@ -86,11 +90,23 @@ public class AccessToken {
     }
 
     public boolean isExpired() {
-        final Instant expirationTime = fetchTime.plusSeconds(expiresIn);
-        return now().isAfter(expirationTime);
+        if (expiresIn == null) {
+            return false;
+        } else {
+            final Instant expirationTime = fetchTime.plusSeconds(expiresIn);
+            return now().isAfter(expirationTime);
+        }
     }
 
     Instant now() {
         return Instant.now();
+    }
+
+    public void setAdditionalParameter(final String key, final Object value) {
+        additionalParameters.put(key, value);
+    }
+
+    public Map<String, Object> getAdditionalParameters() {
+        return additionalParameters;
     }
 }

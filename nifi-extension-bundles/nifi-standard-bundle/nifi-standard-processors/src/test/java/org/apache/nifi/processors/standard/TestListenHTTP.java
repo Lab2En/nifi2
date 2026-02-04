@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.processors.standard;
 
+import jakarta.servlet.http.HttpServletResponse;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
@@ -25,8 +26,11 @@ import okhttp3.Response;
 import okio.BufferedSink;
 import okio.GzipSink;
 import okio.Okio;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.StandardFlowFileMediaType;
 import org.apache.nifi.processors.standard.http.ContentEncodingStrategy;
 import org.apache.nifi.processors.standard.http.HttpProtocolStrategy;
+import org.apache.nifi.provenance.ProvenanceEventRecord;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.security.cert.builder.StandardCertificateBuilder;
 import org.apache.nifi.security.ssl.EphemeralKeyStoreBuilder;
@@ -37,7 +41,9 @@ import org.apache.nifi.serialization.record.MockRecordParser;
 import org.apache.nifi.serialization.record.MockRecordWriter;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.ssl.SSLContextProvider;
+import org.apache.nifi.util.FlowFilePackagerV3;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.eclipse.jetty.server.NetworkConnector;
@@ -48,16 +54,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.X509TrustManager;
-import javax.security.auth.x500.X500Principal;
-
-import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -78,13 +75,24 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
+import java.util.stream.IntStream;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
+import javax.security.auth.x500.X500Principal;
 
 import static org.apache.nifi.processors.standard.ListenHTTP.RELATIONSHIP_SUCCESS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -95,11 +103,11 @@ public class TestListenHTTP {
     private static final MediaType APPLICATION_OCTET_STREAM = MediaType.get("application/octet-stream");
     private static final String HTTP_BASE_PATH = "basePath";
 
-    private final static String PORT_VARIABLE = "HTTP_PORT";
-    private final static String HTTP_SERVER_PORT_EL = "${" + PORT_VARIABLE + "}";
+    private static final String PORT_VARIABLE = "HTTP_PORT";
+    private static final String HTTP_SERVER_PORT_EL = "${" + PORT_VARIABLE + "}";
 
-    private final static String BASEPATH_VARIABLE = "HTTP_BASEPATH";
-    private final static String HTTP_SERVER_BASEPATH_EL = "${" + BASEPATH_VARIABLE + "}";
+    private static final String BASEPATH_VARIABLE = "HTTP_BASEPATH";
+    private static final String HTTP_SERVER_BASEPATH_EL = "${" + BASEPATH_VARIABLE + "}";
     private static final String MULTIPART_ATTRIBUTE = "http.multipart.name";
 
     private static final String LOCALHOST = "localhost";
@@ -345,14 +353,14 @@ public class TestListenHTTP {
     public void testSecureServerTrustStoreConfiguredClientAuthenticationRequired() throws Exception {
         configureProcessorSslContextService(ListenHTTP.ClientAuthentication.REQUIRED);
         final int port = startSecureServer();
-        assertThrows(IOException.class, () -> sendMessage(null, true, port, false, HTTP_POST));
+        assertThrows(IOException.class, () -> sendMessage(null, true, port, HTTP_BASE_PATH, false, HTTP_POST));
     }
 
     @Test
     public void testSecureServerTrustStoreNotConfiguredClientAuthenticationNotRequired() throws Exception {
         configureProcessorSslContextService(ListenHTTP.ClientAuthentication.AUTO);
         final int port = startSecureServer();
-        final int responseCode = sendMessage(null, true, port, true, HTTP_POST);
+        final int responseCode = sendMessage(null, true, port, HTTP_BASE_PATH, true, HTTP_POST);
         assertEquals(HttpServletResponse.SC_NO_CONTENT, responseCode);
     }
 
@@ -464,7 +472,7 @@ public class TestListenHTTP {
 
         final OkHttpClient okHttpClient = getOkHttpClient(false, false);
         final Request.Builder requestBuilder = new Request.Builder();
-        final String url = buildUrl(false, port);
+        final String url = buildUrl(false, port, HTTP_BASE_PATH);
         requestBuilder.url(url);
 
         final String message = String.class.getSimpleName();
@@ -497,11 +505,27 @@ public class TestListenHTTP {
     }
 
     @Test
+    public void testOptionsNotAllowedOnNonBasePath() throws Exception {
+        final int port = startWebServer();
+        final int statusCode = sendMessage("payload 1", false, port, "randomPath", false, HTTP_OPTIONS);
+
+        assertEquals(HttpServletResponse.SC_METHOD_NOT_ALLOWED, statusCode, "HTTP Status Code not matched");
+    }
+
+    @Test
     public void testTraceNotAllowed() throws Exception {
         final List<String> messages = new ArrayList<>();
         messages.add("payload 1");
 
         startWebServerAndSendMessages(messages, HttpServletResponse.SC_METHOD_NOT_ALLOWED, false, false, HTTP_TRACE);
+    }
+
+    @Test
+    public void testTraceNotAllowedOnNonBasePath() throws Exception {
+        final int port = startWebServer();
+        final int statusCode = sendMessage("payload 1", false, port, "randomPath", false, HTTP_TRACE);
+
+        assertEquals(HttpServletResponse.SC_METHOD_NOT_ALLOWED, statusCode, "HTTP Status Code not matched");
     }
 
     private MockRecordParser setupRecordReaderTest() throws InitializationException {
@@ -520,6 +544,25 @@ public class TestListenHTTP {
         return parser;
     }
 
+    @Test
+    void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("health-check-port", ListenHTTP.HEALTH_CHECK_PORT.getName()),
+                Map.entry("Authorized DN Pattern", ListenHTTP.AUTHORIZED_DN_PATTERN.getName()),
+                Map.entry("authorized-issuer-dn-pattern", ListenHTTP.AUTHORIZED_ISSUER_DN_PATTERN.getName()),
+                Map.entry("multipart-request-max-size", ListenHTTP.MULTIPART_REQUEST_MAX_SIZE.getName()),
+                Map.entry("multipart-read-buffer-size", ListenHTTP.MULTIPART_READ_BUFFER_SIZE.getName()),
+                Map.entry("client-authentication", ListenHTTP.CLIENT_AUTHENTICATION.getName()),
+                Map.entry("max-thread-pool-size", ListenHTTP.MAX_THREAD_POOL_SIZE.getName()),
+                Map.entry("record-reader", ListenHTTP.RECORD_READER.getName()),
+                Map.entry("record-writer", ListenHTTP.RECORD_WRITER.getName()),
+                Map.entry("HTTP Headers to receive as Attributes (Regex)", ListenHTTP.HEADERS_AS_ATTRIBUTES_REGEX.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
+    }
+
     private int startSecureServer() {
         runner.setProperty(ListenHTTP.BASE_PATH, HTTP_BASE_PATH);
         runner.setProperty(ListenHTTP.RETURN_CODE, Integer.toString(HttpServletResponse.SC_NO_CONTENT));
@@ -527,10 +570,10 @@ public class TestListenHTTP {
         return startWebServer();
     }
 
-    private int sendMessage(final String message, final boolean secure, final int port, boolean clientAuthRequired, final String httpMethod) throws IOException {
+    private int sendMessage(final String message, final boolean secure, final int port, final String basePath, boolean clientAuthRequired, final String httpMethod) throws IOException {
         final byte[] bytes = message == null ? new byte[]{} : message.getBytes(StandardCharsets.UTF_8);
         final RequestBody requestBody = RequestBody.create(bytes, APPLICATION_OCTET_STREAM);
-        final String url = buildUrl(secure, port);
+        final String url = buildUrl(secure, port, basePath);
         final Request.Builder requestBuilder = new Request.Builder();
         final Request request = requestBuilder.method(httpMethod, requestBody)
                 .url(url)
@@ -557,8 +600,8 @@ public class TestListenHTTP {
         return builder.build();
     }
 
-    private String buildUrl(final boolean secure, final int port) {
-        return String.format("%s://localhost:%s/%s", secure ? "https" : "http", port, HTTP_BASE_PATH);
+    private String buildUrl(final boolean secure, final int port, String basePath) {
+        return String.format("%s://localhost:%s/%s", secure ? "https" : "http", port, basePath);
     }
 
     private void testPOSTRequestsReceived(int returnCode, boolean secure, boolean twoWaySsl) throws Exception {
@@ -623,7 +666,7 @@ public class TestListenHTTP {
         final int port = startWebServer();
 
         for (final String message : messages) {
-            final int statusCode = sendMessage(message, secure, port, clientAuthRequired, httpMethod);
+            final int statusCode = sendMessage(message, secure, port, HTTP_BASE_PATH, clientAuthRequired, httpMethod);
             assertEquals(expectedStatusCode, statusCode, "HTTP Status Code not matched");
         }
     }
@@ -669,7 +712,7 @@ public class TestListenHTTP {
             .build();
 
         final Request request = new Request.Builder()
-            .url(buildUrl(isSecure, port))
+            .url(buildUrl(isSecure, port, HTTP_BASE_PATH))
             .post(multipartBody)
             .build();
 
@@ -741,7 +784,7 @@ public class TestListenHTTP {
 
         final int port = startWebServer();
         OkHttpClient client = getOkHttpClient(false, false);
-        final String url = buildUrl(false, port);
+        final String url = buildUrl(false, port, HTTP_BASE_PATH);
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Large-Header", largeHeaderValue)
@@ -751,6 +794,56 @@ public class TestListenHTTP {
             int responseCode = response.code();
             assertEquals(200, responseCode, "Expected 200 response code with large header.");
         }
+    }
+
+    @Test
+    public void testFlowFilePackageRestoresFilenames() throws IOException {
+        runner.setProperty(ListenHTTP.BASE_PATH, HTTP_BASE_PATH);
+        runner.setProperty(ListenHTTP.RETURN_CODE, Integer.toString(HttpServletResponse.SC_NO_CONTENT));
+
+        final int port = startWebServer();
+
+        final OkHttpClient okHttpClient = getOkHttpClient(false, false);
+        final Request.Builder requestBuilder = new Request.Builder();
+        final String url = buildUrl(false, port, HTTP_BASE_PATH);
+        requestBuilder.url(url);
+
+        // Create FFv3 package containing two FlowFiles with filenames "file1" and "file2"
+        final FlowFilePackagerV3 packager = new FlowFilePackagerV3();
+        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        final byte[] data = "content does not matter".getBytes(StandardCharsets.UTF_8);
+
+        IntStream.rangeClosed(0, 1).forEach(i -> {
+            try (ByteArrayInputStream content = new ByteArrayInputStream(data)) {
+                Map<String, String> attributes = Map.of(CoreAttributes.FILENAME.key(), "file" + i);
+                packager.packageFlowFile(content, baos, attributes, data.length);
+            } catch (IOException e) {
+                fail();
+            }
+        });
+
+        final byte[] flowFileV3Package = baos.toByteArray();
+        final RequestBody requestBody = RequestBody.create(flowFileV3Package, MediaType.parse(StandardFlowFileMediaType.VERSION_3.getMediaType()));
+        final Request request = requestBuilder.post(requestBody)
+                .addHeader(CoreAttributes.FILENAME.key(), "data.flowfilev3")
+                .addHeader(CoreAttributes.UUID.key(), "dummy-uuid")
+                .build();
+
+        try (final Response response = okHttpClient.newCall(request).execute()) {
+            assertTrue(response.isSuccessful());
+        }
+
+        // Confirm FFv3 package is unpacked and each FlowFile carries the proper filename
+        runner.assertTransferCount(RELATIONSHIP_SUCCESS, 2);
+        IntStream.rangeClosed(0, 1).forEach(i -> {
+            final MockFlowFile flowFile = runner.getFlowFilesForRelationship(RELATIONSHIP_SUCCESS).get(i);
+            flowFile.assertAttributeEquals(CoreAttributes.FILENAME.key(), "file" + i);
+
+        });
+
+        final List<ProvenanceEventRecord> provenanceEvents = runner.getProvenanceEvents();
+        assertEquals(2, provenanceEvents.size());
+        provenanceEvents.forEach(provenanceEvent -> assertEquals("urn:nifi:dummy-uuid", provenanceEvent.getSourceSystemFlowFileIdentifier()));
     }
 
     private byte[] generateRandomBinaryData() {

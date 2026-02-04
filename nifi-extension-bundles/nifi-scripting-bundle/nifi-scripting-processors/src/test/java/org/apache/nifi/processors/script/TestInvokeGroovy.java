@@ -17,7 +17,6 @@
 package org.apache.nifi.processors.script;
 
 import org.apache.commons.codec.binary.Hex;
-
 import org.apache.nifi.annotation.lifecycle.OnConfigurationRestored;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.processor.ProcessContext;
@@ -47,7 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestInvokeGroovy extends BaseScriptTest {
     @BeforeEach
-    public void setup() throws Exception {
+    public void setup() {
         super.setupInvokeScriptProcessor();
     }
 
@@ -67,7 +66,7 @@ public class TestInvokeGroovy extends BaseScriptTest {
 
         runner.assertAllFlowFilesTransferred("test", 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship("test");
-        result.get(0).assertAttributeEquals("from-content", "test content");
+        result.getFirst().assertAttributeEquals("from-content", "test content");
     }
 
     /**
@@ -92,7 +91,7 @@ public class TestInvokeGroovy extends BaseScriptTest {
 
         List<PropertyDescriptor> descriptors = processor.getSupportedPropertyDescriptors();
         assertNotNull(descriptors);
-        assertTrue(descriptors.size() > 0);
+        assertFalse(descriptors.isEmpty());
         boolean found = false;
         for (PropertyDescriptor descriptor : descriptors) {
             if (descriptor.getName().equals("test-attribute")) {
@@ -124,7 +123,7 @@ public class TestInvokeGroovy extends BaseScriptTest {
 
         Set<Relationship> relationships = processor.getRelationships();
         assertNotNull(relationships);
-        assertTrue(relationships.size() > 0);
+        assertFalse(relationships.isEmpty());
         boolean found = false;
         for (Relationship relationship : relationships) {
             if (relationship.getName().equals("test")) {
@@ -202,7 +201,7 @@ public class TestInvokeGroovy extends BaseScriptTest {
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship("success");
         assertEquals(1, result.size());
         final String expectedOutput = new String(Hex.encodeHex(MessageDigestUtils.getDigest("testbla bla".getBytes())));
-        final MockFlowFile outputFlowFile = result.get(0);
+        final MockFlowFile outputFlowFile = result.getFirst();
         outputFlowFile.assertContentEquals(expectedOutput);
         outputFlowFile.assertAttributeEquals("outAttr", expectedOutput);
     }
@@ -237,8 +236,31 @@ public class TestInvokeGroovy extends BaseScriptTest {
         runner.assertAllFlowFilesTransferred("success", 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship("success");
         assertEquals(1, result.size());
-        MockFlowFile ff = result.get(0);
+        MockFlowFile ff = result.getFirst();
         ff.assertContentEquals("48\n47\n14\n");
+    }
+
+    /**
+     * Tests a script that has a Groovy Processor that implements its own onPrimaryNodeStateChange
+     */
+    @Test
+    public void testOnPrimaryNodeStateChange() {
+        runner.setProperty(scriptingComponent.getScriptingComponentHelper().SCRIPT_ENGINE, "Groovy");
+        runner.setProperty(ScriptingComponentUtils.SCRIPT_FILE, "target/test/resources/groovy/test_OnPrimaryStateChange.groovy");
+        runner.setProperty(ScriptingComponentUtils.MODULES, "target/test/resources/groovy");
+        InvokeScriptedProcessor invokeScriptedProcessor = ((InvokeScriptedProcessor) scriptingComponent);
+        invokeScriptedProcessor.setup(runner.getProcessContext());
+        runner.setIsConfiguredForClustering(true);
+        runner.run(1, false, true);
+        runner.setPrimaryNode(true);
+        runner.clearTransferState();
+        runner.run(1, true, false);
+        runner.assertAllFlowFilesTransferred("success");
+        List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship("success");
+        assertNotNull(flowFiles);
+        assertEquals(1, flowFiles.size());
+        MockFlowFile flowFile = flowFiles.get(0);
+        flowFile.assertAttributeEquals("isPrimaryNode", "true");
     }
 
     private static class OverrideInvokeScriptedProcessor extends InvokeScriptedProcessor {

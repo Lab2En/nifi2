@@ -15,27 +15,30 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { LoginState } from '../state';
 import { selectCurrentUserState } from '../../../state/current-user/current-user.selectors';
 import { take } from 'rxjs';
 import { selectLoginConfiguration } from '../../../state/login-configuration/login-configuration.selectors';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { isDefinedAndNotNull } from 'libs/shared/src';
+import { isDefinedAndNotNull } from '@nifi/shared';
 
 @Component({
     selector: 'login',
     templateUrl: './login.component.html',
-    styleUrls: ['./login.component.scss']
+    styleUrls: ['./login.component.scss'],
+    standalone: false
 })
 export class Login {
+    private store = inject<Store<LoginState>>(Store);
+
     currentUserState$ = this.store.select(selectCurrentUserState).pipe(take(1));
     loginConfiguration = this.store.selectSignal(selectLoginConfiguration);
 
     loading: boolean = true;
 
-    constructor(private store: Store<LoginState>) {
+    constructor() {
         this.store
             .select(selectLoginConfiguration)
             .pipe(isDefinedAndNotNull(), takeUntilDestroyed())

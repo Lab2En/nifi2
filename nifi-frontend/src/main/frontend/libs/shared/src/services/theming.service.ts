@@ -15,8 +15,7 @@
  * limitations under the License.
  */
 
-import { Inject, Injectable } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
+import { Injectable, DOCUMENT, inject } from '@angular/core';
 
 export const DARK_THEME = 'DARK_THEME';
 export const LIGHT_THEME = 'LIGHT_THEME';
@@ -24,24 +23,24 @@ export const OS_SETTING = 'OS_SETTING';
 
 @Injectable({ providedIn: 'root' })
 export class ThemingService {
-    constructor(@Inject(DOCUMENT) private _document: Document) {}
+    private _document = inject<Document>(DOCUMENT);
 
     toggleTheme(darkModeOn: boolean, theme: any) {
         if (darkModeOn) {
             if (theme === DARK_THEME) {
-                this._document.body.classList.toggle('dark-theme', true);
+                this._document.body.classList.toggle('darkMode', true);
             } else if (theme === LIGHT_THEME) {
-                this._document.body.classList.toggle('dark-theme', false);
+                this._document.body.classList.toggle('darkMode', false);
             } else {
-                this._document.body.classList.toggle('dark-theme', true);
+                this._document.body.classList.toggle('darkMode', true);
             }
         } else {
             if (theme === DARK_THEME) {
-                this._document.body.classList.toggle('dark-theme', true);
+                this._document.body.classList.toggle('darkMode', true);
             } else if (theme === LIGHT_THEME) {
-                this._document.body.classList.toggle('dark-theme', false);
+                this._document.body.classList.toggle('darkMode', false);
             } else {
-                this._document.body.classList.toggle('dark-theme', false);
+                this._document.body.classList.toggle('darkMode', false);
             }
         }
     }

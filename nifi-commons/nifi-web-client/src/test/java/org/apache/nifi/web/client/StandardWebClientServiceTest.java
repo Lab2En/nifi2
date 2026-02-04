@@ -16,9 +16,9 @@
  */
 package org.apache.nifi.web.client;
 
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.RecordedRequest;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import mockwebserver3.RecordedRequest;
 import org.apache.nifi.web.client.api.HttpEntityHeaders;
 import org.apache.nifi.web.client.api.HttpRequestMethod;
 import org.apache.nifi.web.client.api.HttpRequestUriSpec;
@@ -38,7 +38,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import javax.net.ssl.X509TrustManager;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -53,6 +52,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.TimeUnit;
+import javax.net.ssl.X509TrustManager;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -111,14 +112,16 @@ public class StandardWebClientServiceTest {
     StandardWebClientService service;
 
     @BeforeEach
-    void setServer() {
+    void setServer() throws IOException {
         mockWebServer = new MockWebServer();
+        mockWebServer.start();
+
         service = new StandardWebClientService();
     }
 
     @AfterEach
     void shutdownServer() throws IOException {
-        mockWebServer.shutdown();
+        mockWebServer.close();
     }
 
     @Test
@@ -138,8 +141,13 @@ public class StandardWebClientServiceTest {
     }
 
     @Test
-    void testHttpTimeoutException() throws IOException {
-        mockWebServer.shutdown();
+    void testHttpTimeoutException() {
+        final MockResponse delayedResponse = new MockResponse.Builder()
+                .headersDelay(FAILURE_TIMEOUT.toMillis() * 2, TimeUnit.MILLISECONDS)
+                .body(RESPONSE_BODY)
+                .code(HttpResponseStatus.OK.getCode())
+                .build();
+        mockWebServer.enqueue(delayedResponse);
 
         service.setConnectTimeout(FAILURE_TIMEOUT);
         service.setReadTimeout(FAILURE_TIMEOUT);
@@ -159,7 +167,7 @@ public class StandardWebClientServiceTest {
 
     @Test
     void testProxyAuthorization() throws IOException, InterruptedException {
-        final Proxy proxy = mockWebServer.toProxyAddress();
+        final Proxy proxy = mockWebServer.getProxyAddress();
         when(proxyContext.getProxy()).thenReturn(proxy);
         final String username = String.class.getSimpleName();
         final String password = String.class.getName();
@@ -167,15 +175,16 @@ public class StandardWebClientServiceTest {
         when(proxyContext.getPassword()).thenReturn(Optional.of(password));
         service.setProxyContext(proxyContext);
 
-        mockWebServer.enqueue(new MockResponse()
-                .setResponseCode(HttpResponseStatus.PROXY_AUTHENTICATION_REQUIRED.getCode())
-                .setHeader(PROXY_AUTHENTICATE_HEADER, PROXY_AUTHENTICATE_BASIC_REALM)
-        );
+        final MockResponse proxyAuthRequiredResponse = new MockResponse.Builder()
+                .code(HttpResponseStatus.PROXY_AUTHENTICATION_REQUIRED.getCode())
+                .addHeader(PROXY_AUTHENTICATE_HEADER, PROXY_AUTHENTICATE_BASIC_REALM)
+                .build();
+        mockWebServer.enqueue(proxyAuthRequiredResponse);
 
         runRequestMethod(service.get(), StandardHttpRequestMethod.GET, HttpResponseStatus.OK);
 
         final RecordedRequest proxyAuthorizationRequest = mockWebServer.takeRequest();
-        final String proxyAuthorization = proxyAuthorizationRequest.getHeader(PROXY_AUTHORIZATION_HEADER);
+        final String proxyAuthorization = proxyAuthorizationRequest.getHeaders().get(PROXY_AUTHORIZATION_HEADER);
 
         final String formatted = String.format("%s:%s", username, password);
         final String encoded = Base64.getEncoder().encodeToString(formatted.getBytes(StandardCharsets.UTF_8));
@@ -189,9 +198,10 @@ public class StandardWebClientServiceTest {
 
         final String location = mockWebServer.url(ROOT_PATH).newBuilder().host(LOCALHOST).build().toString();
 
-        final MockResponse movedResponse = new MockResponse()
-                .setResponseCode(HttpResponseStatus.MOVED_PERMANENTLY.getCode())
-                .setHeader(LOCATION_HEADER, location);
+        final MockResponse movedResponse = new MockResponse.Builder()
+                .code(HttpResponseStatus.MOVED_PERMANENTLY.getCode())
+                .addHeader(LOCATION_HEADER, location)
+                .build();
         mockWebServer.enqueue(movedResponse);
 
         final HttpResponseStatus httpResponseStatus = HttpResponseStatus.OK;
@@ -247,6 +257,21 @@ public class StandardWebClientServiceTest {
     @Test
     void testGetServiceUnavailable() throws InterruptedException, IOException {
         runRequestMethod(service.get(), StandardHttpRequestMethod.GET, HttpResponseStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    void testHead() throws InterruptedException, IOException {
+        runRequestMethod(service.head(), StandardHttpRequestMethod.HEAD, HttpResponseStatus.OK);
+    }
+
+    @Test
+    void testHeadNoContent() throws InterruptedException, IOException {
+        runRequestMethod(service.head(), StandardHttpRequestMethod.HEAD, HttpResponseStatus.NO_CONTENT);
+    }
+
+    @Test
+    void testHeadNotFound() throws InterruptedException, IOException {
+        runRequestMethod(service.head(), StandardHttpRequestMethod.HEAD, HttpResponseStatus.NOT_FOUND);
     }
 
     @Test
@@ -344,10 +369,10 @@ public class StandardWebClientServiceTest {
             final RecordedRequest recordedRequest = assertRecordedRequestResponseStatus(httpResponseEntity, httpRequestMethod, httpResponseStatus);
 
             assertEquals(TEXT_BODY.length, recordedRequest.getBodySize());
-            final byte[] requestBody = recordedRequest.getBody().readByteArray();
+            final byte[] requestBody = recordedRequest.getBody().toByteArray();
             assertArrayEquals(TEXT_BODY, requestBody);
 
-            final String acceptHeader = recordedRequest.getHeader(ACCEPT_HEADER);
+            final String acceptHeader = recordedRequest.getHeaders().get(ACCEPT_HEADER);
             assertEquals(ACCEPT_ANY_TYPE, acceptHeader);
         }
     }
@@ -417,14 +442,16 @@ public class StandardWebClientServiceTest {
     }
 
     private void enqueueResponseStatus(final HttpResponseStatus httpResponseStatus) {
-        mockWebServer.enqueue(new MockResponse().setResponseCode(httpResponseStatus.getCode()));
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(httpResponseStatus.getCode())
+                .build());
     }
 
     private void enqueueResponseStatusBody(final HttpResponseStatus httpResponseStatus) {
-        mockWebServer.enqueue(new MockResponse()
-                .setResponseCode(httpResponseStatus.getCode())
-                .setBody(RESPONSE_BODY)
-        );
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(httpResponseStatus.getCode())
+                .body(RESPONSE_BODY)
+                .build());
     }
 
     private URI getRootUri() {

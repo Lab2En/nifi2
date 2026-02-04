@@ -23,8 +23,8 @@ import org.apache.nifi.bundle.BundleDetails;
 import org.apache.nifi.nar.ExtensionDiscoveringManager;
 import org.apache.nifi.nar.NarClassLoaders;
 import org.apache.nifi.nar.NarLoadResult;
-import org.apache.nifi.nar.NarUnpacker;
 import org.apache.nifi.nar.NarUnpackMode;
+import org.apache.nifi.nar.NarUnpacker;
 import org.apache.nifi.stateless.engine.NarUnpackLock;
 import org.apache.nifi.stateless.engine.StatelessEngineConfiguration;
 import org.slf4j.Logger;
@@ -104,15 +104,10 @@ public class FileSystemExtensionRepository implements ExtensionRepository {
         final BundleCoordinate parentCoordinates = details.getDependencyCoordinate();
         final BundleAvailability parentAvailability = getBundleAvailability(parentCoordinates);
 
-        switch (parentAvailability) {
-            case BUNDLE_AVAILABLE:
-                return BundleAvailability.BUNDLE_AVAILABLE;
-            case BUNDLE_NOT_AVAILABLE:
-            case PARENT_NOT_AVAILABLE:
-                return BundleAvailability.PARENT_NOT_AVAILABLE;
-            default:
-                return BundleAvailability.BUNDLE_NOT_AVAILABLE;
-        }
+        return switch (parentAvailability) {
+            case BUNDLE_AVAILABLE -> BundleAvailability.BUNDLE_AVAILABLE;
+            case BUNDLE_NOT_AVAILABLE, PARENT_NOT_AVAILABLE -> BundleAvailability.PARENT_NOT_AVAILABLE;
+        };
     }
 
     @Override

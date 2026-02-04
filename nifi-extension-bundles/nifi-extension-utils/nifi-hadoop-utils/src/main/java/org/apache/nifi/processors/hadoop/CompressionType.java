@@ -16,15 +16,15 @@
  */
 package org.apache.nifi.processors.hadoop;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.apache.hadoop.io.compress.BZip2Codec;
 import org.apache.hadoop.io.compress.DefaultCodec;
 import org.apache.hadoop.io.compress.GzipCodec;
 import org.apache.hadoop.io.compress.Lz4Codec;
 import org.apache.hadoop.io.compress.SnappyCodec;
 import org.apache.nifi.components.AllowableValue;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Compression Type Enum for Hadoop related processors.
@@ -42,7 +42,7 @@ public enum CompressionType {
 
     private final String description;
 
-    private CompressionType(String description) {
+    CompressionType(String description) {
         this.description = description;
     }
 
@@ -52,21 +52,20 @@ public enum CompressionType {
 
     @Override
     public String toString() {
-        switch (this) {
-            case NONE: return "NONE";
-            case DEFAULT: return DefaultCodec.class.getName();
-            case BZIP: return BZip2Codec.class.getName();
-            case GZIP: return GzipCodec.class.getName();
-            case LZ4: return Lz4Codec.class.getName();
-            case LZO: return "com.hadoop.compression.lzo.LzoCodec";
-            case SNAPPY: return SnappyCodec.class.getName();
-            case AUTOMATIC: return "Automatically Detected";
-        }
-        return null;
+        return switch (this) {
+            case NONE -> "NONE";
+            case DEFAULT -> DefaultCodec.class.getName();
+            case BZIP -> BZip2Codec.class.getName();
+            case GZIP -> GzipCodec.class.getName();
+            case LZ4 -> Lz4Codec.class.getName();
+            case LZO -> "com.hadoop.compression.lzo.LzoCodec";
+            case SNAPPY -> SnappyCodec.class.getName();
+            case AUTOMATIC -> "Automatically Detected";
+        };
     }
 
     public static AllowableValue[] allowableValues() {
-        List<AllowableValue> values = new ArrayList<AllowableValue>();
+        List<AllowableValue> values = new ArrayList<>();
         for (CompressionType type : CompressionType.values()) {
             values.add(new AllowableValue(type.name(), type.name(), type.getDescription()));
         }

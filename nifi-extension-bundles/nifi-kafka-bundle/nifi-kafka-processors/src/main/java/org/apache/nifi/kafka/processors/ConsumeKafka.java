@@ -27,6 +27,7 @@ import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.kafka.processors.common.KafkaUtils;
@@ -34,6 +35,7 @@ import org.apache.nifi.kafka.processors.consumer.OffsetTracker;
 import org.apache.nifi.kafka.processors.consumer.ProcessingStrategy;
 import org.apache.nifi.kafka.processors.consumer.bundle.ByteRecordBundler;
 import org.apache.nifi.kafka.processors.consumer.convert.FlowFileStreamKafkaMessageConverter;
+import org.apache.nifi.kafka.processors.consumer.convert.InjectOffsetRecordStreamKafkaMessageConverter;
 import org.apache.nifi.kafka.processors.consumer.convert.KafkaMessageConverter;
 import org.apache.nifi.kafka.processors.consumer.convert.RecordStreamKafkaMessageConverter;
 import org.apache.nifi.kafka.processors.consumer.convert.WrapperRecordStreamKafkaMessageConverter;
@@ -49,6 +51,7 @@ import org.apache.nifi.kafka.shared.property.KeyFormat;
 import org.apache.nifi.kafka.shared.property.OutputStrategy;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -71,6 +74,8 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import static org.apache.nifi.expression.ExpressionLanguageScope.NONE;
@@ -87,14 +92,15 @@ import static org.apache.nifi.expression.ExpressionLanguageScope.NONE;
 @WritesAttributes({
         @WritesAttribute(attribute = "record.count", description = "The number of records received"),
         @WritesAttribute(attribute = "mime.type", description = "The MIME Type that is provided by the configured Record Writer"),
-        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_COUNT, description = "The number of messages written if more than one"),
+        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_COUNT, description = "The number of records in the FlowFile for a batch of records"),
         @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_KEY, description = "The key of message if present and if single message. "
                 + "How the key is encoded depends on the value of the 'Key Attribute Encoding' property."),
-        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_OFFSET, description = "The offset of the message in the partition of the topic."),
+        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_OFFSET, description = "The offset of the record in the partition or the minimum value of the offset in a batch of records"),
         @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_TIMESTAMP, description = "The timestamp of the message in the partition of the topic."),
-        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_PARTITION, description = "The partition of the topic the message or message bundle is from"),
-        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_TOPIC, description = "The topic the message or message bundle is from"),
-        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_TOMBSTONE, description = "Set to true if the consumed message is a tombstone message")
+        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_PARTITION, description = "The partition of the topic for a record or batch of records"),
+        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_TOPIC, description = "The topic the for a record or batch of records"),
+        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_TOMBSTONE, description = "Set to true if the consumed message is a tombstone message"),
+        @WritesAttribute(attribute = KafkaFlowFileAttribute.KAFKA_MAX_OFFSET, description = "The maximum value of the Kafka offset in batch of records")
 })
 @InputRequirement(InputRequirement.Requirement.INPUT_FORBIDDEN)
 @SeeAlso({PublishKafka.class})
@@ -141,7 +147,7 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
             .description("Automatic offset configuration applied when no previous consumer offset found corresponding to Kafka auto.offset.reset property")
             .required(true)
             .allowableValues(AutoOffsetReset.class)
-            .defaultValue(AutoOffsetReset.LATEST.getValue())
+            .defaultValue(AutoOffsetReset.LATEST)
             .expressionLanguageSupported(NONE)
             .build();
 
@@ -155,18 +161,29 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
             .defaultValue("true")
             .build();
 
+    static final PropertyDescriptor MAX_UNCOMMITTED_SIZE = new PropertyDescriptor.Builder()
+            .name("Max Uncommitted Size")
+            .description("""
+                    Maximum total size of records to consume from Kafka before transferring FlowFiles to an output
+                    relationship. Evaluated when specified based on the size of serialized keys and values from each
+                    Kafka record, before reaching the [Max Uncommitted Time].
+                    """
+            )
+            .required(false)
+            .addValidator(StandardValidators.DATA_SIZE_VALIDATOR)
+            .build();
+
     static final PropertyDescriptor MAX_UNCOMMITTED_TIME = new PropertyDescriptor.Builder()
             .name("Max Uncommitted Time")
-            .description("Specifies the maximum amount of time allowed to pass before offsets must be committed. "
-                    + "This value impacts how often offsets will be committed. Committing offsets less often increases "
-                    + "throughput but also increases the window of potential data duplication in the event of a rebalance "
-                    + "or JVM restart between commits. This value is also related to maximum poll records and the use "
-                    + "of a message demarcator. When using a message demarcator we can have far more uncommitted messages "
-                    + "than when we're not as there is much less for us to keep track of in memory.")
+            .description("""
+                    Maximum amount of time to spend consuming records from Kafka before transferring FlowFiles to an
+                    output relationship. Longer amounts of time may produce larger FlowFiles and increase processing
+                    latency for individual records.
+                    """
+            )
             .required(true)
-            .defaultValue("1 sec")
+            .defaultValue("100 millis")
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
-            .dependsOn(COMMIT_OFFSETS, "true")
             .build();
 
     static final PropertyDescriptor HEADER_ENCODING = new PropertyDescriptor.Builder()
@@ -189,7 +206,7 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
             .description("Strategy for processing Kafka Records and writing serialized output to FlowFiles")
             .required(true)
             .allowableValues(ProcessingStrategy.class)
-            .defaultValue(ProcessingStrategy.FLOW_FILE.getValue())
+            .defaultValue(ProcessingStrategy.FLOW_FILE)
             .expressionLanguageSupported(NONE)
             .build();
 
@@ -224,7 +241,6 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
             .required(true)
             .defaultValue(KeyEncoding.UTF8)
             .allowableValues(KeyEncoding.class)
-            .dependsOn(OUTPUT_STRATEGY, OutputStrategy.USE_VALUE)
             .build();
 
     static final PropertyDescriptor KEY_FORMAT = new PropertyDescriptor.Builder()
@@ -233,7 +249,7 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
             .required(true)
             .defaultValue(KeyFormat.BYTE_ARRAY)
             .allowableValues(KeyFormat.class)
-            .dependsOn(OUTPUT_STRATEGY, OutputStrategy.USE_WRAPPER)
+            .dependsOn(OUTPUT_STRATEGY, OutputStrategy.USE_WRAPPER, OutputStrategy.INJECT_METADATA)
             .build();
 
     static final PropertyDescriptor KEY_RECORD_READER = new PropertyDescriptor.Builder()
@@ -276,13 +292,14 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
             .description("If configured to use a Record Reader, a Kafka message that cannot be parsed using the configured Record Reader will be routed to this relationship")
             .build();
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             CONNECTION_SERVICE,
             GROUP_ID,
             TOPIC_FORMAT,
             TOPICS,
             AUTO_OFFSET_RESET,
             COMMIT_OFFSETS,
+            MAX_UNCOMMITTED_SIZE,
             MAX_UNCOMMITTED_TIME,
             HEADER_NAME_PATTERN,
             HEADER_ENCODING,
@@ -302,18 +319,24 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
 
     private volatile Charset headerEncoding;
     private volatile Pattern headerNamePattern;
+    private volatile ProcessingStrategy processingStrategy;
     private volatile KeyEncoding keyEncoding;
     private volatile OutputStrategy outputStrategy;
     private volatile KeyFormat keyFormat;
     private volatile boolean commitOffsets;
     private volatile boolean useReader;
+    private volatile String brokerUri;
     private volatile PollingContext pollingContext;
+    private volatile int maxConsumerCount;
+    private volatile boolean maxUncommittedSizeConfigured;
+    private volatile long maxUncommittedSize;
 
     private final Queue<KafkaConsumerService> consumerServices = new LinkedBlockingQueue<>();
+    private final AtomicInteger activeConsumerCount = new AtomicInteger();
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -330,7 +353,6 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
 
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
-        final KafkaConnectionService connectionService = context.getProperty(CONNECTION_SERVICE).asControllerService(KafkaConnectionService.class);
         pollingContext = createPollingContext(context);
         headerEncoding = Charset.forName(context.getProperty(HEADER_ENCODING).getValue());
 
@@ -343,8 +365,20 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
 
         keyEncoding = context.getProperty(KEY_ATTRIBUTE_ENCODING).asAllowableValue(KeyEncoding.class);
         commitOffsets = context.getProperty(COMMIT_OFFSETS).asBoolean();
-        outputStrategy = context.getProperty(OUTPUT_STRATEGY).asAllowableValue(OutputStrategy.class);
-        keyFormat = context.getProperty(KEY_FORMAT).asAllowableValue(KeyFormat.class);
+        processingStrategy = context.getProperty(PROCESSING_STRATEGY).asAllowableValue(ProcessingStrategy.class);
+        outputStrategy = processingStrategy == ProcessingStrategy.RECORD ? context.getProperty(OUTPUT_STRATEGY).asAllowableValue(OutputStrategy.class) : null;
+        keyFormat = (outputStrategy == OutputStrategy.USE_WRAPPER || outputStrategy == OutputStrategy.INJECT_METADATA)
+                ? context.getProperty(KEY_FORMAT).asAllowableValue(KeyFormat.class)
+                : KeyFormat.BYTE_ARRAY;
+        brokerUri = context.getProperty(CONNECTION_SERVICE).asControllerService(KafkaConnectionService.class).getBrokerUri();
+        maxConsumerCount = context.getMaxConcurrentTasks();
+        activeConsumerCount.set(0);
+
+        final PropertyValue maxUncommittedSizeProperty = context.getProperty(MAX_UNCOMMITTED_SIZE);
+        maxUncommittedSizeConfigured = maxUncommittedSizeProperty.isSet();
+        if (maxUncommittedSizeConfigured) {
+            maxUncommittedSize = maxUncommittedSizeProperty.asDataSize(DataUnit.B).longValue();
+        }
     }
 
     @OnStopped
@@ -353,11 +387,7 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
         KafkaConsumerService service;
 
         while ((service = consumerServices.poll()) != null) {
-            try {
-                service.close();
-            } catch (IOException e) {
-                getLogger().warn("Failed to close Kafka Consumer Service", e);
-            }
+            close(service, "Processor stopped");
         }
     }
 
@@ -365,28 +395,115 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) {
         final KafkaConsumerService consumerService = getConsumerService(context);
+        if (consumerService == null) {
+            getLogger().debug("No Kafka Consumer Service available; will yield and return immediately");
+            context.yield();
+            return;
+        }
 
-        try {
-            final Iterator<ByteRecord> consumerRecords = consumerService.poll().iterator();
-            if (!consumerRecords.hasNext()) {
-                getLogger().debug("No Kafka Records consumed: {}", pollingContext);
+        final long maxUncommittedMillis = context.getProperty(MAX_UNCOMMITTED_TIME).asTimePeriod(TimeUnit.MILLISECONDS);
+        final long stopTime = System.currentTimeMillis() + maxUncommittedMillis;
+        final OffsetTracker offsetTracker = new OffsetTracker();
+        boolean recordsReceived = false;
+
+        while (System.currentTimeMillis() < stopTime) {
+            try {
+                final Duration maxWaitDuration = Duration.ofMillis(stopTime - System.currentTimeMillis());
+                if (maxWaitDuration.toMillis() <= 0) {
+                    break;
+                }
+
+                final Iterator<ByteRecord> consumerRecords = consumerService.poll(maxWaitDuration).iterator();
+                if (!consumerRecords.hasNext()) {
+                    getLogger().trace("No Kafka Records consumed: {}", pollingContext);
+                    continue;
+                }
+
+                recordsReceived = true;
+                processConsumerRecords(context, session, offsetTracker, consumerRecords);
+
+                if (maxUncommittedSizeConfigured) {
+                    // Stop consuming before reaching Max Uncommitted Time when exceeding Max Uncommitted Size
+                    final long totalRecordSize = offsetTracker.getTotalRecordSize();
+                    if (totalRecordSize > maxUncommittedSize) {
+                        break;
+                    }
+                }
+            } catch (final Exception e) {
+                getLogger().error("Failed to consume Kafka Records", e);
+                consumerService.rollback();
+                close(consumerService, "Encountered Exception while consuming or writing out Kafka Records");
+                context.yield();
+                // If there are any FlowFiles already created and transferred, roll them back because we're rolling back offsets and
+                // because we will consume the data again, we don't want to transfer out the FlowFiles.
+                session.rollback();
                 return;
             }
+        }
 
-            processConsumerRecords(context, session, consumerService, pollingContext, consumerRecords);
+        if (!recordsReceived) {
+            getLogger().trace("No Kafka Records consumed, re-queuing consumer");
+            consumerServices.offer(consumerService);
+            return;
+        }
+
+        session.commitAsync(
+            () -> commitOffsets(consumerService, offsetTracker, pollingContext, session),
+            throwable -> {
+                getLogger().error("Failed to commit session; will roll back any uncommitted records", throwable);
+                rollback(consumerService, offsetTracker, session);
+                context.yield();
+            });
+    }
+
+    private void commitOffsets(final KafkaConsumerService consumerService, final OffsetTracker offsetTracker, final PollingContext pollingContext, final ProcessSession session) {
+        try {
+            if (commitOffsets) {
+                consumerService.commit(offsetTracker.getPollingSummary(pollingContext));
+
+                offsetTracker.getRecordCounts().forEach((topic, count) -> {
+                    session.adjustCounter("Records Acknowledged for " + topic, count, true);
+                });
+            }
+
+            consumerServices.offer(consumerService);
+            getLogger().debug("Committed offsets for Kafka Consumer Service");
         } catch (final Exception e) {
-            getLogger().error("Failed to consume Kafka Records", e);
-            consumerService.rollback();
+            getLogger().error("Failed to commit offsets for Kafka Consumer Service; will attempt to rollback to latest committed offsets", e);
+            rollback(consumerService, offsetTracker, session);
+        }
+    }
 
+    private void rollback(final KafkaConsumerService consumerService, final OffsetTracker offsetTracker, final ProcessSession session) {
+        if (!consumerService.isClosed()) {
             try {
-                consumerService.close();
-            } catch (IOException ex) {
-                getLogger().warn("Failed to close Kafka Consumer Service", ex);
-            }
-        } finally {
-            if (!consumerService.isClosed()) {
+                consumerService.rollback();
                 consumerServices.offer(consumerService);
+                getLogger().debug("Rolled back offsets for Kafka Consumer Service");
+            } catch (final Exception e) {
+                getLogger().warn("Failed to rollback offsets for Kafka Consumer", e);
+                close(consumerService, "Failed to rollback offsets");
             }
+
+            offsetTracker.getRecordCounts().forEach((topic, count) -> {
+                session.adjustCounter("Records Rolled Back for " + topic, count, true);
+            });
+        }
+    }
+
+    private void close(final KafkaConsumerService consumerService, final String reason) {
+        if (consumerService.isClosed()) {
+            getLogger().debug("Asked to close Kafka Consumer Service but consumer already closed");
+            return;
+        }
+
+        getLogger().info("Closing Kafka Consumer due to: {}", reason);
+
+        try {
+            consumerService.close();
+            activeConsumerCount.decrementAndGet();
+        } catch (final IOException ioe) {
+            getLogger().warn("Failed to close Kafka Consumer Service", ioe);
         }
     }
 
@@ -423,24 +540,32 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
             return consumerService;
         }
 
+        final int activeCount = activeConsumerCount.incrementAndGet();
+        if (activeCount > getMaxConsumerCount()) {
+            getLogger().trace("No Kafka Consumer Service available; have already reached max count of {} so will not create a new one", getMaxConsumerCount());
+            activeConsumerCount.decrementAndGet();
+            return null;
+        }
+
+        getLogger().info("No Kafka Consumer Service available; creating a new one. Active count: {}", activeCount);
         final KafkaConnectionService connectionService = context.getProperty(CONNECTION_SERVICE).asControllerService(KafkaConnectionService.class);
         return connectionService.getConsumerService(pollingContext);
     }
 
-    private void processConsumerRecords(final ProcessContext context, final ProcessSession session, final KafkaConsumerService consumerService,
-                final PollingContext pollingContext, final Iterator<ByteRecord> consumerRecords) {
+    private int getMaxConsumerCount() {
+        return maxConsumerCount;
+    }
 
-        final ProcessingStrategy processingStrategy = ProcessingStrategy.valueOf(context.getProperty(PROCESSING_STRATEGY).getValue());
-
+    private void processConsumerRecords(final ProcessContext context, final ProcessSession session, final OffsetTracker offsetTracker,
+            final Iterator<ByteRecord> consumerRecords) {
         switch (processingStrategy) {
-            case RECORD -> processInputRecords(context, session, consumerService, pollingContext, consumerRecords);
-            case FLOW_FILE -> processInputFlowFile(session, consumerService, pollingContext, consumerRecords);
+            case RECORD -> processInputRecords(context, session, offsetTracker, consumerRecords);
+            case FLOW_FILE -> processInputFlowFile(session, offsetTracker, consumerRecords);
             case DEMARCATOR -> {
                 final Iterator<ByteRecord> demarcatedRecords = transformDemarcator(context, consumerRecords);
-                processInputFlowFile(session, consumerService, pollingContext, demarcatedRecords);
+                processInputFlowFile(session, offsetTracker, demarcatedRecords);
             }
         }
-
     }
 
     private Iterator<ByteRecord> transformDemarcator(final ProcessContext context, final Iterator<ByteRecord> consumerRecords) {
@@ -454,38 +579,40 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
         return new ByteRecordBundler(demarcator, separateByKey, keyEncoding, headerNamePattern, headerEncoding, commitOffsets).bundle(consumerRecords);
     }
 
-    private void processInputRecords(final ProcessContext context, final ProcessSession session, final KafkaConsumerService consumerService,
-                final PollingContext pollingContext, final Iterator<ByteRecord> consumerRecords) {
-
+    private void processInputRecords(final ProcessContext context, final ProcessSession session, final OffsetTracker offsetTracker, final Iterator<ByteRecord> consumerRecords) {
         final RecordReaderFactory readerFactory = context.getProperty(RECORD_READER).asControllerService(RecordReaderFactory.class);
         final RecordSetWriterFactory writerFactory = context.getProperty(RECORD_WRITER).asControllerService(RecordSetWriterFactory.class);
-        final OffsetTracker offsetTracker = new OffsetTracker();
-        final Runnable onSuccess = commitOffsets
-            ? () -> session.commitAsync(() -> consumerService.commit(offsetTracker.getPollingSummary(pollingContext)))
-            : session::commitAsync;
 
         final KafkaMessageConverter converter;
-        if (OutputStrategy.USE_VALUE.equals(outputStrategy)) {
-            converter = new RecordStreamKafkaMessageConverter(readerFactory, writerFactory,
-                headerEncoding, headerNamePattern, keyEncoding, commitOffsets, offsetTracker, onSuccess, getLogger());
-        } else if (OutputStrategy.USE_WRAPPER.equals(outputStrategy)) {
-            final RecordReaderFactory keyReaderFactory = context.getProperty(KEY_RECORD_READER).asControllerService(RecordReaderFactory.class);
-            converter = new WrapperRecordStreamKafkaMessageConverter(readerFactory, writerFactory, keyReaderFactory,
-                headerEncoding, headerNamePattern, keyFormat, keyEncoding, commitOffsets, offsetTracker, onSuccess, getLogger());
+        if (outputStrategy == OutputStrategy.USE_VALUE) {
+            converter = new RecordStreamKafkaMessageConverter(readerFactory, writerFactory, headerEncoding, headerNamePattern,
+                    keyEncoding, commitOffsets, offsetTracker, getLogger(), brokerUri);
+        } else if (outputStrategy == OutputStrategy.INJECT_OFFSET) {
+            converter = new InjectOffsetRecordStreamKafkaMessageConverter(
+                    readerFactory,
+                    writerFactory,
+                    headerEncoding,
+                    headerNamePattern,
+                    keyEncoding,
+                    commitOffsets,
+                    offsetTracker,
+                    getLogger(),
+                    brokerUri
+            );
         } else {
-            throw new ProcessException(String.format("Output Strategy not supported [%s]", outputStrategy));
+            final RecordReaderFactory keyReaderFactory = keyFormat == KeyFormat.RECORD
+                ? context.getProperty(KEY_RECORD_READER).asControllerService(RecordReaderFactory.class) : null;
+
+            converter = new WrapperRecordStreamKafkaMessageConverter(readerFactory, writerFactory, keyReaderFactory,
+                headerEncoding, headerNamePattern, keyFormat, keyEncoding, commitOffsets, offsetTracker, getLogger(), brokerUri, outputStrategy);
         }
 
         converter.toFlowFiles(session, consumerRecords);
     }
 
-    private void processInputFlowFile(final ProcessSession session, final KafkaConsumerService consumerService, final PollingContext pollingContext, final Iterator<ByteRecord> consumerRecords) {
-        final OffsetTracker offsetTracker = new OffsetTracker();
-        final Runnable onSuccess = commitOffsets
-                ? () -> session.commitAsync(() -> consumerService.commit(offsetTracker.getPollingSummary(pollingContext)))
-                : session::commitAsync;
+    private void processInputFlowFile(final ProcessSession session, final OffsetTracker offsetTracker, final Iterator<ByteRecord> consumerRecords) {
         final KafkaMessageConverter converter = new FlowFileStreamKafkaMessageConverter(
-                headerEncoding, headerNamePattern, keyEncoding, commitOffsets, offsetTracker, onSuccess);
+            headerEncoding, headerNamePattern, keyEncoding, commitOffsets, offsetTracker, brokerUri);
         converter.toFlowFiles(session, consumerRecords);
     }
 
@@ -495,15 +622,14 @@ public class ConsumeKafka extends AbstractProcessor implements VerifiableProcess
         final AutoOffsetReset autoOffsetReset = AutoOffsetReset.valueOf(offsetReset.toUpperCase());
         final String topics = context.getProperty(TOPICS).evaluateAttributeExpressions().getValue();
         final String topicFormat = context.getProperty(TOPIC_FORMAT).getValue();
-        final Duration maxUncommittedTime = context.getProperty(MAX_UNCOMMITTED_TIME).asDuration();
 
         final PollingContext pollingContext;
         if (topicFormat.equals(TOPIC_PATTERN.getValue())) {
             final Pattern topicPattern = Pattern.compile(topics.trim());
-            pollingContext = new PollingContext(groupId, topicPattern, autoOffsetReset, maxUncommittedTime);
+            pollingContext = new PollingContext(groupId, topicPattern, autoOffsetReset);
         } else if (topicFormat.equals(TOPIC_NAME.getValue())) {
             final Collection<String> topicList = KafkaUtils.toTopicList(topics);
-            pollingContext = new PollingContext(groupId, topicList, autoOffsetReset, maxUncommittedTime);
+            pollingContext = new PollingContext(groupId, topicList, autoOffsetReset);
         } else {
             throw new ProcessException(String.format("Topic Format [%s] not supported", topicFormat));
         }

@@ -393,13 +393,40 @@ public class CopyPasteIT extends NiFiSystemIT {
 
         // Wait for the Version Control Information to show a state of UP_TO_DATE. We have to wait for this because it initially is set to SYNC_FAILURE and a background task
         // is kicked off to determine the state.
-        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(innerGroup.getId())) );
-        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(pastedGroupId)) );
+        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(innerGroup.getId())));
+        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(pastedGroupId)));
 
         // The two processors should have the same Versioned Component ID
         assertEquals(terminate1.getComponent().getName(), terminate2.getComponent().getName());
         assertEquals(terminate1.getComponent().getType(), terminate2.getComponent().getType());
         assertNotEquals(terminate1.getComponent().getId(), terminate2.getComponent().getId());
         assertEquals(terminate1.getComponent().getVersionedComponentId(), terminate2.getComponent().getVersionedComponentId());
+    }
+
+    @Test
+    public void testCopyPasteVersionControlledProcessGroupWithLocalChanges()  throws NiFiClientException, IOException, InterruptedException {
+        // Create a top-level PG and version it with nothing in it.
+        final FlowRegistryClientEntity clientEntity = registerClient();
+        final ProcessGroupEntity topLevel1 = getClientUtil().createProcessGroup("Top Level 1", "root");
+
+        // Create a lower level PG and add a Processor.  Commit as Version 1 of the PG.
+        final ProcessGroupEntity innerGroup = getClientUtil().createProcessGroup("Inner 1", topLevel1.getId());
+        ProcessorEntity terminate1 = getClientUtil().createProcessor("TerminateFlowFile", innerGroup.getId());
+        VersionControlInformationEntity vciEntity = getClientUtil().startVersionControl(innerGroup, clientEntity, TEST_FLOWS_BUCKET, FIRST_FLOW_ID);
+        assertEquals("1", vciEntity.getVersionControlInformation().getVersion());
+
+        // Modify the processor and wait for the group to show it has local changes
+        getClientUtil().updateProcessorSchedulingPeriod(terminate1, "2 mins");
+        waitFor(() -> VersionControlInformationDTO.LOCALLY_MODIFIED.equals(getClientUtil().getVersionControlState(innerGroup.getId())));
+
+        // Copy the versioned and modified process group and paste it to a new PG.
+        final ProcessGroupEntity topLevel2 = getClientUtil().createProcessGroup("Top Level 2", "root");
+        final CopyRequestEntity copyRequestEntity = new CopyRequestEntity();
+        copyRequestEntity.setProcessGroups(Set.of(innerGroup.getId()));
+        final FlowDTO flowDto = getClientUtil().copyAndPaste(topLevel1.getId(), copyRequestEntity, topLevel2.getRevision(), topLevel2.getId());
+
+        // The new PG should also show as being locally modified from Version 1 of the PG
+        final String pastedGroupId = flowDto.getProcessGroups().iterator().next().getId();
+        waitFor(() -> VersionControlInformationDTO.LOCALLY_MODIFIED.equals(getClientUtil().getVersionControlState(pastedGroupId)));
     }
 }

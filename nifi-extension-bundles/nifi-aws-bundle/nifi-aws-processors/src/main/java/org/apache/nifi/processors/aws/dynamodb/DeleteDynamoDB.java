@@ -46,6 +46,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.apache.nifi.processors.aws.region.RegionUtil.CUSTOM_REGION;
+import static org.apache.nifi.processors.aws.region.RegionUtil.REGION;
+
 @SupportsBatching
 @SeeAlso({GetDynamoDB.class, PutDynamoDB.class, PutDynamoDBRecord.class})
 @InputRequirement(Requirement.INPUT_REQUIRED)
@@ -65,14 +68,15 @@ import java.util.Map;
     @WritesAttribute(attribute = AbstractDynamoDBProcessor.DYNAMODB_ERROR_STATUS_CODE, description = "DynamoDB status code")
     })
 @ReadsAttributes({
-    @ReadsAttribute(attribute = AbstractDynamoDBProcessor.DYNAMODB_ITEM_HASH_KEY_VALUE, description = "Items hash key value" ),
-    @ReadsAttribute(attribute = AbstractDynamoDBProcessor.DYNAMODB_ITEM_RANGE_KEY_VALUE, description = "Items range key value" ),
+    @ReadsAttribute(attribute = AbstractDynamoDBProcessor.DYNAMODB_ITEM_HASH_KEY_VALUE, description = "Items hash key value"),
+    @ReadsAttribute(attribute = AbstractDynamoDBProcessor.DYNAMODB_ITEM_RANGE_KEY_VALUE, description = "Items range key value"),
     })
 public class DeleteDynamoDB extends AbstractDynamoDBProcessor {
 
-    public static final List<PropertyDescriptor> properties = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
         TABLE,
         REGION,
+        CUSTOM_REGION,
         AWS_CREDENTIALS_PROVIDER_SERVICE,
         HASH_KEY_NAME,
         RANGE_KEY_NAME,
@@ -88,13 +92,13 @@ public class DeleteDynamoDB extends AbstractDynamoDBProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) {
         final List<FlowFile> flowFiles = session.get(context.getProperty(BATCH_SIZE).evaluateAttributeExpressions().asInteger());
-        if (flowFiles == null || flowFiles.size() == 0) {
+        if (flowFiles == null || flowFiles.isEmpty()) {
             return;
         }
 
@@ -117,7 +121,7 @@ public class DeleteDynamoDB extends AbstractDynamoDBProcessor {
                 continue;
             }
 
-            if (!isRangeKeyValueConsistent(rangeKeyName, rangeKeyValue, session, flowFile) ) {
+            if (!isRangeKeyValueConsistent(rangeKeyName, rangeKeyValue, session, flowFile)) {
                 continue;
             }
 

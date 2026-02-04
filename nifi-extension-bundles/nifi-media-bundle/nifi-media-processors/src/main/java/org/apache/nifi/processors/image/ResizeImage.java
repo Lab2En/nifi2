@@ -17,25 +17,6 @@
 
 package org.apache.nifi.processors.image;
 
-import java.awt.Dimension;
-import java.awt.Graphics2D;
-import java.awt.Image;
-import java.awt.Transparency;
-import java.awt.image.BufferedImage;
-import java.io.BufferedInputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
-
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
@@ -45,6 +26,7 @@ import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -52,6 +34,22 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
+
+import java.awt.Dimension;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.Transparency;
+import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 
 @SupportsBatching
 @InputRequirement(Requirement.INPUT_REQUIRED)
@@ -66,14 +64,14 @@ public class ResizeImage extends AbstractProcessor {
     static final AllowableValue RESIZE_AREA_AVERAGING = new AllowableValue("Area Averaging", "Area Averaging", "Use the Area Averaging scaling algorithm");
 
     static final PropertyDescriptor IMAGE_WIDTH = new PropertyDescriptor.Builder()
-        .name("Image Width (in pixels)")
+        .name("Image Width")
         .description("The desired number of pixels for the image's width")
         .required(true)
         .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
         .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
         .build();
     static final PropertyDescriptor IMAGE_HEIGHT = new PropertyDescriptor.Builder()
-        .name("Image Height (in pixels)")
+        .name("Image Height")
         .description("The desired number of pixels for the image's height")
         .required(true)
         .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -87,8 +85,7 @@ public class ResizeImage extends AbstractProcessor {
         .defaultValue(RESIZE_DEFAULT.getValue())
         .build();
     static final PropertyDescriptor KEEP_RATIO = new PropertyDescriptor.Builder()
-        .displayName("Maintain aspect ratio")
-        .name("keep-ratio")
+        .name("Maintain Aspect Ratio")
         .description("Specifies if the ratio of the input image should be maintained")
         .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
         .allowableValues("true", "false")
@@ -105,22 +102,26 @@ public class ResizeImage extends AbstractProcessor {
         .description("A FlowFile is routed to this relationship if it is not in the specified format")
         .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        IMAGE_WIDTH,
+        IMAGE_HEIGHT,
+        SCALING_ALGORITHM,
+        KEEP_RATIO
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        REL_SUCCESS,
+        REL_FAILURE
+    );
+
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(IMAGE_WIDTH);
-        properties.add(IMAGE_HEIGHT);
-        properties.add(SCALING_ALGORITHM);
-        properties.add(KEEP_RATIO);
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public Set<Relationship> getRelationships() {
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_SUCCESS);
-        relationships.add(REL_FAILURE);
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
@@ -176,7 +177,8 @@ public class ResizeImage extends AbstractProcessor {
 
         final boolean keepRatio = context.getProperty(KEEP_RATIO).evaluateAttributeExpressions(flowFile).asBoolean();
 
-        int width, height;
+        int width;
+        int height;
         try {
             width = context.getProperty(IMAGE_WIDTH).evaluateAttributeExpressions(flowFile).asInteger();
             height = context.getProperty(IMAGE_HEIGHT).evaluateAttributeExpressions(flowFile).asInteger();
@@ -223,6 +225,13 @@ public class ResizeImage extends AbstractProcessor {
 
         session.getProvenanceReporter().modifyContent(flowFile, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
         session.transfer(flowFile, REL_SUCCESS);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("keep-ratio", KEEP_RATIO.getName());
+        config.renameProperty("Image Width (in pixels)", IMAGE_WIDTH.getName());
+        config.renameProperty("Image Height (in pixels)", IMAGE_HEIGHT.getName());
     }
 
     public Dimension getScaledDimension(int originalWidth, int originalHeight, int boundWidth, int boundHeight) {

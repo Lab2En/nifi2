@@ -17,11 +17,6 @@
 
 package org.apache.nifi.minifi.bootstrap.status.reporters;
 
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_STATUS_REPORTER_LOG_LEVEL;
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_STATUS_REPORTER_LOG_PERIOD;
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_STATUS_REPORTER_LOG_QUERY;
-
-import java.io.IOException;
 import org.apache.nifi.logging.LogLevel;
 import org.apache.nifi.minifi.bootstrap.QueryableStatusAggregator;
 import org.apache.nifi.minifi.bootstrap.status.PeriodicStatusReporter;
@@ -29,6 +24,12 @@ import org.apache.nifi.minifi.commons.status.FlowStatusReport;
 import org.apache.nifi.minifi.properties.BootstrapProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_STATUS_REPORTER_LOG_LEVEL;
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_STATUS_REPORTER_LOG_PERIOD;
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_STATUS_REPORTER_LOG_QUERY;
 
 public class StatusLogger extends PeriodicStatusReporter {
 
@@ -116,12 +117,10 @@ public class StatusLogger extends PeriodicStatusReporter {
                 }
 
             } catch (Exception e) {
-                switch (logLevel) {
-                    case ERROR:
-                        logger.error("Unexpected exception when attempting to report the status", e);
-                        break;
-                    default:
-                        logger.warn("Unexpected exception when attempting to report the status", e);
+                if (logLevel == LogLevel.ERROR) {
+                    logger.error("Unexpected exception when attempting to report the status", e);
+                } else {
+                    logger.warn("Unexpected exception when attempting to report the status", e);
                 }
             }
         }

@@ -17,7 +17,6 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 /**
@@ -38,8 +37,8 @@ public class RemotePortRunStatusEntity extends ComponentRunStatusEntity {
      * @return The run status
      */
     @Schema(description = "The run status of the RemotePort.",
-            allowableValues = "TRANSMITTING, STOPPED"
-    )
+            allowableValues = {"TRANSMITTING", "STOPPED"})
+    @Override
     public String getState() {
         return super.getState();
     }

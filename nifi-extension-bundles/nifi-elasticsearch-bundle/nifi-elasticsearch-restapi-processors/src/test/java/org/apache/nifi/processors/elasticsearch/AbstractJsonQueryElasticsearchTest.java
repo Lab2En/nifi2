@@ -457,20 +457,25 @@ public abstract class AbstractJsonQueryElasticsearchTest<P extends AbstractJsonQ
         }
         runner.setProperty("refresh", "true");
         runner.setProperty("slices", "${slices}");
+        runner.setProperty(ElasticsearchRestProcessor.DYNAMIC_PROPERTY_PREFIX_REQUEST_HEADER + "Accept", "${accept}");
         runner.setEnvironmentVariableValue("slices", "auto");
+        runner.setEnvironmentVariableValue("accept", "application/json");
 
         runOnce(runner);
 
         final TestElasticsearchClientService service = getService(runner);
         if (runner.getProcessor() instanceof AbstractPaginatedJsonQueryElasticsearch) {
-            assertEquals(3, service.getRequestParameters().size());
-            assertEquals("600s", service.getRequestParameters().get("scroll"));
+            assertEquals(3, service.getElasticsearchRequestOptions().getRequestParameters().size());
+            assertEquals("600s", service.getElasticsearchRequestOptions().getRequestParameters().get("scroll"));
         } else {
-            assertEquals(2, service.getRequestParameters().size());
+            assertEquals(2, service.getElasticsearchRequestOptions().getRequestParameters().size());
         }
 
-        assertEquals("true", service.getRequestParameters().get("refresh"));
-        assertEquals("auto", service.getRequestParameters().get("slices"));
+        assertEquals("true", service.getElasticsearchRequestOptions().getRequestParameters().get("refresh"));
+        assertEquals("auto", service.getElasticsearchRequestOptions().getRequestParameters().get("slices"));
+
+        assertEquals(1, service.getElasticsearchRequestOptions().getRequestHeaders().size());
+        assertEquals("application/json", service.getElasticsearchRequestOptions().getRequestHeaders().get("Accept"));
     }
 
     @ParameterizedTest
@@ -586,7 +591,8 @@ public abstract class AbstractJsonQueryElasticsearchTest<P extends AbstractJsonQ
         }
 
         if (QueryDefinitionType.BUILD_QUERY.getValue().equals(runner.getProcessContext().getProperty(ElasticsearchRestProcessor.QUERY_DEFINITION_STYLE).getValue())) {
-            final Map<String, Object> queryMap = TEST_MAPPER.readValue(query, new TypeReference<Map<String, Object>>() { });
+            final Map<String, Object> queryMap = TEST_MAPPER.readValue(query, new TypeReference<>() {
+            });
             if (queryMap.containsKey("query")) {
                 if (runner.getProcessor() instanceof ConsumeElasticsearch) {
                     runner.setProperty(ConsumeElasticsearch.RANGE_FIELD, RANGE_FIELD_NAME);
@@ -633,6 +639,7 @@ public abstract class AbstractJsonQueryElasticsearchTest<P extends AbstractJsonQ
     TestRunner createRunner(final boolean returnAggs) {
         final P processor = getProcessor();
         final TestRunner runner = TestRunners.newTestRunner(processor);
+
         final TestElasticsearchClientService service = new TestElasticsearchClientService(returnAggs);
         try {
             runner.addControllerService("esService", service);

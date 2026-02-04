@@ -15,18 +15,17 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Output } from '@angular/core';
+import { Component, EventEmitter, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { MatButton } from '@angular/material/button';
 import { Bundle, DocumentedType, OpenChangeComponentVersionDialogRequest } from '../../../state/shared';
 import { MatFormField, MatLabel, MatOption, MatSelect } from '@angular/material/select';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { TextTip, NifiTooltipDirective, NiFiCommon, CloseOnEscapeDialog } from '@nifi/shared';
+import { TextTip, NiFiCommon, CloseOnEscapeDialog } from '@nifi/shared';
 import { ControllerServiceApi } from '../controller-service/controller-service-api/controller-service-api.component';
 
 @Component({
     selector: 'change-component-version-dialog',
-    standalone: true,
     imports: [
         MatDialogModule,
         MatButton,
@@ -35,13 +34,16 @@ import { ControllerServiceApi } from '../controller-service/controller-service-a
         MatOption,
         MatFormField,
         ReactiveFormsModule,
-        NifiTooltipDirective,
         ControllerServiceApi
     ],
     templateUrl: './change-component-version-dialog.html',
     styleUrl: './change-component-version-dialog.scss'
 })
 export class ChangeComponentVersionDialog extends CloseOnEscapeDialog {
+    private dialogRequest = inject<OpenChangeComponentVersionDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+
     versions: DocumentedType[];
     selected: DocumentedType | null = null;
     changeComponentVersionForm: FormGroup;
@@ -49,12 +51,10 @@ export class ChangeComponentVersionDialog extends CloseOnEscapeDialog {
 
     @Output() changeVersion: EventEmitter<DocumentedType> = new EventEmitter<DocumentedType>();
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) private dialogRequest: OpenChangeComponentVersionDialogRequest,
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         super();
+        const dialogRequest = this.dialogRequest;
+
         this.versions = dialogRequest.componentVersions;
         this.currentBundle = dialogRequest.fetchRequest.bundle;
         const idx = this.versions.findIndex(

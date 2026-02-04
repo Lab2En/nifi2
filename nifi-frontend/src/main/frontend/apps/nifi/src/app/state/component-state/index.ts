@@ -15,20 +15,30 @@
  * limitations under the License.
  */
 
+import { ComponentType } from '@nifi/shared';
+
 export const componentStateFeatureKey = 'componentState';
 
 export interface ComponentStateRequest {
     componentName: string;
-    componentUri: string;
+    componentType: ComponentType;
+    componentId: string;
     canClear: boolean;
 }
 
 export interface LoadComponentStateRequest {
-    componentUri: string;
+    componentType: ComponentType;
+    componentId: string;
 }
 
 export interface ClearComponentStateRequest {
-    componentUri: string;
+    componentType: ComponentType;
+    componentId: string;
+}
+
+export interface ClearStateEntryRequest {
+    keyToDelete: string;
+    scope: 'LOCAL' | 'CLUSTER';
 }
 
 export interface ComponentStateResponse {
@@ -54,17 +64,24 @@ export interface StateMap {
     totalEntryCount: number;
 }
 
+export interface ComponentStateEntity {
+    componentState: ComponentState;
+}
+
 export interface ComponentState {
     componentId: string;
     localState?: StateMap;
     clusterState?: StateMap;
     stateDescription: string;
+    dropStateKeySupported?: boolean;
 }
 
 export interface ComponentStateState {
     componentName: string | null;
-    componentUri: string | null;
+    componentType: ComponentType | null;
+    componentId: string | null;
     componentState: ComponentState | null;
     canClear: boolean | null;
-    status: 'pending' | 'loading' | 'success';
+    clearing: boolean;
+    status: 'pending' | 'loading' | 'success' | 'error';
 }

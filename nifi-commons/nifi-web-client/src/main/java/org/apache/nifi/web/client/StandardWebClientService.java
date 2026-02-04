@@ -43,6 +43,7 @@ import java.net.ProxySelector;
 import java.net.SocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpClient.Version;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -53,7 +54,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.Flow;
-
 import javax.net.ssl.SSLContext;
 
 /**
@@ -77,6 +77,8 @@ public class StandardWebClientService implements WebClientService, Closeable {
     private ProxyContext proxyContext;
 
     private TlsContext tlsContext;
+
+    private Version httpVersion;
 
     /**
      * Standard Web Client Service constructor creates a Java HttpClient using default settings
@@ -152,6 +154,17 @@ public class StandardWebClientService implements WebClientService, Closeable {
     }
 
     /**
+     * Set preferred HTTP protocol version for requests
+     *
+     * @param httpVersion HTTP protocol version
+     */
+    public void setHttpVersion(final Version httpVersion) {
+        Objects.requireNonNull(httpVersion, "HTTP Version required");
+        this.httpVersion = httpVersion;
+        this.httpClient = buildHttpClient();
+    }
+
+    /**
      * Create HTTP Request builder starting with specified HTTP Request Method
      *
      * @param httpRequestMethod HTTP Request Method required
@@ -181,6 +194,16 @@ public class StandardWebClientService implements WebClientService, Closeable {
     @Override
     public HttpRequestUriSpec get() {
         return method(StandardHttpRequestMethod.GET);
+    }
+
+    /**
+     * Create HTTP Request builder starting with HTTP HEAD
+     *
+     * @return HTTP Request URI Specification builder
+     */
+    @Override
+    public HttpRequestUriSpec head() {
+        return method(StandardHttpRequestMethod.HEAD);
     }
 
     /**
@@ -249,6 +272,10 @@ public class StandardWebClientService implements WebClientService, Closeable {
                     builder.authenticator(passwordAuthenticator);
                 }
             }
+        }
+
+        if (httpVersion != null) {
+            builder.version(httpVersion);
         }
 
         return builder.build();
@@ -366,6 +393,10 @@ public class StandardWebClientService implements WebClientService, Closeable {
             // Prefer Read Timeout over Write Timeout when specified
             if (readTimeout != null) {
                 requestBuilder.timeout(readTimeout);
+            }
+
+            if (httpVersion != null) {
+                requestBuilder.version(httpVersion);
             }
 
             final HttpRequest.BodyPublisher bodyPublisher = getBodyPublisher();

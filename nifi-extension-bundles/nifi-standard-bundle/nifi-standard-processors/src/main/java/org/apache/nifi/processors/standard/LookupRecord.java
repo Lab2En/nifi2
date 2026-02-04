@@ -40,12 +40,12 @@ import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.lookup.LookupFailureException;
 import org.apache.nifi.lookup.LookupService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.record.path.FieldValue;
 import org.apache.nifi.record.path.RecordPath;
@@ -84,7 +84,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
-
 
 @SideEffectFree
 @SupportsBatching
@@ -135,24 +134,21 @@ public class LookupRecord extends AbstractProcessor {
             + "to replace multiple values in one execution. This strategy only supports simple types replacements (strings, integers, etc).");
 
     static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
-        .name("record-reader")
-        .displayName("Record Reader")
+        .name("Record Reader")
         .description("Specifies the Controller Service to use for reading incoming data")
         .identifiesControllerService(RecordReaderFactory.class)
         .required(true)
         .build();
 
     static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
-        .name("record-writer")
-        .displayName("Record Writer")
+        .name("Record Writer")
         .description("Specifies the Controller Service to use for writing out the records")
         .identifiesControllerService(RecordSetWriterFactory.class)
         .required(true)
         .build();
 
     static final PropertyDescriptor LOOKUP_SERVICE = new PropertyDescriptor.Builder()
-        .name("lookup-service")
-        .displayName("Lookup Service")
+        .name("Lookup Service")
         .description("The Lookup Service to use in order to lookup a value in each Record")
         .identifiesControllerService(LookupService.class)
         .required(true)
@@ -169,38 +165,34 @@ public class LookupRecord extends AbstractProcessor {
         .build();
 
     static final PropertyDescriptor RESULT_CONTENTS = new PropertyDescriptor.Builder()
-        .name("result-contents")
-        .displayName("Record Result Contents")
+        .name("Record Result Contents")
         .description("When a result is obtained that contains a Record, this property determines whether the Record itself is inserted at the configured "
             + "path or if the contents of the Record (i.e., the sub-fields) will be inserted at the configured path.")
         .allowableValues(RESULT_ENTIRE_RECORD, RESULT_RECORD_FIELDS)
-        .defaultValue(RESULT_ENTIRE_RECORD.getValue())
+        .defaultValue(RESULT_ENTIRE_RECORD)
         .required(true)
         .build();
 
     static final PropertyDescriptor ROUTING_STRATEGY = new PropertyDescriptor.Builder()
-        .name("routing-strategy")
-        .displayName("Routing Strategy")
+        .name("Routing Strategy")
         .description("Specifies how to route records after a Lookup has completed")
         .expressionLanguageSupported(ExpressionLanguageScope.NONE)
         .allowableValues(ROUTE_TO_SUCCESS, ROUTE_TO_MATCHED_UNMATCHED)
-        .defaultValue(ROUTE_TO_SUCCESS.getValue())
+        .defaultValue(ROUTE_TO_SUCCESS)
         .required(true)
         .build();
 
     static final PropertyDescriptor REPLACEMENT_STRATEGY = new PropertyDescriptor.Builder()
-        .name("record-update-strategy")
-        .displayName("Record Update Strategy")
+        .name("Record Update Strategy")
         .description("This property defines the strategy to use when updating the record with the value returned by the Lookup Service.")
         .expressionLanguageSupported(ExpressionLanguageScope.NONE)
         .allowableValues(REPLACE_EXISTING_VALUES, USE_PROPERTY)
-        .defaultValue(USE_PROPERTY.getValue())
+        .defaultValue(USE_PROPERTY)
         .required(true)
         .build();
 
     static final PropertyDescriptor RESULT_RECORD_PATH = new PropertyDescriptor.Builder()
-        .name("result-record-path")
-        .displayName("Result RecordPath")
+        .name("Result RecordPath")
         .description("A RecordPath that points to the field whose value should be updated with whatever value is returned from the Lookup Service. "
                      + "If not specified, the value that is returned from the Lookup Service will be ignored, except for determining whether the FlowFile should "
                      + "be routed to the 'matched' or 'unmatched' Relationship.")
@@ -211,8 +203,7 @@ public class LookupRecord extends AbstractProcessor {
         .build();
 
     static final PropertyDescriptor CACHE_SIZE = new PropertyDescriptor.Builder()
-        .name("record-path-lookup-miss-result-cache-size")
-        .displayName("Cache Size")
+        .name("Cache Size")
         .description("Specifies how many lookup values/records should be cached."
                 + "Setting this property to zero means no caching will be done and the table will be queried for each lookup value in each record. If the lookup "
                 + "table changes often or the most recent data must be retrieved, do not use the cache.")
@@ -222,7 +213,7 @@ public class LookupRecord extends AbstractProcessor {
         .required(true)
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             RECORD_READER,
             RECORD_WRITER,
             LOOKUP_SERVICE,
@@ -272,8 +263,20 @@ public class LookupRecord extends AbstractProcessor {
     }
 
     @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("record-reader", RECORD_READER.getName());
+        config.renameProperty("record-writer", RECORD_WRITER.getName());
+        config.renameProperty("lookup-service", LOOKUP_SERVICE.getName());
+        config.renameProperty("result-contents", RESULT_CONTENTS.getName());
+        config.renameProperty("routing-strategy", ROUTING_STRATEGY.getName());
+        config.renameProperty("record-update-strategy", REPLACEMENT_STRATEGY.getName());
+        config.renameProperty("result-record-path", RESULT_RECORD_PATH.getName());
+        config.renameProperty("record-path-lookup-miss-result-cache-size", CACHE_SIZE.getName());
+    }
+
+    @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -386,41 +389,38 @@ public class LookupRecord extends AbstractProcessor {
         }
 
         try {
-            session.read(flowFile, new InputStreamCallback() {
-                @Override
-                public void process(final InputStream in) throws IOException {
-                    try (final RecordReader reader = readerFactory.createRecordReader(originalAttributes, in, original.getSize(), getLogger())) {
+            session.read(flowFile, in -> {
+                try (final RecordReader reader = readerFactory.createRecordReader(originalAttributes, in, original.getSize(), getLogger())) {
 
-                        final Map<Relationship, RecordSchema> writeSchemas = new HashMap<>();
+                    final Map<Relationship, RecordSchema> writeSchemas = new HashMap<>();
 
-                        Record record;
-                        while ((record = reader.nextRecord()) != null) {
-                            final List<Record> subRecords = getSubRecords(record, rootRecordPath);
-                            final Set<MatchResult> matchResults = new HashSet<>();
-                            for (final Record subRecord : subRecords) {
-                                final MatchResult matchResult = replacementStrategy.lookup(subRecord, context, lookupContext);
-                                matchResults.add(matchResult);
-                            }
-                            record.incorporateInactiveFields();
-
-                            final Set<Relationship> relationships = getRelationships(matchResults);
-
-                            for (final Relationship relationship : relationships) {
-                                // Determine the Write Schema to use for each relationship
-                                RecordSchema writeSchema = writeSchemas.get(relationship);
-                                if (writeSchema == null) {
-                                    final RecordSchema outputSchema = enrichedSchema == null ? record.getSchema() : enrichedSchema;
-                                    writeSchema = writerFactory.getSchema(originalAttributes, outputSchema);
-                                    writeSchemas.put(relationship, writeSchema);
-                                }
-
-                                final RecordSetWriter writer = lookupContext.getRecordWriterForRelationship(relationship, writeSchema);
-                                writer.write(record);
-                            }
+                    Record record;
+                    while ((record = reader.nextRecord()) != null) {
+                        final List<Record> subRecords = getSubRecords(record, rootRecordPath);
+                        final Set<MatchResult> matchResults = new HashSet<>();
+                        for (final Record subRecord : subRecords) {
+                            final MatchResult matchResult = replacementStrategy.lookup(subRecord, context, lookupContext);
+                            matchResults.add(matchResult);
                         }
-                    } catch (final SchemaNotFoundException | MalformedRecordException e) {
-                        throw new ProcessException("Could not parse incoming data", e);
+                        record.incorporateInactiveFields();
+
+                        final Set<Relationship> relationships = getRelationships(matchResults);
+
+                        for (final Relationship relationship : relationships) {
+                            // Determine the Write Schema to use for each relationship
+                            RecordSchema writeSchema = writeSchemas.get(relationship);
+                            if (writeSchema == null) {
+                                final RecordSchema outputSchema = enrichedSchema == null ? record.getSchema() : enrichedSchema;
+                                writeSchema = writerFactory.getSchema(originalAttributes, outputSchema);
+                                writeSchemas.put(relationship, writeSchema);
+                            }
+
+                            final RecordSetWriter writer = lookupContext.getRecordWriterForRelationship(relationship, writeSchema);
+                            writer.write(record);
+                        }
                     }
+                } catch (final SchemaNotFoundException | MalformedRecordException e) {
+                    throw new ProcessException("Could not parse incoming data", e);
                 }
             });
 
@@ -818,9 +818,9 @@ public class LookupRecord extends AbstractProcessor {
         }
 
         final RecordPath resultRecordPath;
-        if (context.getProperty(RESULT_RECORD_PATH).isSet()) {
+        if (context.getProperty(REPLACEMENT_STRATEGY).getValue().equals(USE_PROPERTY.getValue())) {
             final String resultPathText = context.getProperty(RESULT_RECORD_PATH).evaluateAttributeExpressions(flowFile).getValue();
-            resultRecordPath = recordPathCache.getCompiled(resultPathText);
+            resultRecordPath = resultPathText == null ? null : recordPathCache.getCompiled(resultPathText);
         } else {
             resultRecordPath = null;
         }

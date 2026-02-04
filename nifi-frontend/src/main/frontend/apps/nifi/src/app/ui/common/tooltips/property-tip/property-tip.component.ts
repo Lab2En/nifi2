@@ -15,23 +15,21 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
-
+import { Component, Input, inject } from '@angular/core';
 import { PropertyDescriptor, PropertyTipInput } from '../../../../state/shared';
 import { NiFiCommon } from '@nifi/shared';
 import { ControllerServiceApi } from '../../controller-service/controller-service-api/controller-service-api.component';
 
 @Component({
     selector: 'property-tip',
-    standalone: true,
     templateUrl: './property-tip.component.html',
     imports: [ControllerServiceApi],
     styleUrls: ['./property-tip.component.scss']
 })
 export class PropertyTip {
-    @Input() data: PropertyTipInput | undefined;
+    private nifiCommon = inject(NiFiCommon);
 
-    constructor(private nifiCommon: NiFiCommon) {}
+    @Input() data: PropertyTipInput | undefined;
 
     hasDescription(descriptor: PropertyDescriptor): boolean {
         return !this.nifiCommon.isBlank(descriptor.description);

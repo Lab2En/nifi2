@@ -30,8 +30,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -42,6 +42,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -315,21 +316,63 @@ class TestMapRecord {
 
         Map<String, Object> fullConversion = ((MapRecord) record).toMap(true);
         assertEquals(FOO_TEST_VAL, fullConversion.get("foo"));
-        assertTrue(fullConversion.get("nested") instanceof Map);
+        assertInstanceOf(Map.class, fullConversion.get("nested"));
 
         Map<String, Object> nested = (Map<String, Object>) fullConversion.get("nested");
         assertEquals(1, nested.size());
         assertEquals(NESTED_RECORD_VALUE, nested.get("test"));
 
-        assertTrue(fullConversion.get("list") instanceof List);
+        assertInstanceOf(List.class, fullConversion.get("list"));
         List recordList = (List) fullConversion.get("list");
         assertEquals(5, recordList.size());
         for (Object rec : recordList) {
-            assertTrue(rec instanceof Map);
+            assertInstanceOf(Map.class, rec);
             Map<String, Object> map = (Map<String, Object>) rec;
             assertEquals(1, map.size());
             assertEquals(NESTED_RECORD_VALUE, map.get("test"));
         }
+    }
+
+    @Test
+    void testNestedSchemaWithEmptyArray() throws Exception {
+        final String testValue = "test!";
+        final String nestedRecordValue = "Hello, world!";
+
+        final List<RecordField> fields = new ArrayList<>();
+        fields.add(new RecordField("foo", RecordFieldType.STRING.getDataType(), null, set("bar", "baz")));
+        List<RecordField> nestedFields = new ArrayList<>();
+        nestedFields.add(new RecordField("test", RecordFieldType.STRING.getDataType()));
+        RecordSchema nestedSchema = new SimpleRecordSchema(nestedFields);
+        RecordDataType nestedType = new RecordDataType(nestedSchema);
+        fields.add(new RecordField("nested", nestedType));
+        fields.add(new RecordField("array", new ArrayDataType(nestedType)));
+        RecordSchema fullSchema = new SimpleRecordSchema(fields);
+
+        Map<String, Object> nestedValues = new HashMap<>();
+        nestedValues.put("test", nestedRecordValue);
+        Record nestedRecord = new MapRecord(nestedSchema, nestedValues);
+        Map<String, Object> values = new HashMap<>();
+        values.put("foo", testValue);
+        values.put("nested", nestedRecord);
+
+        values.put("array", new Object[0]);
+
+        Record record = new MapRecord(fullSchema, values);
+
+        Map<String, Object> fullConversion = null;
+        fullConversion = ((MapRecord) record).toMap(true);
+
+        assertEquals(testValue, fullConversion.get("foo"));
+        assertInstanceOf(Map.class, fullConversion.get("nested"));
+
+        Map<String, Object> nested = (Map<String, Object>) fullConversion.get("nested");
+        assertEquals(1, nested.size());
+        assertEquals(nestedRecordValue, nested.get("test"));
+
+        Object arrayFieldName = fullConversion.get("array");
+        assertInstanceOf(Object[].class, arrayFieldName);
+        Object[] recordArray = (Object[]) arrayFieldName;
+        assertEquals(0, recordArray.length);
     }
 
     @ParameterizedTest
@@ -360,7 +403,7 @@ class TestMapRecord {
         fields.add(new RecordField(timestampFieldName, RecordFieldType.TIMESTAMP.getDataType()));
 
         final RecordSchema schema = new SimpleRecordSchema(fields);
-        final HashMap<String, Object> item = new HashMap<>();
+        final Map<String, Object> item = new HashMap<>();
         item.put(timestampFieldName, input);
         final MapRecord testRecord = new MapRecord(schema, item);
 

@@ -16,18 +16,11 @@
  */
 package org.apache.nifi.web.api;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.ServletContext;
@@ -73,6 +66,8 @@ import org.apache.nifi.web.api.dto.ConfigurationAnalysisDTO;
 import org.apache.nifi.web.api.dto.PropertyDescriptorDTO;
 import org.apache.nifi.web.api.dto.ReportingTaskDTO;
 import org.apache.nifi.web.api.dto.VerifyConfigRequestDTO;
+import org.apache.nifi.web.api.entity.ClearBulletinsRequestEntity;
+import org.apache.nifi.web.api.entity.ClearBulletinsResultEntity;
 import org.apache.nifi.web.api.entity.ComponentStateEntity;
 import org.apache.nifi.web.api.entity.ConfigurationAnalysisEntity;
 import org.apache.nifi.web.api.entity.PropertyDescriptorEntity;
@@ -85,6 +80,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
+
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * RESTful endpoint for managing a Reporting Task.
@@ -169,18 +171,16 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Gets a reporting task",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /reporting-tasks/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /reporting-tasks/{uuid}")
             }
     )
     public Response getReportingTask(
@@ -220,18 +220,16 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}/descriptors")
     @Operation(
             summary = "Gets a reporting task property descriptor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = PropertyDescriptorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /reporting-tasks/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = PropertyDescriptorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /reporting-tasks/{uuid}")
             }
     )
     public Response getPropertyDescriptor(
@@ -289,18 +287,16 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}/state")
     @Operation(
             summary = "Gets the state for a reporting task",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}")
             }
     )
     public Response getState(
@@ -338,23 +334,21 @@ public class ReportingTaskResource extends ApplicationResource {
      * @return a componentStateEntity
      */
     @POST
-    @Consumes(MediaType.WILDCARD)
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.WILDCARD})
     @Produces(MediaType.APPLICATION_JSON)
     @Path("{id}/state/clear-requests")
     @Operation(
             summary = "Clears the state for a reporting task",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}")
             }
     )
     public Response clearState(
@@ -362,10 +356,18 @@ public class ReportingTaskResource extends ApplicationResource {
                     description = "The reporting task id.",
                     required = true
             )
-            @PathParam("id") final String id) {
+            @PathParam("id") final String id,
+            @Parameter(
+                    description = "Optional component state to perform a selective key removal. If omitted, clears all state.",
+                    required = false
+            ) final ComponentStateEntity componentStateEntity) {
 
         if (isReplicateRequest()) {
-            return replicate(HttpMethod.POST);
+            if (componentStateEntity == null) {
+                return replicate(HttpMethod.POST);
+            } else {
+                return replicate(HttpMethod.POST, componentStateEntity);
+            }
         }
 
         final ReportingTaskEntity requestReportTaskEntity = new ReportingTaskEntity();
@@ -380,13 +382,86 @@ public class ReportingTaskResource extends ApplicationResource {
                 },
                 () -> serviceFacade.verifyCanClearReportingTaskState(id),
                 (reportingTaskEntity) -> {
-                    // get the component state
-                    serviceFacade.clearReportingTaskState(reportingTaskEntity.getId());
+                    // clear state
+                    final ComponentStateDTO expectedState = componentStateEntity == null ? null : componentStateEntity.getComponentState();
+                    final ComponentStateDTO state = serviceFacade.clearReportingTaskState(reportingTaskEntity.getId(), expectedState);
 
                     // generate the response entity
                     final ComponentStateEntity entity = new ComponentStateEntity();
+                    entity.setComponentState(state);
 
                     // generate the response
+                    return generateOkResponse(entity).build();
+                }
+        );
+    }
+
+    /**
+     * Clears bulletins for a reporting task.
+     *
+     * @param id The id of the reporting task
+     * @param clearBulletinsRequestEntity The clear bulletin request
+     * @return a clearBulletinsResultEntity
+     */
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("{id}/bulletins/clear-requests")
+    @Operation(
+            summary = "Clears bulletins for a reporting task",
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ClearBulletinsResultEntity.class))),
+                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
+                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
+                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
+                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}")
+            }
+    )
+    public Response clearBulletins(
+            @Parameter(
+                    description = "The reporting task id.",
+                    required = true
+            )
+            @PathParam("id") final String id,
+            @Parameter(
+                    description = "The clear bulletin request specifying the timestamp from which to clear bulletins.",
+                    required = true
+            ) final ClearBulletinsRequestEntity clearBulletinsRequestEntity) {
+
+        if (clearBulletinsRequestEntity == null) {
+            throw new IllegalArgumentException("Clear bulletin request must be specified.");
+        }
+
+        // Validate the request
+        if (clearBulletinsRequestEntity.getFromTimestamp() == null) {
+            throw new IllegalArgumentException("From timestamp must be specified in the clear bulletin request.");
+        }
+
+        if (isReplicateRequest()) {
+            return replicate(HttpMethod.POST, clearBulletinsRequestEntity);
+        }
+
+        final ReportingTaskEntity requestReportingTaskEntity = new ReportingTaskEntity();
+        requestReportingTaskEntity.setId(id);
+
+        return withWriteLock(
+                serviceFacade,
+                requestReportingTaskEntity,
+                lookup -> {
+                    final Authorizable reportingTask = lookup.getReportingTask(id).getAuthorizable();
+                    reportingTask.authorize(authorizer, RequestAction.WRITE, NiFiUserUtils.getNiFiUser());
+                },
+                () -> { },
+                (reportingTaskEntity) -> {
+                    final Instant fromTimestamp = clearBulletinsRequestEntity.getFromTimestamp();
+
+                    // Clear bulletins for the reporting task
+                    final ClearBulletinsResultEntity entity = serviceFacade.clearBulletinsForComponent(reportingTaskEntity.getId(), fromTimestamp);
+
                     return generateOkResponse(entity).build();
                 }
         );
@@ -405,19 +480,17 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Updates a reporting task",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}"),
-                    @SecurityRequirement(name = "Read - any referenced Controller Services if this request changes the reference - /controller-services/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}"),
+                    @SecurityRequirement(name = "Read - any referenced Controller Services if this request changes the reference - /controller-services/{uuid}")
             }
     )
     public Response updateReportingTask(
@@ -496,20 +569,18 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Deletes a reporting task",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}"),
-                    @SecurityRequirement(name = "Write - /controller"),
-                    @SecurityRequirement(name = "Read - any referenced Controller Services - /controller-services/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid}"),
+                    @SecurityRequirement(name = "Write - /controller"),
+                    @SecurityRequirement(name = "Read - any referenced Controller Services - /controller-services/{uuid}")
             }
     )
     public Response removeReportingTask(
@@ -580,18 +651,16 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}/run-status")
     @Operation(
             summary = "Updates run status of a reporting task",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid} or  or /operation/reporting-tasks/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ReportingTaskEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /reporting-tasks/{uuid} or  or /operation/reporting-tasks/{uuid}")
             }
     )
     public Response updateRunStatus(
@@ -649,18 +718,16 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("/{id}/config/analysis")
     @Operation(
             summary = "Performs analysis of the component's configuration, providing information about which attributes are referenced.",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ConfigurationAnalysisEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /reporting-tasks/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ConfigurationAnalysisEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /reporting-tasks/{uuid}")
             }
     )
     public Response analyzeConfiguration(
@@ -711,7 +778,14 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("/{id}/config/verification-requests")
     @Operation(
             summary = "Performs verification of the Reporting Task's configuration",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
+                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
+                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
+                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
+                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
             description = "This will initiate the process of verifying a given Reporting Task configuration. This may be a long-running task. As a result, this endpoint will immediately return a " +
                     "ReportingTaskConfigVerificationRequestEntity, and the process of performing the verification will occur asynchronously in the background. " +
                     "The client may then periodically poll the status of the request by " +
@@ -719,15 +793,6 @@ public class ReportingTaskResource extends ApplicationResource {
                     "/reporting-tasks/{serviceId}/verification-requests/{requestId}.",
             security = {
                     @SecurityRequirement(name = "Read - /reporting-tasks/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
-                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
-                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
-                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
-                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
-                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
             }
     )
     public Response submitConfigVerificationRequest(
@@ -777,21 +842,19 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}/config/verification-requests/{requestId}")
     @Operation(
             summary = "Returns the Verification Request with the given ID",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
-            description = "Returns the Verification Request with the given ID. Once an Verification Request has been created, "
-                    + "that request can subsequently be retrieved via this endpoint, and the request that is fetched will contain the updated state, such as percent complete, the "
-                    + "current state of the request, and any failures. ",
-            security = {
-                    @SecurityRequirement(name = "Only the user that submitted the request can get it")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            description = "Returns the Verification Request with the given ID. Once an Verification Request has been created, "
+                    + "that request can subsequently be retrieved via this endpoint, and the request that is fetched will contain the updated state, such as percent complete, the "
+                    + "current state of the request, and any failures. ",
+            security = {
+                    @SecurityRequirement(name = "Only the user that submitted the request can get it")
             }
     )
     public Response getVerificationRequest(
@@ -819,21 +882,19 @@ public class ReportingTaskResource extends ApplicationResource {
     @Path("{id}/config/verification-requests/{requestId}")
     @Operation(
             summary = "Deletes the Verification Request with the given ID",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
-            description = "Deletes the Verification Request with the given ID. After a request is created, it is expected "
-                    + "that the client will properly clean up the request by DELETE'ing it, once the Verification process has completed. If the request is deleted before the request "
-                    + "completes, then the Verification request will finish the step that it is currently performing and then will cancel any subsequent steps.",
-            security = {
-                    @SecurityRequirement(name = "Only the user that submitted the request can remove it")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            description = "Deletes the Verification Request with the given ID. After a request is created, it is expected "
+                    + "that the client will properly clean up the request by DELETE'ing it, once the Verification process has completed. If the request is deleted before the request "
+                    + "completes, then the Verification request will finish the step that it is currently performing and then will cancel any subsequent steps.",
+            security = {
+                    @SecurityRequirement(name = "Only the user that submitted the request can remove it")
             }
     )
     public Response deleteVerificationRequest(

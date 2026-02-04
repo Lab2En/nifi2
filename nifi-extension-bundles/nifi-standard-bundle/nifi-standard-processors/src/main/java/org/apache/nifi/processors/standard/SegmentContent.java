@@ -71,14 +71,15 @@ public class SegmentContent extends AbstractProcessor {
 
     public static final PropertyDescriptor SIZE = new PropertyDescriptor.Builder()
             .name("Segment Size")
-            .displayName("Segment Size")
             .description("The maximum data size in bytes for each segment")
             .addValidator(StandardValidators.DATA_SIZE_VALIDATOR)
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(SIZE);
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            SIZE
+    );
 
     public static final Relationship REL_SEGMENTS = new Relationship.Builder()
             .name("segments")
@@ -102,7 +103,7 @@ public class SegmentContent extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override

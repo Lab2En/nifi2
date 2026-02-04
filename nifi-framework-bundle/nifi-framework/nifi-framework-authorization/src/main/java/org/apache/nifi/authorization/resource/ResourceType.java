@@ -35,6 +35,7 @@ public enum ResourceType {
     RemoteProcessGroup("/remote-process-groups"),
     ReportingTask("/reporting-tasks"),
     FlowAnalysisRule("/controller/flow-analysis-rules"),
+    RegistryClient("/controller/registry-clients"),
     Resource("/resources"),
     SiteToSite("/site-to-site"),
     DataTransfer("/data-transfer"),
@@ -47,7 +48,7 @@ public enum ResourceType {
 
     final String value;
 
-    private ResourceType(final String value) {
+    ResourceType(final String value) {
         this.value = value;
     }
 

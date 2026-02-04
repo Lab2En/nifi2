@@ -16,7 +16,7 @@
  */
 
 import {
-    afterRender,
+    afterNextRender,
     AfterViewInit,
     Component,
     DestroyRef,
@@ -33,6 +33,7 @@ import {
     selectFlowAnalysisRuleTypes,
     selectParameterProviderTypes,
     selectProcessorTypes,
+    selectRegistryClientTypes,
     selectReportingTaskTypes
 } from '../../../state/extension-types/extension-types.selectors';
 import { ComponentType, isDefinedAndNotNull, NiFiCommon, selectCurrentRoute } from '@nifi/shared';
@@ -47,13 +48,20 @@ import {
 } from '../state/documentation/documentation.selectors';
 import { DefinitionCoordinates } from '../state';
 import { navigateToOverview } from '../state/documentation/documentation.actions';
+import { concatLatestFrom } from '@ngrx/operators';
 
 @Component({
     selector: 'documentation',
     templateUrl: './documentation.component.html',
-    styleUrls: ['./documentation.component.scss']
+    styleUrls: ['./documentation.component.scss'],
+    standalone: false
 })
 export class Documentation implements OnInit, AfterViewInit {
+    private store = inject<Store<NiFiState>>(Store);
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+    private documentation = inject(ElementRef);
+
     private destroyRef: DestroyRef = inject(DestroyRef);
 
     processorTypes$ = this.store
@@ -64,6 +72,9 @@ export class Documentation implements OnInit, AfterViewInit {
         .pipe(map((extensionTypes) => this.sortExtensions(extensionTypes)));
     reportingTaskTypes$ = this.store
         .select(selectReportingTaskTypes)
+        .pipe(map((extensionTypes) => this.sortExtensions(extensionTypes)));
+    registryClientTypes$ = this.store
+        .select(selectRegistryClientTypes)
         .pipe(map((extensionTypes) => this.sortExtensions(extensionTypes)));
     parameterProviderTypes$ = this.store
         .select(selectParameterProviderTypes)
@@ -81,12 +92,14 @@ export class Documentation implements OnInit, AfterViewInit {
     private isOverviewRoute: boolean = false;
     private scrolledIntoView = false;
 
-    constructor(
-        private store: Store<NiFiState>,
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon,
-        private documentation: ElementRef
-    ) {
+    generalExpanded = true;
+    processorsExpanded = false;
+    controllerServicesExpanded = false;
+    reportingTasksExpanded = false;
+    parameterProvidersExpanded = false;
+    registryClientsExpanded = false;
+
+    constructor() {
         this.store
             .select(selectDefinitionCoordinatesFromRoute)
             .pipe(
@@ -98,11 +111,31 @@ export class Documentation implements OnInit, AfterViewInit {
                         a?.type === b?.type
                 ),
                 isDefinedAndNotNull(),
-                takeUntilDestroyed()
+                takeUntilDestroyed(),
+                concatLatestFrom(() => this.store.select(selectCurrentRoute))
             )
-            .subscribe((coordinates) => {
+            .subscribe(([coordinates, currentRoute]) => {
                 this.selectedCoordinates = coordinates;
                 this.isOverviewRoute = false;
+
+                // ensure the panel that the defined component is in is expanded
+                switch (currentRoute.url[0].path) {
+                    case ComponentType.Processor:
+                        this.processorsExpanded = true;
+                        break;
+                    case ComponentType.ControllerService:
+                        this.controllerServicesExpanded = true;
+                        break;
+                    case ComponentType.ReportingTask:
+                        this.reportingTasksExpanded = true;
+                        break;
+                    case ComponentType.ParameterProvider:
+                        this.parameterProvidersExpanded = true;
+                        break;
+                    case ComponentType.FlowRegistryClient:
+                        this.registryClientsExpanded = true;
+                        break;
+                }
             });
 
         this.store
@@ -122,13 +155,14 @@ export class Documentation implements OnInit, AfterViewInit {
             .subscribe((isOverviewRoute) => {
                 this.isOverviewRoute = isOverviewRoute;
                 this.selectedCoordinates = null;
+                this.generalExpanded = isOverviewRoute;
             });
 
         this.filterForm = this.formBuilder.group({
             filter: new FormControl(null)
         });
 
-        afterRender(() => {
+        afterNextRender(() => {
             if (!this.scrolledIntoView) {
                 const selectedType = this.documentation.nativeElement.querySelector('a.selected');
                 if (selectedType) {
@@ -150,7 +184,6 @@ export class Documentation implements OnInit, AfterViewInit {
             });
 
         this.store.dispatch(loadExtensionTypesForDocumentation());
-        this.applyFilter(null);
     }
 
     ngAfterViewInit(): void {

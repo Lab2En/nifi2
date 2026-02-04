@@ -16,6 +16,8 @@
  */
 package org.apache.nifi.web.security.saml2.web.authentication.logout;
 
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import org.apache.nifi.web.security.cookie.ApplicationCookieName;
 import org.apache.nifi.web.security.logout.LogoutRequest;
 import org.apache.nifi.web.security.logout.LogoutRequestManager;
@@ -31,8 +33,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import java.io.IOException;
 import java.util.UUID;
 
@@ -78,7 +78,7 @@ class Saml2SingleLogoutFilterTest {
 
     @Test
     void testDoFilterInternal() throws ServletException, IOException {
-        httpServletRequest.setPathInfo(SamlUrlPath.SINGLE_LOGOUT_REQUEST.getPath());
+        httpServletRequest.setRequestURI(SamlUrlPath.SINGLE_LOGOUT_REQUEST.getPath());
 
         final Cookie cookie = new Cookie(ApplicationCookieName.LOGOUT_REQUEST_IDENTIFIER.getCookieName(), REQUEST_IDENTIFIER);
         httpServletRequest.setCookies(cookie);

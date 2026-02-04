@@ -16,10 +16,6 @@
  */
 package org.apache.nifi.processors.parquet;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
@@ -37,6 +33,7 @@ import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.RequiredPermission;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.parquet.hadoop.AvroParquetHDFSRecordWriter;
 import org.apache.nifi.parquet.utils.ParquetConfig;
 import org.apache.nifi.parquet.utils.ParquetUtils;
@@ -49,6 +46,9 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.hadoop.util.HadoopOutputFile;
+
+import java.io.IOException;
+import java.util.List;
 
 import static org.apache.nifi.parquet.utils.ParquetUtils.applyCommonConfig;
 import static org.apache.nifi.parquet.utils.ParquetUtils.createParquetConfig;
@@ -77,12 +77,24 @@ import static org.apache.nifi.parquet.utils.ParquetUtils.createParquetConfig;
 public class PutParquet extends AbstractPutHDFSRecord {
 
     public static final PropertyDescriptor REMOVE_CRC_FILES = new PropertyDescriptor.Builder()
-            .name("remove-crc-files")
-            .displayName("Remove CRC Files")
+            .name("Remove CRC Files")
             .description("Specifies whether the corresponding CRC file should be deleted upon successfully writing a Parquet file")
             .allowableValues("true", "false")
             .defaultValue("false")
             .build();
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        ParquetUtils.ROW_GROUP_SIZE,
+        ParquetUtils.PAGE_SIZE,
+        ParquetUtils.DICTIONARY_PAGE_SIZE,
+        ParquetUtils.MAX_PADDING_SIZE,
+        ParquetUtils.ENABLE_DICTIONARY_ENCODING,
+        ParquetUtils.ENABLE_VALIDATION,
+        ParquetUtils.WRITER_VERSION,
+        ParquetUtils.AVRO_WRITE_OLD_LIST_STRUCTURE,
+        ParquetUtils.AVRO_ADD_LIST_ELEMENT_RECORDS,
+        REMOVE_CRC_FILES
+    );
 
     @Override
     public List<AllowableValue> getCompressionTypes(final ProcessorInitializationContext context) {
@@ -96,18 +108,7 @@ public class PutParquet extends AbstractPutHDFSRecord {
 
     @Override
     public List<PropertyDescriptor> getAdditionalProperties() {
-        final List<PropertyDescriptor> props = new ArrayList<>();
-        props.add(ParquetUtils.ROW_GROUP_SIZE);
-        props.add(ParquetUtils.PAGE_SIZE);
-        props.add(ParquetUtils.DICTIONARY_PAGE_SIZE);
-        props.add(ParquetUtils.MAX_PADDING_SIZE);
-        props.add(ParquetUtils.ENABLE_DICTIONARY_ENCODING);
-        props.add(ParquetUtils.ENABLE_VALIDATION);
-        props.add(ParquetUtils.WRITER_VERSION);
-        props.add(ParquetUtils.AVRO_WRITE_OLD_LIST_STRUCTURE);
-        props.add(ParquetUtils.AVRO_ADD_LIST_ELEMENT_RECORDS);
-        props.add(REMOVE_CRC_FILES);
-        return Collections.unmodifiableList(props);
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -123,6 +124,20 @@ public class PutParquet extends AbstractPutHDFSRecord {
         applyCommonConfig(parquetWriter, conf, parquetConfig);
 
         return new AvroParquetHDFSRecordWriter(parquetWriter.build(), avroSchema);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("remove-crc-files", REMOVE_CRC_FILES.getName());
+        config.renameProperty(ParquetUtils.OLD_ROW_GROUP_SIZE_PROPERTY_NAME, ParquetUtils.ROW_GROUP_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_PAGE_SIZE_PROPERTY_NAME, ParquetUtils.PAGE_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_DICTIONARY_PAGE_SIZE_PROPERTY_NAME, ParquetUtils.DICTIONARY_PAGE_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_MAX_PADDING_SIZE_PROPERTY_NAME, ParquetUtils.MAX_PADDING_SIZE.getName());
+        config.renameProperty(ParquetUtils.OLD_ENABLE_DICTIONARY_ENCODING_PROPERTY_NAME, ParquetUtils.ENABLE_DICTIONARY_ENCODING.getName());
+        config.renameProperty(ParquetUtils.OLD_ENABLE_VALIDATION_PROPERTY_NAME, ParquetUtils.ENABLE_VALIDATION.getName());
+        config.renameProperty(ParquetUtils.OLD_WRITER_VERSION_PROPERTY_NAME, ParquetUtils.WRITER_VERSION.getName());
+        config.renameProperty(ParquetUtils.OLD_AVRO_ADD_LIST_ELEMENT_RECORDS_PROPERTY_NAME, ParquetUtils.AVRO_ADD_LIST_ELEMENT_RECORDS.getName());
     }
 
     @Override

@@ -16,20 +16,11 @@
  */
 package org.apache.nifi.processors.dropbox;
 
-import static java.lang.String.valueOf;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.nifi.processors.dropbox.DropboxAttributes.ERROR_MESSAGE;
-import static org.mockito.Mockito.when;
-
 import com.dropbox.core.DbxDownloader;
 import com.dropbox.core.DbxException;
 import com.dropbox.core.v2.DbxClientV2;
 import com.dropbox.core.v2.files.DbxUserFilesRequests;
 import com.dropbox.core.v2.files.FileMetadata;
-import java.io.ByteArrayInputStream;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.provenance.ProvenanceEventType;
 import org.apache.nifi.util.MockFlowFile;
@@ -40,6 +31,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.ByteArrayInputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static java.lang.String.valueOf;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.nifi.processors.dropbox.DropboxAttributes.ERROR_MESSAGE;
+import static org.mockito.Mockito.when;
+
 @ExtendWith(MockitoExtension.class)
 public class FetchDropboxTest extends AbstractDropboxTest {
 
@@ -49,6 +50,7 @@ public class FetchDropboxTest extends AbstractDropboxTest {
     @Mock
     private DbxDownloader<FileMetadata> mockDbxDownloader;
 
+    @Override
     @BeforeEach
     public void setUp() throws Exception {
         FetchDropbox testSubject = new FetchDropbox() {
@@ -78,7 +80,7 @@ public class FetchDropboxTest extends AbstractDropboxTest {
 
         testRunner.assertAllFlowFilesTransferred(FetchDropbox.REL_SUCCESS, 1);
         List<MockFlowFile> flowFiles = testRunner.getFlowFilesForRelationship(FetchDropbox.REL_SUCCESS);
-        MockFlowFile ff0 = flowFiles.get(0);
+        MockFlowFile ff0 = flowFiles.getFirst();
         ff0.assertContentEquals("content");
         assertOutFlowFileAttributes(ff0);
         assertProvenanceEvent(ProvenanceEventType.FETCH);
@@ -98,7 +100,7 @@ public class FetchDropboxTest extends AbstractDropboxTest {
 
         testRunner.assertAllFlowFilesTransferred(FetchDropbox.REL_SUCCESS, 1);
         List<MockFlowFile> flowFiles = testRunner.getFlowFilesForRelationship(FetchDropbox.REL_SUCCESS);
-        MockFlowFile ff0 = flowFiles.get(0);
+        MockFlowFile ff0 = flowFiles.getFirst();
         ff0.assertContentEquals("contentByPath");
         assertOutFlowFileAttributes(ff0);
         assertProvenanceEvent(ProvenanceEventType.FETCH);
@@ -116,7 +118,7 @@ public class FetchDropboxTest extends AbstractDropboxTest {
 
         testRunner.assertAllFlowFilesTransferred(FetchDropbox.REL_FAILURE, 1);
         List<MockFlowFile> flowFiles = testRunner.getFlowFilesForRelationship(FetchDropbox.REL_FAILURE);
-        MockFlowFile ff0 = flowFiles.get(0);
+        MockFlowFile ff0 = flowFiles.getFirst();
         ff0.assertAttributeEquals(ERROR_MESSAGE, "Error in Dropbox");
         assertOutFlowFileAttributes(ff0);
         assertNoProvenanceEvent();

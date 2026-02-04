@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 package org.apache.nifi.reporting.azure.loganalytics;
+
 import com.google.gson.annotations.SerializedName;
 
 public class Metric {
@@ -34,7 +35,7 @@ public class Metric {
     @SerializedName("Tags") private String tags;
 
 
-    public Metric(String instanceId, String processGroupId, String processGroupName ) {
+    public Metric(String instanceId, String processGroupId, String processGroupName) {
         this.computer = instanceId;
         this.processGroupName = processGroupName;
         this.processGroupId = processGroupId;

@@ -15,13 +15,12 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
 import { catchError, EMPTY, filter, map, Observable, switchMap, takeUntil, tap } from 'rxjs';
 import { Store } from '@ngrx/store';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NiFiState } from '../../../state';
-import { ParameterService } from './parameter.service';
 import { Client } from '../../../service/client.service';
 import { EditParameterRequest, EditParameterResponse, ParameterContext, ParameterEntity } from '../../../state/shared';
 import { EditParameterDialog } from '../../../ui/common/edit-parameter-dialog/edit-parameter-dialog.component';
@@ -29,9 +28,10 @@ import { selectParameterSaving, selectParameterState } from '../state/parameter/
 import { ParameterState } from '../state/parameter';
 import * as ErrorActions from '../../../state/error/error.actions';
 import * as ParameterActions from '../state/parameter/parameter.actions';
-import { MEDIUM_DIALOG } from 'libs/shared/src';
+import { MEDIUM_DIALOG } from '@nifi/shared';
 import { ClusterConnectionService } from '../../../service/cluster-connection.service';
 import { ErrorHelper } from '../../../service/error-helper.service';
+import { ParameterContextService } from '../../parameter-contexts/service/parameter-contexts.service';
 
 export interface ConvertToParameterResponse {
     propertyValue: string;
@@ -42,14 +42,12 @@ export interface ConvertToParameterResponse {
     providedIn: 'root'
 })
 export class ParameterHelperService {
-    constructor(
-        private dialog: MatDialog,
-        private store: Store<NiFiState>,
-        private parameterService: ParameterService,
-        private clusterConnectionService: ClusterConnectionService,
-        private client: Client,
-        private errorHelper: ErrorHelper
-    ) {}
+    private dialog = inject(MatDialog);
+    private store = inject<Store<NiFiState>>(Store);
+    private parameterContextService = inject(ParameterContextService);
+    private clusterConnectionService = inject(ClusterConnectionService);
+    private client = inject(Client);
+    private errorHelper = inject(ErrorHelper);
 
     /**
      * Returns a function that can be used to pass into a PropertyTable to convert a Property into a Parameter, inline.
@@ -60,7 +58,7 @@ export class ParameterHelperService {
         parameterContextId: string
     ): (name: string, sensitive: boolean, value: string | null) => Observable<ConvertToParameterResponse> {
         return (name: string, sensitive: boolean, value: string | null) => {
-            return this.parameterService.getParameterContext(parameterContextId, false).pipe(
+            return this.parameterContextService.getParameterContext(parameterContextId, false).pipe(
                 catchError((errorResponse: HttpErrorResponse) => {
                     this.store.dispatch(
                         ErrorActions.snackBarError({ error: this.errorHelper.getErrorString(errorResponse) })
@@ -80,7 +78,9 @@ export class ParameterHelperService {
                             sensitive,
                             description: ''
                         },
-                        existingParameters
+                        existingParameters,
+                        isNewParameterContext: false,
+                        isConvert: true
                     };
                     const convertToParameterDialogReference = this.dialog.open(EditParameterDialog, {
                         ...MEDIUM_DIALOG,
@@ -90,10 +90,11 @@ export class ParameterHelperService {
                     convertToParameterDialogReference.componentInstance.saving$ =
                         this.store.select(selectParameterSaving);
 
-                    convertToParameterDialogReference.componentInstance.cancel.pipe(
-                        takeUntil(convertToParameterDialogReference.afterClosed()),
-                        tap(() => ParameterActions.stopPollingParameterContextUpdateRequest())
-                    );
+                    convertToParameterDialogReference.componentInstance.exit
+                        .pipe(takeUntil(convertToParameterDialogReference.afterClosed()))
+                        .subscribe(() =>
+                            this.store.dispatch(ParameterActions.stopPollingParameterContextUpdateRequest())
+                        );
 
                     return convertToParameterDialogReference.componentInstance.editParameter.pipe(
                         takeUntil(convertToParameterDialogReference.afterClosed()),

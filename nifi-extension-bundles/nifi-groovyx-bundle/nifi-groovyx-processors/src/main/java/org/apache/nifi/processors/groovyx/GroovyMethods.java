@@ -18,12 +18,10 @@ package org.apache.nifi.processors.groovyx;
 
 import groovy.lang.DelegatingMetaClass;
 import groovy.lang.GroovySystem;
-
+import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processors.groovyx.flow.ProcessSessionWrap;
 import org.apache.nifi.processors.groovyx.flow.SessionFile;
-
-import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.flowfile.FlowFile;
 
 import java.util.Collection;
 import java.util.List;
@@ -69,7 +67,7 @@ class GroovyMethods {
             /** to support: REL_SUCCESS << sessionFileCollection */
             @SuppressWarnings("unchecked")
             private Relationship leftShift(Relationship r, Collection sfl) {
-                if (sfl != null && sfl.size() > 0) {
+                if (sfl != null && !sfl.isEmpty()) {
                     ProcessSessionWrap session = ((SessionFile) sfl.iterator().next()).session();
                     List<FlowFile> ffl = session.unwrap(sfl);
                     //assume all files has the same session

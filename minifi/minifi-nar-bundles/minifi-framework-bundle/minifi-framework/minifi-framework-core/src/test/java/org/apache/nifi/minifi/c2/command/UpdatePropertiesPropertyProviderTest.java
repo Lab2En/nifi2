@@ -17,12 +17,10 @@
 
 package org.apache.nifi.minifi.c2.command;
 
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.GRACEFUL_SHUTDOWN_SECOND;
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.JAVA;
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_SECURITY_KEYSTORE_PASSWD;
-import static org.apache.nifi.minifi.c2.command.UpdatePropertiesPropertyProvider.AVAILABLE_PROPERTIES;
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.sortedPropertiesByKey;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.apache.nifi.minifi.commons.api.MiNiFiProperties;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -31,11 +29,15 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
-import org.apache.nifi.minifi.commons.api.MiNiFiProperties;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+
+import static org.apache.nifi.minifi.c2.command.UpdatePropertiesPropertyProvider.AVAILABLE_PROPERTIES;
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.GRACEFUL_SHUTDOWN_SECOND;
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.JAVA;
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.NIFI_MINIFI_SECURITY_KEYSTORE_PASSWD;
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.sortedPropertiesByKey;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class UpdatePropertiesPropertyProviderTest {
 
@@ -64,7 +66,7 @@ class UpdatePropertiesPropertyProviderTest {
 
         Map<String, Object> result = updatePropertiesPropertyProvider.getProperties();
 
-        LinkedHashSet<UpdatableProperty> expected = getUpdatableProperties(props);
+        Set<UpdatableProperty> expected = getUpdatableProperties(props);
 
         assertEquals(Collections.singletonMap(AVAILABLE_PROPERTIES, expected), result);
     }
@@ -76,7 +78,7 @@ class UpdatePropertiesPropertyProviderTest {
         assertEquals(Collections.singletonMap(AVAILABLE_PROPERTIES, getUpdatableProperties(new Properties())), properties);
     }
 
-    private static LinkedHashSet<UpdatableProperty> getUpdatableProperties(Properties props) {
+    private static Set<UpdatableProperty> getUpdatableProperties(Properties props) {
         return sortedPropertiesByKey().values()
             .stream()
             .filter(property -> !property.isSensitive())

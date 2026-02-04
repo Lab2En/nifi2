@@ -17,18 +17,6 @@
 
 package org.apache.nifi.processors.parquet;
 
-import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.PROP_ZERO_CONTENT_OUTPUT;
-import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.REL_SUCCESS;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.apache.nifi.parquet.ParquetTestUtils;
 import org.apache.nifi.parquet.utils.ParquetAttribute;
 import org.apache.nifi.util.MockFlowFile;
@@ -36,20 +24,30 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnJre;
 import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.JRE;
 import org.junit.jupiter.api.condition.OS;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.Map;
+
+import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.PROP_ZERO_CONTENT_OUTPUT;
+import static org.apache.nifi.processors.parquet.CalculateParquetOffsets.REL_SUCCESS;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@DisabledOnJre(value = { JRE.JAVA_25 }, disabledReason = "java.security.auth.Subject.getSubject() is not supported")
 @DisabledOnOs({ OS.WINDOWS })
 public class CalculateParquetRowGroupOffsetsTest {
 
     private static final Path NOT_PARQUET_PATH = Paths.get("src/test/resources/core-site.xml");
 
-    private static final Map<String, String> PRESERVED_ATTRIBUTES = new HashMap<String, String>() {
-        {
-            put("foo", "bar");
-            put("example", "value");
-        }
-    };
+    private static final Map<String, String> PRESERVED_ATTRIBUTES = Map.of("foo", "bar", "example", "value");
 
     private TestRunner runner;
 
@@ -67,12 +65,12 @@ public class CalculateParquetRowGroupOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "10");
-        results.get(0).assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "4");
-        results.get(0).assertAttributeEquals(ParquetAttribute.FILE_RANGE_END_OFFSET, "298");
-        results.get(0).assertContentEquals(parquetFile.toPath());
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "10");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "4");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.FILE_RANGE_END_OFFSET, "298");
+        results.getFirst().assertContentEquals(parquetFile.toPath());
 
-        PRESERVED_ATTRIBUTES.forEach(results.get(0)::assertAttributeEquals);
+        PRESERVED_ATTRIBUTES.forEach(results.getFirst()::assertAttributeEquals);
     }
 
     @Test
@@ -84,10 +82,10 @@ public class CalculateParquetRowGroupOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "337");
-        results.get(0).assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "4");
-        results.get(0).assertAttributeEquals(ParquetAttribute.FILE_RANGE_END_OFFSET, "8301");
-        results.get(0).assertContentEquals(parquetFile.toPath());
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "337");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "4");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.FILE_RANGE_END_OFFSET, "8301");
+        results.getFirst().assertContentEquals(parquetFile.toPath());
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "326");
         results.get(1).assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "8301");
@@ -117,10 +115,10 @@ public class CalculateParquetRowGroupOffsetsTest {
 
         final List<MockFlowFile> results = runner.getFlowFilesForRelationship(REL_SUCCESS);
 
-        results.get(0).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "337");
-        results.get(0).assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "4");
-        results.get(0).assertAttributeEquals(ParquetAttribute.FILE_RANGE_END_OFFSET, "8301");
-        results.get(0).assertContentEquals("");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "337");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "4");
+        results.getFirst().assertAttributeEquals(ParquetAttribute.FILE_RANGE_END_OFFSET, "8301");
+        results.getFirst().assertContentEquals("");
 
         results.get(1).assertAttributeEquals(ParquetAttribute.RECORD_COUNT, "163");
         results.get(1).assertAttributeEquals(ParquetAttribute.FILE_RANGE_START_OFFSET, "8301");

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, OnInit, Output, Signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, Signal, inject } from '@angular/core';
 import {
     MAT_DIALOG_DATA,
     MatDialogActions,
@@ -24,28 +24,24 @@ import {
     MatDialogTitle
 } from '@angular/material/dialog';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ErrorBanner } from '../../../../../../../ui/common/error-banner/error-banner.component';
 import { MatButton } from '@angular/material/button';
 import { NifiSpinnerDirective } from '../../../../../../../ui/common/spinner/nifi-spinner.directive';
 import { MatError, MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatOption, MatSelect } from '@angular/material/select';
 import { Observable, of, take } from 'rxjs';
-import { SelectOption } from 'libs/shared/src';
 import { BranchEntity, BucketEntity, RegistryClientEntity } from '../../../../../../../state/shared';
 import { SaveVersionDialogRequest, SaveVersionRequest, VersionControlInformation } from '../../../../../state/flow';
-import { TextTip, NiFiCommon, NifiTooltipDirective, CloseOnEscapeDialog } from '@nifi/shared';
-import { NgForOf, NgIf } from '@angular/common';
+import { TextTip, NiFiCommon, NifiTooltipDirective, CloseOnEscapeDialog, SelectOption } from '@nifi/shared';
+
 import { MatInput } from '@angular/material/input';
 import { ErrorContextKey } from '../../../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../../../ui/common/context-error-banner/context-error-banner.component';
 
 @Component({
     selector: 'save-version-dialog',
-    standalone: true,
     imports: [
         MatDialogTitle,
         ReactiveFormsModule,
-        ErrorBanner,
         MatDialogContent,
         MatDialogActions,
         MatButton,
@@ -57,8 +53,6 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
         NifiTooltipDirective,
         MatError,
         MatLabel,
-        NgForOf,
-        NgIf,
         MatInput,
         ContextErrorBanner
     ],
@@ -66,6 +60,10 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
     styleUrl: './save-version-dialog.component.scss'
 })
 export class SaveVersionDialog extends CloseOnEscapeDialog implements OnInit {
+    private dialogRequest = inject<SaveVersionDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() getBranches: (registryId: string) => Observable<BranchEntity[]> = () => of([]);
     @Input() getBuckets: (registryId: string, branch?: string | null) => Observable<BucketEntity[]> = () => of([]);
     @Input({ required: true }) saving!: Signal<boolean>;
@@ -82,19 +80,21 @@ export class SaveVersionDialog extends CloseOnEscapeDialog implements OnInit {
 
     private clientBranchingSupportMap: Map<string, boolean> = new Map<string, boolean>();
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) private dialogRequest: SaveVersionDialogRequest,
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         super();
+        const dialogRequest = this.dialogRequest;
+        const formBuilder = this.formBuilder;
+
         this.versionControlInformation = dialogRequest.versionControlInformation;
         this.forceCommit = !!dialogRequest.forceCommit;
 
         if (dialogRequest.registryClients) {
-            const sortedRegistries = dialogRequest.registryClients.slice().sort((a, b) => {
-                return this.nifiCommon.compareString(a.component.name, b.component.name);
-            });
+            const sortedRegistries = dialogRequest.registryClients
+                .slice()
+                .filter((registry) => registry.permissions.canRead)
+                .sort((a, b) => {
+                    return this.nifiCommon.compareString(a.component.name, b.component.name);
+                });
 
             sortedRegistries.forEach((registryClient: RegistryClientEntity) => {
                 if (registryClient.permissions.canRead) {
@@ -107,8 +107,9 @@ export class SaveVersionDialog extends CloseOnEscapeDialog implements OnInit {
                 this.clientBranchingSupportMap.set(registryClient.id, registryClient.component.supportsBranching);
             });
 
+            const initialRegistry = this.registryClientOptions.length > 0 ? this.registryClientOptions[0].value : null;
             this.saveVersionForm = formBuilder.group({
-                registry: new FormControl(this.registryClientOptions[0].value, Validators.required),
+                registry: new FormControl(initialRegistry, Validators.required),
                 branch: new FormControl(null),
                 bucket: new FormControl(null, Validators.required),
                 flowName: new FormControl(null, Validators.required),

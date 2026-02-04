@@ -23,8 +23,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
-import org.apache.nifi.kafka.processors.PublishKafka;
 import org.apache.nifi.kafka.processors.AbstractPublishKafkaIT;
+import org.apache.nifi.kafka.processors.PublishKafka;
 import org.apache.nifi.kafka.shared.property.PublishStrategy;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.TestRunner;
@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -88,7 +89,7 @@ public class PublishKafkaWrapperX1IT extends AbstractPublishKafkaIT {
                 assertNotNull(kafkaValue);
                 assertEquals("1234 First Street", kafkaValue.get("address").textValue());
                 assertEquals("12345", kafkaValue.get("zip").textValue());
-                assertTrue(kafkaValue.get("account") instanceof ObjectNode);
+                assertInstanceOf(ObjectNode.class, kafkaValue.get("account"));
             }
         }
     }

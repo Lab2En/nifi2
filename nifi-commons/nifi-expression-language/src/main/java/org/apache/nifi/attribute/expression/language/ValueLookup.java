@@ -17,8 +17,8 @@
 package org.apache.nifi.attribute.expression.language;
 
 import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.registry.VariableDescriptor;
 import org.apache.nifi.registry.EnvironmentVariables;
+import org.apache.nifi.registry.VariableDescriptor;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -59,12 +59,12 @@ final class ValueLookup implements Map<String, String> {
         }
 
         if (flowFile != null) {
-            maps.add(ValueLookup.extractFlowFileProperties(flowFile));
+            maps.add(extractFlowFileProperties(flowFile));
             maps.add(flowFile.getAttributes());
         }
     }
 
-    static final Map<String, String> extractFlowFileProperties(final FlowFile flowFile) {
+    static Map<String, String> extractFlowFileProperties(final FlowFile flowFile) {
         final Map<String, String> flowFileProps = new HashMap<>();
         flowFileProps.put("flowFileId", String.valueOf(flowFile.getId()));
         flowFileProps.put("fileSize", String.valueOf(flowFile.getSize()));

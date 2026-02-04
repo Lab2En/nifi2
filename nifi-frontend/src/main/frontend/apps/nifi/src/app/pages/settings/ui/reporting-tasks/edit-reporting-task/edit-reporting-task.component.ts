@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { MatInputModule } from '@angular/material/input';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -40,9 +40,7 @@ import {
     ReportingTaskEntity,
     UpdateReportingTaskRequest
 } from '../../../state/reporting-tasks';
-import { ControllerServiceApi } from '../../../../../ui/common/controller-service/controller-service-api/controller-service-api.component';
-import { NifiTooltipDirective, NiFiCommon, TextTip, CopyDirective } from '@nifi/shared';
-import { ErrorBanner } from '../../../../../ui/common/error-banner/error-banner.component';
+import { NifiTooltipDirective, NiFiCommon, TextTip, CopyDirective, ComponentType } from '@nifi/shared';
 import { ClusterConnectionService } from '../../../../../service/cluster-connection.service';
 import {
     ConfigVerificationResult,
@@ -50,14 +48,13 @@ import {
     VerifyPropertiesRequestContext
 } from '../../../../../state/property-verification';
 import { PropertyVerification } from '../../../../../ui/common/property-verification/property-verification.component';
-import { TabbedDialog } from '../../../../../ui/common/tabbed-dialog/tabbed-dialog.component';
-import { SelectOption } from 'libs/shared/src';
+import { TabbedDialog, TABBED_DIALOG_ID } from '../../../../../ui/common/tabbed-dialog/tabbed-dialog.component';
+import { SelectOption } from '@nifi/shared';
 import { ErrorContextKey } from '../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../ui/common/context-error-banner/context-error-banner.component';
 
 @Component({
     selector: 'edit-reporting-task',
-    standalone: true,
     templateUrl: './edit-reporting-task.component.html',
     imports: [
         ReactiveFormsModule,
@@ -69,18 +66,28 @@ import { ContextErrorBanner } from '../../../../../ui/common/context-error-banne
         MatOptionModule,
         MatSelectModule,
         PropertyTable,
-        ControllerServiceApi,
         AsyncPipe,
         NifiSpinnerDirective,
         NifiTooltipDirective,
-        ErrorBanner,
         PropertyVerification,
         ContextErrorBanner,
         CopyDirective
     ],
-    styleUrls: ['./edit-reporting-task.component.scss']
+    styleUrls: ['./edit-reporting-task.component.scss'],
+    providers: [
+        {
+            provide: TABBED_DIALOG_ID,
+            useValue: 'edit-reporting-task-selected-index'
+        }
+    ]
 })
 export class EditReportingTask extends TabbedDialog {
+    request = inject<EditReportingTaskDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private client = inject(Client);
+    private nifiCommon = inject(NiFiCommon);
+    private clusterConnectionService = inject(ClusterConnectionService);
+
     @Input() createNewProperty!: (existingProperties: string[], allowsSensitive: boolean) => Observable<Property>;
     @Input() createNewService!: (request: InlineServiceCreationRequest) => Observable<InlineServiceCreationResponse>;
     @Input() goToService!: (serviceId: string) => void;
@@ -114,14 +121,9 @@ export class EditReportingTask extends TabbedDialog {
         }
     ];
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: EditReportingTaskDialogRequest,
-        private formBuilder: FormBuilder,
-        private client: Client,
-        private nifiCommon: NiFiCommon,
-        private clusterConnectionService: ClusterConnectionService
-    ) {
-        super('edit-reporting-task-selected-index');
+    constructor() {
+        super();
+        const request = this.request;
 
         this.readonly =
             !request.reportingTask.permissions.canWrite ||
@@ -247,7 +249,8 @@ export class EditReportingTask extends TabbedDialog {
     verifyClicked(entity: ReportingTaskEntity): void {
         this.verify.next({
             entity,
-            properties: this.getModifiedProperties()
+            properties: this.getModifiedProperties(),
+            componentType: ComponentType.ReportingTask
         });
     }
 

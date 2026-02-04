@@ -21,15 +21,6 @@ import com.box.sdk.BoxAPIException;
 import com.box.sdk.BoxAPIResponseException;
 import com.box.sdk.BoxConfig;
 import com.box.sdk.BoxDeveloperEditionAPIConnection;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.Reader;
-import java.net.Proxy;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnEnabled;
@@ -44,31 +35,52 @@ import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.controller.VerifiableControllerService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.JsonValidator;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.proxy.ProxyConfiguration;
 import org.apache.nifi.proxy.ProxySpec;
 
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.Reader;
+import java.net.Proxy;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.nifi.components.ConfigVerificationResult.Outcome.FAILED;
 import static org.apache.nifi.components.ConfigVerificationResult.Outcome.SUCCESSFUL;
-
 
 @CapabilityDescription("Provides Box client objects through which Box API calls can be used.")
 @Tags({"box", "client", "provider"})
 public class JsonConfigBasedBoxClientService extends AbstractControllerService implements BoxClientService, VerifiableControllerService {
+
+    public static final PropertyDescriptor APP_ACTOR = new PropertyDescriptor.Builder()
+        .name("App Actor")
+        .description("Specifies on behalf of whom Box API calls will be made.")
+        .required(true)
+        .allowableValues(BoxAppActor.class)
+        .defaultValue(BoxAppActor.IMPERSONATED_USER)
+        .expressionLanguageSupported(ExpressionLanguageScope.NONE)
+        .build();
+
     public static final PropertyDescriptor ACCOUNT_ID = new PropertyDescriptor.Builder()
-        .name("box-account-id")
-        .displayName("Account ID")
-        .description("The ID of the Box account who owns the accessed resource. Same as 'User Id' under 'App Info' in the App 'General Settings'.")
+        .name("Account ID")
+        .description("The ID of the Box account which the app will act on behalf of.")
         .required(true)
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+        .dependsOn(APP_ACTOR, BoxAppActor.IMPERSONATED_USER)
         .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
         .build();
 
     public static final PropertyDescriptor APP_CONFIG_FILE = new PropertyDescriptor.Builder()
-        .name("app-config-file")
-        .displayName("App Config File")
+        .name("App Config File")
         .description("Full path of an App config JSON file. See Additional Details for more information.")
         .required(false)
         .identifiesExternalResource(ResourceCardinality.SINGLE, ResourceType.FILE)
@@ -76,8 +88,7 @@ public class JsonConfigBasedBoxClientService extends AbstractControllerService i
         .build();
 
     public static final PropertyDescriptor APP_CONFIG_JSON = new PropertyDescriptor.Builder()
-        .name("app-config-json")
-        .displayName("App Config JSON")
+        .name("App Config JSON")
         .description("The raw JSON containing an App config. See Additional Details for more information.")
         .required(false)
         .sensitive(true)
@@ -85,12 +96,31 @@ public class JsonConfigBasedBoxClientService extends AbstractControllerService i
         .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
         .build();
 
+    static final PropertyDescriptor CONNECT_TIMEOUT = new PropertyDescriptor.Builder()
+        .name("Connect Timeout")
+        .description("Maximum amount of time to wait before failing during initial socket connection.")
+        .required(true)
+        .defaultValue("10 secs")
+        .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
+        .build();
+
+    static final PropertyDescriptor READ_TIMEOUT = new PropertyDescriptor.Builder()
+        .name("Read Timeout")
+        .description("Maximum amount of time to wait before failing while reading socket responses.")
+        .required(true)
+        .defaultValue("30 secs")
+        .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
+        .build();
+
     private static final ProxySpec[] PROXY_SPECS = {ProxySpec.HTTP, ProxySpec.HTTP_AUTH};
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        APP_ACTOR,
         ACCOUNT_ID,
         APP_CONFIG_FILE,
         APP_CONFIG_JSON,
+        CONNECT_TIMEOUT,
+        READ_TIMEOUT,
         ProxyConfiguration.createProxyConfigPropertyDescriptor(PROXY_SPECS)
     );
 
@@ -98,7 +128,7 @@ public class JsonConfigBasedBoxClientService extends AbstractControllerService i
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -168,8 +198,6 @@ public class JsonConfigBasedBoxClientService extends AbstractControllerService i
     }
 
     private BoxAPIConnection createBoxApiConnection(ConfigurationContext context) {
-
-        final String accountId = context.getProperty(ACCOUNT_ID).evaluateAttributeExpressions().getValue();
         final ProxyConfiguration proxyConfiguration = ProxyConfiguration.getConfiguration(context);
 
         final BoxConfig boxConfig;
@@ -200,7 +228,14 @@ public class JsonConfigBasedBoxClientService extends AbstractControllerService i
             }
         }
 
-        api.asUser(accountId);
+        final BoxAppActor appActor = context.getProperty(APP_ACTOR).asAllowableValue(BoxAppActor.class);
+        switch (appActor) {
+            case SERVICE_ACCOUNT -> api.asSelf();
+            case IMPERSONATED_USER -> {
+                final String accountId = context.getProperty(ACCOUNT_ID).evaluateAttributeExpressions().getValue();
+                api.asUser(accountId);
+            }
+        }
 
         if (!Proxy.Type.DIRECT.equals(proxyConfiguration.getProxyType())) {
             api.setProxy(proxyConfiguration.createProxy());
@@ -209,6 +244,18 @@ public class JsonConfigBasedBoxClientService extends AbstractControllerService i
                 api.setProxyBasicAuthentication(proxyConfiguration.getProxyUserName(), proxyConfiguration.getProxyUserPassword());
             }
         }
+
+        api.setConnectTimeout(context.getProperty(CONNECT_TIMEOUT).asTimePeriod(MILLISECONDS).intValue());
+        api.setReadTimeout(context.getProperty(READ_TIMEOUT).asTimePeriod(MILLISECONDS).intValue());
+
         return api;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("box-account-id", ACCOUNT_ID.getName());
+        config.renameProperty("app-config-file", APP_CONFIG_FILE.getName());
+        config.renameProperty("app-config-json", APP_CONFIG_JSON.getName());
+        ProxyServiceMigration.renameProxyConfigurationServiceProperty(config);
     }
 }

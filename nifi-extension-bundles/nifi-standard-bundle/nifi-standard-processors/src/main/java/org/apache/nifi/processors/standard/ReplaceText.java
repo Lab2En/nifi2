@@ -41,6 +41,7 @@ import org.apache.nifi.expression.AttributeValueDecorator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
@@ -198,8 +199,7 @@ public class ReplaceText extends AbstractProcessor {
         .required(true)
         .build();
     public static final PropertyDescriptor SEARCH_VALUE = new PropertyDescriptor.Builder()
-        .name("Regular Expression")
-        .displayName("Search Value")
+        .name("Search Value")
         .description("The Search Value to search for in the FlowFile content. Only used for 'Literal Replace' and 'Regex Replace' matching strategies")
         .required(true)
         .addValidator(Validator.VALID)
@@ -221,7 +221,6 @@ public class ReplaceText extends AbstractProcessor {
         .build();
     static final PropertyDescriptor PREPEND_TEXT = new PropertyDescriptor.Builder()
         .name("Text to Prepend")
-        .displayName("Text to Prepend")
         .description("The text to prepend to the start of the FlowFile, or each line, depending on the configured value of the Evaluation Mode property")
         .required(true)
         .addValidator(Validator.VALID)
@@ -230,7 +229,6 @@ public class ReplaceText extends AbstractProcessor {
         .build();
     static final PropertyDescriptor APPEND_TEXT = new PropertyDescriptor.Builder()
         .name("Text to Append")
-        .displayName("Text to Append")
         .description("The text to append to the end of the FlowFile, or each line, depending on the configured value of the Evaluation Mode property")
         .required(true)
         .addValidator(Validator.VALID)
@@ -274,7 +272,7 @@ public class ReplaceText extends AbstractProcessor {
         .required(false)
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             REPLACEMENT_STRATEGY,
             SEARCH_VALUE,
             REPLACEMENT_VALUE,
@@ -306,7 +304,7 @@ public class ReplaceText extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -426,6 +424,11 @@ public class ReplaceText extends AbstractProcessor {
         session.transfer(flowFile, REL_SUCCESS);
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("Regular Expression", SEARCH_VALUE.getName());
+    }
+
     // If we find a back reference that is not valid, then we will treat it as a literal string. For example, if we have 3 capturing
     // groups and the Replacement Value has the value is "I owe $8 to him", then we want to treat the $8 as a literal "$8", rather
     // than attempting to use it as a back reference.
@@ -512,12 +515,9 @@ public class ReplaceText extends AbstractProcessor {
             final String replacementValue = context.getProperty(REPLACEMENT_VALUE).evaluateAttributeExpressions(flowFile).getValue();
 
             if (evaluateMode.equalsIgnoreCase(ENTIRE_TEXT)) {
-                flowFile = session.write(flowFile, new StreamCallback() {
-                    @Override
-                    public void process(final InputStream in, final OutputStream out) throws IOException {
-                        out.write(replacementValue.getBytes(charset));
-                        IOUtils.copy(in, out);
-                    }
+                flowFile = session.write(flowFile, (in, out) -> {
+                    out.write(replacementValue.getBytes(charset));
+                    IOUtils.copy(in, out);
                 });
             } else {
                 flowFile = session.write(flowFile, new StreamReplaceCallback(charset, maxBufferSize, context.getProperty(LINE_BY_LINE_EVALUATION_MODE).getValue(),
@@ -548,16 +548,13 @@ public class ReplaceText extends AbstractProcessor {
             final String appendValue = context.getProperty(appendValueDescriptor).evaluateAttributeExpressions(flowFile).getValue();
 
             if (evaluateMode.equalsIgnoreCase(ENTIRE_TEXT)) {
-                flowFile = session.write(flowFile, new StreamCallback() {
-                    @Override
-                    public void process(final InputStream in, final OutputStream out) throws IOException {
-                        if (prependValue != null && !prependValue.isEmpty()) {
-                            out.write(prependValue.getBytes(charset));
-                        }
-
-                        IOUtils.copy(in, out);
-                        out.write(appendValue.getBytes(charset));
+                flowFile = session.write(flowFile, (in, out) -> {
+                    if (prependValue != null && !prependValue.isEmpty()) {
+                        out.write(prependValue.getBytes(charset));
                     }
+
+                    IOUtils.copy(in, out);
+                    out.write(appendValue.getBytes(charset));
                 });
             } else {
                 flowFile = session.write(flowFile, new StreamReplaceCallback(charset, maxBufferSize, context.getProperty(LINE_BY_LINE_EVALUATION_MODE).getValue(),
@@ -605,12 +602,9 @@ public class ReplaceText extends AbstractProcessor {
         private final int numCapturingGroups;
 
         // back references are not supported in the evaluated expression
-        private final AttributeValueDecorator escapeBackRefDecorator = new AttributeValueDecorator() {
-            @Override
-            public String decorate(final String attributeValue) {
-                // when we encounter a '$[0-9+]'  replace it with '\$[0-9+]'
-                return attributeValue.replaceAll("(\\$\\d+?)", "\\\\$1");
-            }
+        private final AttributeValueDecorator escapeBackRefDecorator = attributeValue -> {
+            // when we encounter a '$[0-9+]'  replace it with '\$[0-9+]'
+            return attributeValue.replaceAll("(\\$\\d+?)", "\\\\$1");
         };
 
         public RegexReplace(final String regex) {
@@ -718,18 +712,14 @@ public class ReplaceText extends AbstractProcessor {
                 final int bufferSize = Math.min(maxBufferSize, flowFileSize);
                 final byte[] buffer = new byte[bufferSize];
 
-                flowFile = session.write(flowFile, new StreamCallback() {
-                    @Override
-                    public void process(final InputStream in, final OutputStream out) throws IOException {
-                        StreamUtils.fillBuffer(in, buffer, false);
-                        final String contentString = new String(buffer, 0, flowFileSize, charset);
-                        // Interpreting the search and replacement values as char sequences
-                        final String updatedValue = contentString.replace(searchValue, replacementValue);
-                        out.write(updatedValue.getBytes(charset));
-                    }
+                flowFile = session.write(flowFile, (in, out) -> {
+                    StreamUtils.fillBuffer(in, buffer, false);
+                    final String contentString = new String(buffer, 0, flowFileSize, charset);
+                    // Interpreting the search and replacement values as char sequences
+                    final String updatedValue = contentString.replace(searchValue, replacementValue);
+                    out.write(updatedValue.getBytes(charset));
                 });
             } else {
-                final Pattern searchPattern = Pattern.compile(searchValue, Pattern.LITERAL);
 
                 flowFile = session.write(flowFile, new StreamReplaceCallback(charset, maxBufferSize, context.getProperty(LINE_BY_LINE_EVALUATION_MODE).getValue(),
                     (bw, oneLine) -> {
@@ -772,14 +762,11 @@ public class ReplaceText extends AbstractProcessor {
                 final int bufferSize = Math.min(maxBufferSize, flowFileSize);
                 final byte[] buffer = new byte[bufferSize];
 
-                flowFile = session.write(flowFile, new StreamCallback() {
-                    @Override
-                    public void process(final InputStream in, final OutputStream out) throws IOException {
-                        StreamUtils.fillBuffer(in, buffer, false);
-                        final String originalContent = new String(buffer, 0, flowFileSize, charset);
-                        final String substitutedContent = StringSubstitutor.replace(originalContent, flowFileAttributes);
-                        out.write(substitutedContent.getBytes(charset));
-                    }
+                flowFile = session.write(flowFile, (in, out) -> {
+                    StreamUtils.fillBuffer(in, buffer, false);
+                    final String originalContent = new String(buffer, 0, flowFileSize, charset);
+                    final String substitutedContent = StringSubstitutor.replace(originalContent, flowFileAttributes);
+                    out.write(substitutedContent.getBytes(charset));
                 });
             } else {
                 flowFile = session.write(flowFile, new StreamReplaceCallback(charset, maxBufferSize, context.getProperty(LINE_BY_LINE_EVALUATION_MODE).getValue(),

@@ -31,6 +31,7 @@ import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.fileresource.service.api.FileResource;
 import org.apache.nifi.fileresource.service.api.FileResourceService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processors.azure.AbstractAzureBlobProcessor_v12;
 import org.apache.nifi.processors.azure.storage.FetchAzureBlobStorage_v12;
@@ -72,7 +73,7 @@ public class AzureBlobStorageFileResourceService extends AbstractControllerServi
             .defaultValue(String.format("${%s}", ATTR_NAME_BLOBNAME))
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             BLOB_STORAGE_CREDENTIALS_SERVICE,
             CONTAINER,
             BLOB_NAME
@@ -83,7 +84,7 @@ public class AzureBlobStorageFileResourceService extends AbstractControllerServi
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -106,6 +107,13 @@ public class AzureBlobStorageFileResourceService extends AbstractControllerServi
         } catch (final BlobStorageException | IOException e) {
             throw new ProcessException("Failed to fetch blob from Azure Blob Storage", e);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(AbstractAzureBlobProcessor_v12.OLD_BLOB_NAME_PROPERTY_DESCRIPTOR_NAME, BLOB_NAME.getName());
+        config.renameProperty(AzureStorageUtils.OLD_CONTAINER_DESCRIPTOR_NAME, CONTAINER.getName());
+        config.renameProperty(AzureStorageUtils.OLD_BLOB_STORAGE_CREDENTIALS_SERVICE_DESCRIPTOR_NAME, AzureStorageUtils.BLOB_STORAGE_CREDENTIALS_SERVICE.getName());
     }
 
     protected BlobServiceClient getStorageClient(Map<String, String> attributes) {

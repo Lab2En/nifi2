@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.util;
 
+import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.components.DescribedValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationResult;
@@ -38,6 +39,7 @@ import org.apache.nifi.state.MockStateManager;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -396,6 +398,19 @@ public interface TestRunner {
      */
     void assertValid();
 
+    /**
+     * Validates the currently configured set of properties/annotation data
+     * @return a Collection of ValidationResult
+     */
+    Collection<ValidationResult> validate();
+
+    /**
+     * Verifies the currently configured set of properties/annotation data
+     * @param variables the variables to use for verification
+     * @return a Collection of ConfigVerificationResult
+     */
+    List<ConfigVerificationResult> verify(Map<String, String> variables);
+
     boolean isValid();
 
     /**
@@ -536,11 +551,24 @@ public interface TestRunner {
     QueueSize getQueueSize();
 
     /**
+     * Allow for clearing the queue from all remaining flow files.
+     */
+    void clearQueue();
+
+    /**
      * @param name of counter
      * @return the current value of the counter with the specified name, or null
      *         if no counter exists with the specified name
      */
     Long getCounterValue(String name);
+
+    /**
+     * Get list of values recorded for the named Gauge
+     *
+     * @param name Gauge Name
+     * @return List of recorded values or empty when the named Gauge was not used
+     */
+    List<Double> getGaugeValues(String name);
 
     /**
      * @return the number of FlowFiles that have been removed from the system
@@ -842,6 +870,22 @@ public interface TestRunner {
     void assertValid(ControllerService service);
 
     /**
+     * Validates the currently configured set of properties/annotation data for
+     * the given Controller Service.
+     * @param service the service to validate
+     * @return a Collection of ValidationResult
+     */
+    Collection<ValidationResult> validate(ControllerService service);
+
+    /**
+     * Verifies the currently configured set of properties/annotation data for
+     * the given Controller Service.
+     * @param variables the variables to use for verification
+     * @return a Collection of ConfigVerificationResult
+     */
+    List<ConfigVerificationResult> verify(ControllerService service, Map<String, String> variables);
+
+    /**
      * Assert that the currently configured set of properties/annotation data
      * are NOT valid for the given Controller Service.
      *
@@ -891,12 +935,20 @@ public interface TestRunner {
     void setValidateExpressionUsage(boolean validate);
 
     /**
-     * Specifies whether or not the TestRunner will allow ProcessSession.commit() to be called.
+     * Specifies whether the TestRunner will allow ProcessSession.commit() to be called.
      * By default, the value is <code>false</code>, meaning that any call to ProcessSession.commit() will throw
      * an Exception. See JavaDocs for {@link ProcessSession#commit()} for more information
-     * @param allow whethr or not to allow asynchronous session commits (i.e., calls to ProcessSession.commit())
+     * @param allow whether to allow asynchronous session commits (i.e., calls to ProcessSession.commit())
      */
     void setAllowSynchronousSessionCommits(boolean allow);
+
+    /**
+     * Specifies whether the TestRunner will allow ProcessSession.read() multiple times for the same FlowFile while an InputStream is already open.
+     * By default, the value is <code>false</code>, meaning that any call to ProcessSession.read() for a FlowFile already being read will throw
+     * an Exception. See JavaDocs for {@link ProcessSession#read(FlowFile)} for more information
+     * @param allow whether to allow recursive reads of a FlowFile (i.e., calls to ProcessSession.read())
+     */
+    void setAllowRecursiveReads(boolean allow);
 
     /**
      * Removes the {@link PropertyDescriptor} from the {@link ProcessContext},
@@ -1026,6 +1078,27 @@ public interface TestRunner {
     void setEnvironmentVariableValue(String name, String value);
 
     /**
+     * Returns the current value for the given parameter name from the simulated Parameter Context
+     *
+     * @param name the name of the parameter from the Parameter Context whose value should be returned.
+     * @return the current value for the given parameter name from the simulated Parameter Context or <code>null</code> if no value is currently set
+     *
+     * @throws NullPointerException if the name is null
+     */
+    String getParameterContextValue(String name);
+
+    /**
+     * Sets a parameter with the given name and value into the simulated Parameter Context.
+     * This makes available the parameter to the properties of the component being tested through parameter referencing such as <code>#{name}</code>.
+     *
+     * @param parameterName the name of the parameter to set
+     * @param parameterValue the value of the parameter to set
+     *
+     * @throws NullPointerException if the name is null
+     */
+    void setParameterContextValue(final String parameterName, final String parameterValue);
+
+    /**
      * Asserts that all FlowFiles meet all conditions.
      *
      * @param relationshipName relationship name
@@ -1061,14 +1134,14 @@ public interface TestRunner {
      *
      * @param runSchedule Run schedule duration in milliseconds.
      */
-     void setRunSchedule(long runSchedule);
+    void setRunSchedule(long runSchedule);
 
     /**
      * Assert that provenance event was created with the specified event type.
      *
      * @param eventType Provenance event type
      */
-     void assertProvenanceEvent(ProvenanceEventType eventType);
+    void assertProvenanceEvent(ProvenanceEventType eventType);
 
     /**
      * Causes the TestRunner to call the Processor's {@link Processor#migrateProperties(PropertyConfiguration)} method. The effects that are

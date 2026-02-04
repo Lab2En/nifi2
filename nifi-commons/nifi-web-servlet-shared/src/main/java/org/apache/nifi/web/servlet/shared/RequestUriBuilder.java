@@ -18,6 +18,7 @@ package org.apache.nifi.web.servlet.shared;
 
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
+
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
@@ -59,17 +60,6 @@ public class RequestUriBuilder {
      */
     public static RequestUriBuilder fromHttpServletRequest(final HttpServletRequest httpServletRequest) {
         final List<String> allowedContextPaths = getAllowedContextPathsConfigured(httpServletRequest);
-        return fromHttpServletRequest(httpServletRequest, allowedContextPaths);
-    }
-
-    /**
-     * Return Builder from HTTP Servlet Request using Scheme, Host, Port, and Context Path reading from headers
-     *
-     * @param httpServletRequest HTTP Servlet Request
-     * @param allowedContextPaths Comma-separated string of allowed context path values for proxy headers
-     * @return Request URI Builder
-     */
-    public static RequestUriBuilder fromHttpServletRequest(final HttpServletRequest httpServletRequest, final List<String> allowedContextPaths) {
         final RequestUriProvider requestUriProvider = new StandardRequestUriProvider(allowedContextPaths);
         final URI requestUri = requestUriProvider.getRequestUri(httpServletRequest);
         return new RequestUriBuilder(requestUri.getScheme(), requestUri.getHost(), requestUri.getPort(), requestUri.getPath());

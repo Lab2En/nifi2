@@ -17,14 +17,14 @@
 
 package org.apache.nifi.provenance.authorization;
 
+import org.apache.nifi.authorization.AccessDeniedException;
+import org.apache.nifi.provenance.PlaceholderProvenanceEvent;
+import org.apache.nifi.provenance.ProvenanceEventRecord;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import org.apache.nifi.authorization.AccessDeniedException;
-import org.apache.nifi.provenance.PlaceholderProvenanceEvent;
-import org.apache.nifi.provenance.ProvenanceEventRecord;
 
 public interface EventAuthorizer {
 
@@ -72,7 +72,7 @@ public interface EventAuthorizer {
             .collect(Collectors.toSet());
     }
 
-    public static final EventAuthorizer GRANT_ALL = new EventAuthorizer() {
+    EventAuthorizer GRANT_ALL = new EventAuthorizer() {
         @Override
         public boolean isAuthorized(ProvenanceEventRecord event) {
             return true;
@@ -93,7 +93,7 @@ public interface EventAuthorizer {
         }
     };
 
-    public static final EventAuthorizer DENY_ALL = new EventAuthorizer() {
+    EventAuthorizer DENY_ALL = new EventAuthorizer() {
         @Override
         public boolean isAuthorized(ProvenanceEventRecord event) {
             return false;

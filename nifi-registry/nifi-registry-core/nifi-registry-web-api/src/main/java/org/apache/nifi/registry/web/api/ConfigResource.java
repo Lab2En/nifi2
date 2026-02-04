@@ -22,7 +22,6 @@ import io.swagger.v3.oas.annotations.extensions.ExtensionProperty;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -54,19 +53,18 @@ public class ConfigResource extends ApplicationResource {
     @Operation(
             summary = "Get configration",
             description = "Gets the NiFi Registry configurations.",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RegistryConfiguration.class))),
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RegistryConfiguration.class))),
+                    @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
+                    @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401)
+            },
             extensions = {
                     @Extension(
                             name = "access-policy", properties = {
-                            @ExtensionProperty(name = "action", value = "read"),
-                            @ExtensionProperty(name = "resource", value = "/policies,/tenants")}
+                                    @ExtensionProperty(name = "action", value = "read"),
+                                    @ExtensionProperty(name = "resource", value = "/policies,/tenants")}
                     )
             }
-    )
-    @ApiResponses(
-            {
-                    @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401),
-                    @ApiResponse(responseCode = "401", description = HttpStatusMessages.MESSAGE_401)}
     )
     public Response getConfiguration() {
         final RegistryConfiguration config = serviceFacade.getRegistryConfiguration();

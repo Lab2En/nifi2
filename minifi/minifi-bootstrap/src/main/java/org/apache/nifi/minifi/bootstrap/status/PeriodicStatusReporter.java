@@ -17,11 +17,12 @@
 
 package org.apache.nifi.minifi.bootstrap.status;
 
+import org.apache.nifi.minifi.bootstrap.QueryableStatusAggregator;
+import org.apache.nifi.minifi.properties.BootstrapProperties;
+
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import org.apache.nifi.minifi.bootstrap.QueryableStatusAggregator;
-import org.apache.nifi.minifi.properties.BootstrapProperties;
 
 public abstract class PeriodicStatusReporter {
 
@@ -57,7 +58,7 @@ public abstract class PeriodicStatusReporter {
         try {
             scheduledExecutorService.shutdown();
             scheduledExecutorService.awaitTermination(termination_wait, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ignore) {
+        } catch (InterruptedException ignored) {
             // Shutting down anyway
         }
     }

@@ -17,11 +17,11 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.ConnectionDTO;
 import org.apache.nifi.web.api.dto.PositionDTO;
 import org.apache.nifi.web.api.dto.status.ConnectionStatusDTO;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
 import java.util.List;
 
 /**
@@ -45,10 +45,12 @@ public class ConnectionEntity extends ComponentEntity implements Permissible<Con
     /**
      * @return RelationshipDTO that is being serialized
      */
+    @Override
     public ConnectionDTO getComponent() {
         return component;
     }
 
+    @Override
     public void setComponent(ConnectionDTO component) {
         this.component = component;
     }
@@ -149,7 +151,7 @@ public class ConnectionEntity extends ComponentEntity implements Permissible<Con
      */
     @Schema(description = "The type of component the source connectable is.",
             requiredMode = Schema.RequiredMode.REQUIRED,
-            allowableValues = "PROCESSOR, REMOTE_INPUT_PORT, REMOTE_OUTPUT_PORT, INPUT_PORT, OUTPUT_PORT, FUNNEL"
+            allowableValues = {"PROCESSOR", "REMOTE_INPUT_PORT", "REMOTE_OUTPUT_PORT", "INPUT_PORT", "OUTPUT_PORT", "FUNNEL"}
     )
     public String getSourceType() {
         return sourceType;
@@ -177,7 +179,7 @@ public class ConnectionEntity extends ComponentEntity implements Permissible<Con
      */
     @Schema(description = "The type of component the destination connectable is.",
             requiredMode = Schema.RequiredMode.REQUIRED,
-            allowableValues = "PROCESSOR, REMOTE_INPUT_PORT, REMOTE_OUTPUT_PORT, INPUT_PORT, OUTPUT_PORT, FUNNEL"
+            allowableValues = {"PROCESSOR", "REMOTE_INPUT_PORT", "REMOTE_OUTPUT_PORT", "INPUT_PORT", "OUTPUT_PORT", "FUNNEL"}
     )
     public String getDestinationType() {
         return destinationType;

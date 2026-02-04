@@ -22,12 +22,10 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
-import { NifiTooltipDirective, TextTip } from '@nifi/shared';
-import { SelectOption } from 'libs/shared/src';
+import { NifiTooltipDirective, SelectOption, TextTip } from '@nifi/shared';
 
 @Component({
     selector: 'source-process-group',
-    standalone: true,
     templateUrl: './source-process-group.component.html',
     styleUrls: ['./source-process-group.component.scss'],
     imports: [

@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 final class EmbeddedClient implements Client {
-    private final static Logger LOGGER = LoggerFactory.getLogger(EmbeddedClient.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(EmbeddedClient.class);
 
     private final Supplier<CairoEngine> engine;
     private final AtomicBoolean disconnected = new AtomicBoolean(false);
@@ -54,10 +54,9 @@ final class EmbeddedClient implements Client {
     public void execute(final String query) throws DatabaseException {
         checkConnectionState();
 
-        try (final SqlCompiler compiler = getCompiler()) {
-            final CompiledQuery compile = compiler.compile(query, getSqlExecutionContext());
-            compile.execute(new SCSequence(new TimeoutBlockingWaitStrategy(5, TimeUnit.SECONDS)));
-        } catch (final SqlException | CairoError e) {
+        try {
+            engine.get().execute(query, getSqlExecutionContext(), new SCSequence(new TimeoutBlockingWaitStrategy(5, TimeUnit.SECONDS)));
+        } catch (SqlException e) {
             throw new DatabaseException(e);
         }
     }

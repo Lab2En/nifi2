@@ -19,23 +19,20 @@ package org.apache.nifi.processor.util.listen;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
-import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.listen.event.Event;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.nifi.processor.util.listen.ListenerProperties.NETWORK_INTF_NAME;
 
@@ -47,27 +44,31 @@ import static org.apache.nifi.processor.util.listen.ListenerProperties.NETWORK_I
  */
 public abstract class AbstractListenEventBatchingProcessor<E extends Event> extends AbstractListenEventProcessor<E> {
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            NETWORK_INTF_NAME,
+            PORT,
+            RECV_BUFFER_SIZE,
+            MAX_MESSAGE_QUEUE_SIZE,
+            MAX_SOCKET_BUFFER_SIZE,
+            CHARSET,
+            ListenerProperties.MAX_BATCH_SIZE,
+            ListenerProperties.MESSAGE_DELIMITER
+    );
+
     // it is only the array reference that is volatile - not the contents.
     protected volatile byte[] messageDemarcatorBytes;
 
     @Override
     protected void init(final ProcessorInitializationContext context) {
-        final List<PropertyDescriptor> descriptors = new ArrayList<>();
-        descriptors.add(NETWORK_INTF_NAME);
-        descriptors.add(PORT);
-        descriptors.add(RECV_BUFFER_SIZE);
-        descriptors.add(MAX_MESSAGE_QUEUE_SIZE);
-        descriptors.add(MAX_SOCKET_BUFFER_SIZE);
-        descriptors.add(CHARSET);
-        descriptors.add(ListenerProperties.MAX_BATCH_SIZE);
-        descriptors.add(ListenerProperties.MESSAGE_DELIMITER);
-        descriptors.addAll(getAdditionalProperties());
-        this.descriptors = Collections.unmodifiableList(descriptors);
+        this.descriptors = Stream.concat(
+                PROPERTY_DESCRIPTORS.stream(),
+                getAdditionalProperties().stream()
+        ).toList();
 
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_SUCCESS);
-        relationships.addAll(getAdditionalRelationships());
-        this.relationships = Collections.unmodifiableSet(relationships);
+        relationships = Stream.concat(
+                Stream.of(REL_SUCCESS),
+                getAdditionalRelationships().stream()
+        ).collect(Collectors.toUnmodifiableSet());
     }
 
     @Override
@@ -85,7 +86,7 @@ public abstract class AbstractListenEventBatchingProcessor<E extends Event> exte
 
         // if the size is 0 then there was nothing to process so return
         // we don't need to yield here because we have a long poll in side of getBatches
-        if (batches.size() == 0) {
+        if (batches.isEmpty()) {
             return;
         }
 
@@ -95,7 +96,7 @@ public abstract class AbstractListenEventBatchingProcessor<E extends Event> exte
             FlowFile flowFile = entry.getValue().getFlowFile();
             final List<E> events = entry.getValue().getEvents();
 
-            if (flowFile.getSize() == 0L || events.size() == 0) {
+            if (flowFile.getSize() == 0L || events.isEmpty()) {
                 session.remove(flowFile);
                 getLogger().debug("No data written to FlowFile from batch {}; removing FlowFile", entry.getKey());
                 continue;
@@ -174,7 +175,7 @@ public abstract class AbstractListenEventBatchingProcessor<E extends Event> exte
 
             // if we don't have a batch for this key then create a new one
             if (batch == null) {
-                batch = new FlowFileEventBatch(session.create(), new ArrayList<E>());
+                batch = new FlowFileEventBatch(session.create(), new ArrayList<>());
                 batches.put(batchKey, batch);
             }
 
@@ -185,15 +186,12 @@ public abstract class AbstractListenEventBatchingProcessor<E extends Event> exte
             final boolean writeDemarcator = (i > 0);
             try {
                 final byte[] rawMessage = event.getData();
-                FlowFile appendedFlowFile = session.append(batch.getFlowFile(), new OutputStreamCallback() {
-                    @Override
-                    public void process(final OutputStream out) throws IOException {
-                        if (writeDemarcator) {
-                            out.write(messageDemarcatorBytes);
-                        }
-
-                        out.write(rawMessage);
+                FlowFile appendedFlowFile = session.append(batch.getFlowFile(), out -> {
+                    if (writeDemarcator) {
+                        out.write(messageDemarcatorBytes);
                     }
+
+                    out.write(rawMessage);
                 });
 
                 // update the FlowFile reference in the batch object
@@ -207,6 +205,11 @@ public abstract class AbstractListenEventBatchingProcessor<E extends Event> exte
         }
 
         return batches;
+    }
+
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        config.renameProperty(ListenerProperties.OLD_MESSAGE_DELIMITER_PROPERTY_NAME, ListenerProperties.MESSAGE_DELIMITER.getName());
     }
 
     /**

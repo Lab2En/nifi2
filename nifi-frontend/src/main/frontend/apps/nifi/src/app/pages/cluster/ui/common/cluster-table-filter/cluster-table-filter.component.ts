@@ -16,7 +16,6 @@
  */
 
 import { AfterViewInit, Component, DestroyRef, EventEmitter, inject, Input, Output } from '@angular/core';
-import { MatCheckbox } from '@angular/material/checkbox';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
 import { MatOption } from '@angular/material/autocomplete';
@@ -41,12 +40,13 @@ export interface ClusterTableFilterContext extends ClusterTableFilterArgs {
 
 @Component({
     selector: 'cluster-table-filter',
-    standalone: true,
-    imports: [MatCheckbox, MatFormField, MatInput, MatLabel, MatOption, MatSelect, ReactiveFormsModule],
+    imports: [MatFormField, MatInput, MatLabel, MatOption, MatSelect, ReactiveFormsModule],
     templateUrl: './cluster-table-filter.component.html',
     styleUrl: './cluster-table-filter.component.scss'
 })
 export class ClusterTableFilter implements AfterViewInit {
+    private formBuilder = inject(FormBuilder);
+
     filterForm: FormGroup;
     private _filteredCount = 0;
     private _totalCount = 0;
@@ -101,7 +101,7 @@ export class ClusterTableFilter implements AfterViewInit {
 
     @Output() filterChanged: EventEmitter<ClusterTableFilterContext> = new EventEmitter<ClusterTableFilterContext>();
 
-    constructor(private formBuilder: FormBuilder) {
+    constructor() {
         this.filterForm = this.formBuilder.group({
             filterTerm: '',
             filterColumn: this._initialFilterColumn || 'address'

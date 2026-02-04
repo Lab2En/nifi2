@@ -18,6 +18,7 @@
 Apache NiFi Team <dev@nifi.apache.org>
 :homepage: http://nifi.apache.org
 :linkattrs:
+:imagesdir: images
 
 [[overview]]
 == Overview
@@ -38,7 +39,7 @@ reflected the name of the file on the file system. Additionally, the FlowFile wi
 have a `path` attribute that reflects the directory on the file system that this
 file lived in. The FlowFile will also have an attribute named `uuid`, which is a
 unique identifier for this FlowFile. For complete listing of the core attributes
-check out the FlowFile section of the link:developer-guide.html#flowfile[Developer's Guide].
+check out the FlowFile section of the <<developer-guide.adoc#flowfile,Developer's Guide>>.
 
 However, placing these attributes on a FlowFile do not provide much benefit
 if the user is unable to make use of them. The NiFi Expression Language provides
@@ -1204,7 +1205,42 @@ then the following Expressions will result in the following values:
 | `${str:repeat(1)}` | `abc`
 | `${str:repeat(2)}` | `abcabc`
 | `${str:repeat(1,2)}` | `abc` or `abcabc` (at random)
-| `${str:repeat( ${str:length()} )}` | `abc` or `abcabc` or `abcabcabc` (at random)
+| `${str:repeat(${str:length()})}` | `abcabcabc`
+| `${str:repeat(1, ${str:length()})}` | `abc` or `abcabc` or `abcabcabc` (at random)
+|================================================================
+
+
+
+
+[.function]
+=== replaceByPattern
+
+*Description*:
+[.description]#Returns a string based on the provided mapping rule in order to replace the subject by another string. If
+the subject is not covered by the mapping rule, then the subject is returned.#
+
+
+*Subject Type*: [.subject]#String#
+
+*Argument*:
+
+- [.argName]#_mapping rule_# : [.argDesc]#The mapping rule is a comma separated list of K:V where K may be a regular
+expression and V is the string to return in case K matches the subject. Examples: 'abc:xyz,foo:poo' and
+'att[0-4]:low_range,att[5-9]:high_range,.*:other'#
+
+*Return Type*: [.returnType]#String#
+
+*Examples*:
+
+If we have an attribute named "str" with the value "abc",
+then the following Expressions will result in the following values:
+
+.ReplaceByPattern Examples
+|================================================================
+| Expression | Value
+| `${str:replaceByPattern('abc:xyz,foo:poo')}` | `xyz`
+| `${str:replaceByPattern('foo:poo')}` | `abc`
+| `${str:replaceByPattern('a.c:xyz,.*:foo')}` | `xyz`
 |================================================================
 
 

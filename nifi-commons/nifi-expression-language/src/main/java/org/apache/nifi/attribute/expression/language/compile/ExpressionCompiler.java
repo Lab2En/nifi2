@@ -53,11 +53,13 @@ import org.apache.nifi.attribute.expression.language.evaluation.functions.Divide
 import org.apache.nifi.attribute.expression.language.evaluation.functions.EndsWithEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.EqualsEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.EqualsIgnoreCaseEvaluator;
+import org.apache.nifi.attribute.expression.language.evaluation.functions.EvaluateELStringEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.FindEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.FormatEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.FromRadixEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.GetDelimitedFieldEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.GetStateVariableEvaluator;
+import org.apache.nifi.attribute.expression.language.evaluation.functions.GetUriEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.GreaterThanEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.GreaterThanOrEqualEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.HashEvaluator;
@@ -73,8 +75,8 @@ import org.apache.nifi.attribute.expression.language.evaluation.functions.IsNull
 import org.apache.nifi.attribute.expression.language.evaluation.functions.JsonPathAddEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.JsonPathDeleteEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.JsonPathEvaluator;
-import org.apache.nifi.attribute.expression.language.evaluation.functions.JsonPathSetEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.JsonPathPutEvaluator;
+import org.apache.nifi.attribute.expression.language.evaluation.functions.JsonPathSetEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.LastIndexOfEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.LengthEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.LessThanEvaluator;
@@ -98,6 +100,7 @@ import org.apache.nifi.attribute.expression.language.evaluation.functions.Prepen
 import org.apache.nifi.attribute.expression.language.evaluation.functions.RandomNumberGeneratorEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.RepeatEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.ReplaceAllEvaluator;
+import org.apache.nifi.attribute.expression.language.evaluation.functions.ReplaceByPatternEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.ReplaceEmptyEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.ReplaceEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.ReplaceFirstEvaluator;
@@ -115,14 +118,12 @@ import org.apache.nifi.attribute.expression.language.evaluation.functions.ToLowe
 import org.apache.nifi.attribute.expression.language.evaluation.functions.ToRadixEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.ToStringEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.ToUpperEvaluator;
-import org.apache.nifi.attribute.expression.language.evaluation.functions.EvaluateELStringEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.TrimEvaluator;
-import org.apache.nifi.attribute.expression.language.evaluation.functions.GetUriEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.UrlDecodeEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.UrlEncodeEvaluator;
-import org.apache.nifi.attribute.expression.language.evaluation.functions.UuidEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.Uuid3Evaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.functions.Uuid5Evaluator;
+import org.apache.nifi.attribute.expression.language.evaluation.functions.UuidEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.literals.BooleanLiteralEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.literals.DecimalLiteralEvaluator;
 import org.apache.nifi.attribute.expression.language.evaluation.literals.StringLiteralEvaluator;
@@ -182,6 +183,7 @@ import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpre
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.ESCAPE_HTML4;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.ESCAPE_JSON;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.ESCAPE_XML;
+import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.EVALUATE_EL_STRING;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.EXPRESSION;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.FALSE;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.FIND;
@@ -200,12 +202,13 @@ import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpre
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.INDEX_OF;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.IP;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.IS_EMPTY;
+import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.IS_JSON;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.IS_NULL;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.JOIN;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.JSON_PATH;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.JSON_PATH_ADD;
-import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.JSON_PATH_PUT;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.JSON_PATH_DELETE;
+import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.JSON_PATH_PUT;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.JSON_PATH_SET;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.LAST_INDEX_OF;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.LENGTH;
@@ -232,6 +235,7 @@ import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpre
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.REPEAT;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.REPLACE;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.REPLACE_ALL;
+import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.REPLACE_BY_PATTERN;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.REPLACE_EMPTY;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.REPLACE_FIRST;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.REPLACE_NULL;
@@ -265,8 +269,6 @@ import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpre
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.UUID3;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.UUID5;
 import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.WHOLE_NUMBER;
-import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.EVALUATE_EL_STRING;
-import static org.apache.nifi.attribute.expression.language.antlr.AttributeExpressionParser.IS_JSON;
 
 public class ExpressionCompiler {
     private final Set<Evaluator<?>> evaluators = new HashSet<>();
@@ -489,15 +491,13 @@ public class ExpressionCompiler {
 
     @SuppressWarnings("unchecked")
     private Evaluator<Boolean> toBooleanEvaluator(final Evaluator<?> evaluator, final String location) {
-        switch (evaluator.getResultType()) {
-            case BOOLEAN:
-                return (Evaluator<Boolean>) evaluator;
-            case STRING:
-                return addToken(new BooleanCastEvaluator((StringEvaluator) evaluator), evaluator.getToken());
-            default:
-                throw new AttributeExpressionLanguageParsingException("Cannot implicitly convert Data Type " + evaluator.getResultType() + " to " + ResultType.BOOLEAN
-                    + (location == null ? "" : " at location [" + location + "]"));
-        }
+        return switch (evaluator.getResultType()) {
+            case BOOLEAN -> (Evaluator<Boolean>) evaluator;
+            case STRING -> addToken(new BooleanCastEvaluator((StringEvaluator) evaluator), evaluator.getToken());
+            default ->
+                    throw new AttributeExpressionLanguageParsingException("Cannot implicitly convert Data Type " + evaluator.getResultType() + " to " + ResultType.BOOLEAN
+                            + (location == null ? "" : " at location [" + location + "]"));
+        };
 
     }
 
@@ -511,19 +511,14 @@ public class ExpressionCompiler {
 
     @SuppressWarnings("unchecked")
     private Evaluator<Long> toWholeNumberEvaluator(final Evaluator<?> evaluator, final String location) {
-        switch (evaluator.getResultType()) {
-            case WHOLE_NUMBER:
-                return (Evaluator<Long>) evaluator;
-            case STRING:
-            case DATE:
-            case INSTANT:
-            case DECIMAL:
-            case NUMBER:
-                return addToken(new WholeNumberCastEvaluator(evaluator), evaluator.getToken());
-            default:
+        return switch (evaluator.getResultType()) {
+            case WHOLE_NUMBER -> (Evaluator<Long>) evaluator;
+            case STRING, DATE, INSTANT, DECIMAL, NUMBER ->
+                addToken(new WholeNumberCastEvaluator(evaluator), evaluator.getToken());
+            default ->
                 throw new AttributeExpressionLanguageParsingException("Cannot implicitly convert Data Type " + evaluator.getResultType() + " to " + ResultType.WHOLE_NUMBER
-                    + (location == null ? "" : " at location [" + location + "]"));
-        }
+                        + (location == null ? "" : " at location [" + location + "]"));
+        };
     }
 
     private Evaluator<Double> toDecimalEvaluator(final Evaluator<?> evaluator) {
@@ -532,18 +527,14 @@ public class ExpressionCompiler {
 
     @SuppressWarnings("unchecked")
     private Evaluator<Double> toDecimalEvaluator(final Evaluator<?> evaluator, final String location) {
-        switch (evaluator.getResultType()) {
-            case DECIMAL:
-                return (Evaluator<Double>) evaluator;
-            case WHOLE_NUMBER:
-            case STRING:
-            case DATE:
-            case NUMBER:
-                return addToken(new DecimalCastEvaluator(evaluator), evaluator.getToken());
-            default:
+        return switch (evaluator.getResultType()) {
+            case DECIMAL -> (Evaluator<Double>) evaluator;
+            case WHOLE_NUMBER, STRING, DATE, NUMBER ->
+                addToken(new DecimalCastEvaluator(evaluator), evaluator.getToken());
+            default ->
                 throw new AttributeExpressionLanguageParsingException("Cannot implicitly convert Data Type " + evaluator.getResultType() + " to " + ResultType.DECIMAL
-                    + (location == null ? "" : " at location [" + location + "]"));
-        }
+                        + (location == null ? "" : " at location [" + location + "]"));
+        };
     }
 
     private Evaluator<Number> toNumberEvaluator(final Evaluator<?> evaluator) {
@@ -552,19 +543,14 @@ public class ExpressionCompiler {
 
     @SuppressWarnings("unchecked")
     private Evaluator<Number> toNumberEvaluator(final Evaluator<?> evaluator, final String location) {
-        switch (evaluator.getResultType()) {
-            case NUMBER:
-                return (Evaluator<Number>) evaluator;
-            case STRING:
-            case DATE:
-            case INSTANT:
-            case DECIMAL:
-            case WHOLE_NUMBER:
-                return addToken(new NumberCastEvaluator(evaluator), evaluator.getToken());
-            default:
+        return switch (evaluator.getResultType()) {
+            case NUMBER -> (Evaluator<Number>) evaluator;
+            case STRING, DATE, INSTANT, DECIMAL, WHOLE_NUMBER ->
+                addToken(new NumberCastEvaluator(evaluator), evaluator.getToken());
+            default ->
                 throw new AttributeExpressionLanguageParsingException("Cannot implicitly convert Data Type " + evaluator.getResultType() + " to " + ResultType.WHOLE_NUMBER
-                    + (location == null ? "" : " at location [" + location + "]"));
-        }
+                        + (location == null ? "" : " at location [" + location + "]"));
+        };
     }
 
     private DateEvaluator toDateEvaluator(final Evaluator<?> evaluator) {
@@ -743,6 +729,11 @@ public class ExpressionCompiler {
                         toStringEvaluator(argEvaluators.get(1), "padding string")), "padRight");
                 }
             }
+            case REPLACE_BY_PATTERN: {
+                verifyArgCount(argEvaluators, 1, "replaceByPattern");
+                return addToken(new ReplaceByPatternEvaluator(toStringEvaluator(subjectEvaluator),
+                    toStringEvaluator(argEvaluators.get(0), "first argument to replace")), "replaceByPattern");
+            }
             case APPEND: {
                 verifyArgCount(argEvaluators, 1, "append");
                 return addToken(new AppendEvaluator(toStringEvaluator(subjectEvaluator),
@@ -815,7 +806,7 @@ public class ExpressionCompiler {
                     toStringEvaluator(argEvaluators.get(0), "first argument to contains")), "contains");
             }
             case IN: {
-                List<Evaluator<String>> list = new ArrayList<Evaluator<String>>();
+                List<Evaluator<String>> list = new ArrayList<>();
                 for (int i = 0; i < argEvaluators.size(); i++) {
                     list.add(toStringEvaluator(argEvaluators.get(i), i + "th argument to in"));
                 }
@@ -889,34 +880,26 @@ public class ExpressionCompiler {
             }
             case TO_NUMBER: {
                 verifyArgCount(argEvaluators, 0, "toNumber");
-                switch (subjectEvaluator.getResultType()) {
-                    case STRING:
-                    case WHOLE_NUMBER:
-                    case DECIMAL:
-                    case NUMBER:
-                    case DATE:
-                    case INSTANT:
-                        return addToken(toWholeNumberEvaluator(subjectEvaluator), "toNumber");
-                    default:
+                return switch (subjectEvaluator.getResultType()) {
+                    case STRING, WHOLE_NUMBER, DECIMAL, NUMBER, DATE, INSTANT ->
+                        addToken(toWholeNumberEvaluator(subjectEvaluator), "toNumber");
+                    default ->
                         throw new AttributeExpressionLanguageParsingException(subjectEvaluator + " returns type " + subjectEvaluator.getResultType() + " but expected to get " + ResultType.STRING +
-                            ", " + ResultType.DECIMAL + ", or " + ResultType.DATE);
-                }
+                                ", " + ResultType.DECIMAL + ", or " + ResultType.DATE);
+                };
             }
+            // fallthrough
             case TO_DECIMAL: {
                 verifyArgCount(argEvaluators, 0, "toDecimal");
-                switch (subjectEvaluator.getResultType()) {
-                    case WHOLE_NUMBER:
-                    case DECIMAL:
-                    case STRING:
-                    case NUMBER:
-                    case DATE:
-                    case INSTANT:
-                        return addToken(toDecimalEvaluator(subjectEvaluator), "toDecimal");
-                    default:
+                return switch (subjectEvaluator.getResultType()) {
+                    case WHOLE_NUMBER, DECIMAL, STRING, NUMBER, DATE, INSTANT ->
+                        addToken(toDecimalEvaluator(subjectEvaluator), "toDecimal");
+                    default ->
                         throw new AttributeExpressionLanguageParsingException(subjectEvaluator + " returns type " + subjectEvaluator.getResultType() + " but expected to get " + ResultType.STRING +
-                            ", " + ResultType.WHOLE_NUMBER + ", or " + ResultType.DATE);
-                }
+                                ", " + ResultType.WHOLE_NUMBER + ", or " + ResultType.DATE);
+                };
             }
+            // fallthrough
             case TO_MICROS: {
                 verifyArgCount(argEvaluators, 0, "toMicros");
                 if (subjectEvaluator.getResultType() == ResultType.INSTANT) {
@@ -993,7 +976,7 @@ public class ExpressionCompiler {
                 }
             }
             case FORMAT_INSTANT: {
-                 if (argEvaluators.size() == 2) {
+                if (argEvaluators.size() == 2) {
                     return addToken(new InstantFormatEvaluator(toInstantEvaluator(subjectEvaluator), toStringEvaluator(argEvaluators.get(0)), toStringEvaluator(argEvaluators.get(1))), "format");
                 } else {
                     throw new AttributeExpressionLanguageParsingException("format() function takes 2 arguments");
@@ -1163,8 +1146,8 @@ public class ExpressionCompiler {
                     attributeNames.add(newStringLiteralEvaluator(tree.getChild(i).getText()).evaluate(new StandardEvaluationContext(Collections.emptyMap())).getValue());
                 }
 
-                switch (multiAttrType) {
-                    case ALL_ATTRIBUTES:
+                return switch (multiAttrType) {
+                    case ALL_ATTRIBUTES -> {
                         for (final String attributeName : attributeNames) {
                             try {
                                 FlowFile.KeyValidator.validateKey(attributeName);
@@ -1172,11 +1155,11 @@ public class ExpressionCompiler {
                                 throw new AttributeExpressionLanguageParsingException("Invalid Attribute Name: " + attributeName + ". " + iae.getMessage());
                             }
                         }
-
-                        return addToken(new MultiNamedAttributeEvaluator(attributeNames, ALL_ATTRIBUTES), "allAttributes");
-                    case ALL_MATCHING_ATTRIBUTES:
-                        return addToken(new MultiMatchAttributeEvaluator(attributeNames, ALL_MATCHING_ATTRIBUTES), "allMatchingAttributes");
-                    case ANY_ATTRIBUTE:
+                        yield addToken(new MultiNamedAttributeEvaluator(attributeNames, ALL_ATTRIBUTES), "allAttributes");
+                    }
+                    case ALL_MATCHING_ATTRIBUTES ->
+                        addToken(new MultiMatchAttributeEvaluator(attributeNames, ALL_MATCHING_ATTRIBUTES), "allMatchingAttributes");
+                    case ANY_ATTRIBUTE -> {
                         for (final String attributeName : attributeNames) {
                             try {
                                 FlowFile.KeyValidator.validateKey(attributeName);
@@ -1184,13 +1167,13 @@ public class ExpressionCompiler {
                                 throw new AttributeExpressionLanguageParsingException("Invalid Attribute Name: " + attributeName + ". " + iae.getMessage());
                             }
                         }
-
-                        return addToken(new MultiNamedAttributeEvaluator(attributeNames, ANY_ATTRIBUTE), "anyAttribute");
-                    case ANY_MATCHING_ATTRIBUTE:
-                        return addToken(new MultiMatchAttributeEvaluator(attributeNames, ANY_MATCHING_ATTRIBUTE), "anyMatchingAttribute");
-                    default:
+                        yield addToken(new MultiNamedAttributeEvaluator(attributeNames, ANY_ATTRIBUTE), "anyAttribute");
+                    }
+                    case ANY_MATCHING_ATTRIBUTE ->
+                        addToken(new MultiMatchAttributeEvaluator(attributeNames, ANY_MATCHING_ATTRIBUTE), "anyMatchingAttribute");
+                    default ->
                         throw new AssertionError("Illegal Multi-Attribute Reference: " + functionTypeTree.toString());
-                }
+                };
             }
             case ATTR_NAME: {
                 return newStringLiteralEvaluator(tree.getChild(0).getText());
@@ -1238,14 +1221,12 @@ public class ExpressionCompiler {
                 } else if (tree.getChildCount() == 1) {
                     final Tree childTree = tree.getChild(0);
                     try {
-                        switch (childTree.getType()) {
-                            case TRUE:
-                                return addToken(new HostnameEvaluator(true), "hostname");
-                            case FALSE:
-                                return addToken(new HostnameEvaluator(false), "hostname");
-                            default:
-                                throw new AttributeExpressionLanguageParsingException("Call to hostname() must take 0 or 1 (boolean) parameter");
-                        }
+                        return switch (childTree.getType()) {
+                            case TRUE -> addToken(new HostnameEvaluator(true), "hostname");
+                            case FALSE -> addToken(new HostnameEvaluator(false), "hostname");
+                            default ->
+                                    throw new AttributeExpressionLanguageParsingException("Call to hostname() must take 0 or 1 (boolean) parameter");
+                        };
                     } catch (final UnknownHostException e) {
                         throw new AttributeExpressionLanguageException(e);
                     }
@@ -1404,13 +1385,12 @@ public class ExpressionCompiler {
     }
 
     private Evaluator<Boolean> buildBooleanEvaluator(final Tree tree) {
-        switch (tree.getType()) {
-            case TRUE:
-                return addToken(new BooleanLiteralEvaluator(true), "true");
-            case FALSE:
-                return addToken(new BooleanLiteralEvaluator(false), "true");
-        }
-        throw new AttributeExpressionLanguageParsingException("Cannot build Boolean evaluator from tree " + tree.toString());
+        return switch (tree.getType()) {
+            case TRUE -> addToken(new BooleanLiteralEvaluator(true), "true");
+            case FALSE -> addToken(new BooleanLiteralEvaluator(false), "true");
+            default ->
+                    throw new AttributeExpressionLanguageParsingException("Cannot build Boolean evaluator from tree " + tree.toString());
+        };
     }
 
 }

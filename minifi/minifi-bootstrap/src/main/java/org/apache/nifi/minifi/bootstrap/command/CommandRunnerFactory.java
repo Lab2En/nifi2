@@ -17,9 +17,6 @@
 
 package org.apache.nifi.minifi.bootstrap.command;
 
-import java.io.File;
-import java.util.LinkedList;
-import java.util.List;
 import org.apache.nifi.minifi.bootstrap.BootstrapCommand;
 import org.apache.nifi.minifi.bootstrap.MiNiFiParameters;
 import org.apache.nifi.minifi.bootstrap.RunMiNiFi;
@@ -33,6 +30,10 @@ import org.apache.nifi.minifi.bootstrap.service.MiNiFiStatusProvider;
 import org.apache.nifi.minifi.bootstrap.service.MiNiFiStdLogHandler;
 import org.apache.nifi.minifi.bootstrap.service.PeriodicStatusReporterManager;
 import org.apache.nifi.minifi.bootstrap.util.ProcessUtils;
+
+import java.io.File;
+import java.util.LinkedList;
+import java.util.List;
 
 public class CommandRunnerFactory {
 
@@ -76,34 +77,19 @@ public class CommandRunnerFactory {
      * @return the runner
      */
     public CommandRunner getRunner(BootstrapCommand command) {
-        CommandRunner commandRunner;
-        switch (command) {
-            case START:
-            case RUN:
-                commandRunner = new StartRunner(currentPortProvider, bootstrapFileProvider, periodicStatusReporterManager, miNiFiStdLogHandler, miNiFiParameters,
-                    bootstrapConfigFile, runMiNiFi, miNiFiExecCommandProvider, configurationChangeListener);
-                break;
-            case STOP:
-                commandRunner = new StopRunner(bootstrapFileProvider, miNiFiParameters, miNiFiCommandSender, currentPortProvider, gracefulShutdownParameterProvider, processUtils);
-                break;
-            case STATUS:
-                commandRunner = new StatusRunner(miNiFiParameters, miNiFiStatusProvider);
-                break;
-            case RESTART:
-                commandRunner = new CompositeCommandRunner(getRestartServices());
-                break;
-            case DUMP:
-                commandRunner = new DumpRunner(miNiFiCommandSender, currentPortProvider);
-                break;
-            case ENV:
-                commandRunner = new EnvRunner(miNiFiCommandSender, currentPortProvider);
-                break;
-            case FLOWSTATUS:
-                commandRunner = new FlowStatusRunner(periodicStatusReporterManager);
-                break;
-            default:
-                throw new IllegalArgumentException("Unknown MiNiFi bootstrap command");
-        }
+        CommandRunner commandRunner = switch (command) {
+            case START, RUN ->
+                new StartRunner(currentPortProvider, bootstrapFileProvider, periodicStatusReporterManager, miNiFiStdLogHandler, miNiFiParameters,
+                        bootstrapConfigFile, runMiNiFi, miNiFiExecCommandProvider, configurationChangeListener);
+            case STOP ->
+                new StopRunner(bootstrapFileProvider, miNiFiParameters, miNiFiCommandSender, currentPortProvider, gracefulShutdownParameterProvider, processUtils);
+            case STATUS -> new StatusRunner(miNiFiParameters, miNiFiStatusProvider);
+            case RESTART -> new CompositeCommandRunner(getRestartServices());
+            case DUMP -> new DumpRunner(miNiFiCommandSender, currentPortProvider);
+            case ENV -> new EnvRunner(miNiFiCommandSender, currentPortProvider);
+            case FLOWSTATUS -> new FlowStatusRunner(periodicStatusReporterManager);
+            default -> throw new IllegalArgumentException("Unknown MiNiFi bootstrap command");
+        };
         return commandRunner;
     }
 

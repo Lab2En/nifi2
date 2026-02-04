@@ -16,12 +16,16 @@
  */
 package org.apache.nifi.processors.email;
 
+import jakarta.mail.Address;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.oauth2.AccessToken;
 import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
 import org.apache.nifi.processor.AbstractProcessor;
@@ -33,17 +37,16 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
-import org.springframework.integration.mail.AbstractMailReceiver;
+import org.springframework.context.expression.BeanFactoryResolver;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.integration.context.IntegrationContextUtils;
+import org.springframework.integration.mail.inbound.AbstractMailReceiver;
+import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
 
-import jakarta.mail.Address;
-import jakarta.mail.Message;
-import jakarta.mail.MessagingException;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Optional;
@@ -51,6 +54,8 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -72,48 +77,42 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
             "Use OAuth2 to acquire access token"
     );
     public static final PropertyDescriptor HOST = new PropertyDescriptor.Builder()
-            .name("host")
-            .displayName("Host Name")
+            .name("Host Name")
             .description("Network address of Email server (e.g., pop.gmail.com, imap.gmail.com . . .)")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor PORT = new PropertyDescriptor.Builder()
-            .name("port")
-            .displayName("Port")
+            .name("Port")
             .description("Numeric value identifying Port of Email server (e.g., 993)")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .addValidator(StandardValidators.PORT_VALIDATOR)
             .build();
     public static final PropertyDescriptor AUTHORIZATION_MODE = new PropertyDescriptor.Builder()
-            .name("authorization-mode")
-            .displayName("Authorization Mode")
+            .name("Authorization Mode")
             .description("How to authorize sending email on the user's behalf.")
             .required(true)
             .allowableValues(PASSWORD_BASED_AUTHORIZATION_MODE, OAUTH_AUTHORIZATION_MODE)
-            .defaultValue(PASSWORD_BASED_AUTHORIZATION_MODE.getValue())
+            .defaultValue(PASSWORD_BASED_AUTHORIZATION_MODE)
             .build();
     public static final PropertyDescriptor OAUTH2_ACCESS_TOKEN_PROVIDER = new PropertyDescriptor.Builder()
-            .name("oauth2-access-token-provider")
-            .displayName("OAuth2 Access Token Provider")
+            .name("OAuth2 Access Token Provider")
             .description("OAuth2 service that can provide access tokens.")
             .identifiesControllerService(OAuth2AccessTokenProvider.class)
             .dependsOn(AUTHORIZATION_MODE, OAUTH_AUTHORIZATION_MODE)
             .required(true)
             .build();
     public static final PropertyDescriptor USER = new PropertyDescriptor.Builder()
-            .name("user")
-            .displayName("User Name")
+            .name("User Name")
             .description("User Name used for authentication and authorization with Email server.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
-            .name("password")
-            .displayName("Password")
+            .name("Password")
             .description("Password used for authentication and authorization with Email server.")
             .dependsOn(AUTHORIZATION_MODE, PASSWORD_BASED_AUTHORIZATION_MODE)
             .required(true)
@@ -122,8 +121,7 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
             .sensitive(true)
             .build();
     public static final PropertyDescriptor FOLDER = new PropertyDescriptor.Builder()
-            .name("folder")
-            .displayName("Folder")
+            .name("Folder")
             .description("Email folder to retrieve messages from (e.g., INBOX)")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -131,8 +129,7 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor FETCH_SIZE = new PropertyDescriptor.Builder()
-            .name("fetch.size")
-            .displayName("Fetch Size")
+            .name("Fetch Size")
             .description("Specify the maximum number of Messages to fetch per call to Email Server.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -140,8 +137,7 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
             .build();
     public static final PropertyDescriptor SHOULD_DELETE_MESSAGES = new PropertyDescriptor.Builder()
-            .name("delete.messages")
-            .displayName("Delete Messages")
+            .name("Delete Messages")
             .description("Specify whether mail messages should be deleted after retrieval.")
             .required(true)
             .allowableValues("true", "false")
@@ -149,8 +145,7 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .build();
     static final PropertyDescriptor CONNECTION_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("connection.timeout")
-            .displayName("Connection timeout")
+            .name("Connection Timeout")
             .description("The amount of time to wait to connect to Email server")
             .required(true)
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
@@ -163,28 +158,26 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
             .description("All messages that are the are successfully received from Email server and converted to FlowFiles are routed to this relationship")
             .build();
 
-    final static List<PropertyDescriptor> SHARED_DESCRIPTORS = new ArrayList<>();
-
-    final static Set<Relationship> SHARED_RELATIONSHIPS = new HashSet<>();
-
     /*
      * Will ensure that list of PropertyDescriptors is build only once, since
      * all other lifecycle methods are invoked multiple times.
      */
-    static {
-        SHARED_DESCRIPTORS.add(HOST);
-        SHARED_DESCRIPTORS.add(PORT);
-        SHARED_DESCRIPTORS.add(AUTHORIZATION_MODE);
-        SHARED_DESCRIPTORS.add(OAUTH2_ACCESS_TOKEN_PROVIDER);
-        SHARED_DESCRIPTORS.add(USER);
-        SHARED_DESCRIPTORS.add(PASSWORD);
-        SHARED_DESCRIPTORS.add(FOLDER);
-        SHARED_DESCRIPTORS.add(FETCH_SIZE);
-        SHARED_DESCRIPTORS.add(SHOULD_DELETE_MESSAGES);
-        SHARED_DESCRIPTORS.add(CONNECTION_TIMEOUT);
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            HOST,
+            PORT,
+            AUTHORIZATION_MODE,
+            OAUTH2_ACCESS_TOKEN_PROVIDER,
+            USER,
+            PASSWORD,
+            FOLDER,
+            FETCH_SIZE,
+            SHOULD_DELETE_MESSAGES,
+            CONNECTION_TIMEOUT
+    );
 
-        SHARED_RELATIONSHIPS.add(REL_SUCCESS);
-    }
+    static final Set<Relationship> SHARED_RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -196,21 +189,23 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
 
     private volatile ProcessSession processSession;
 
-    private volatile boolean shouldSetDeleteFlag;
-
     protected volatile Optional<OAuth2AccessTokenProvider> oauth2AccessTokenProviderOptional;
     protected volatile AccessToken oauth2AccessDetails;
 
+    protected static List<PropertyDescriptor> getCommonPropertyDescriptors() {
+        return PROPERTY_DESCRIPTORS;
+    }
+
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
-        if (context.getProperty(OAUTH2_ACCESS_TOKEN_PROVIDER).isSet()) {
+        if (context.getProperty(AUTHORIZATION_MODE).getValue().equals(OAUTH_AUTHORIZATION_MODE.getValue())) {
             OAuth2AccessTokenProvider oauth2AccessTokenProvider = context.getProperty(OAUTH2_ACCESS_TOKEN_PROVIDER).asControllerService(OAuth2AccessTokenProvider.class);
 
-            oauth2AccessDetails = oauth2AccessTokenProvider.getAccessDetails();
-
             oauth2AccessTokenProviderOptional = Optional.of(oauth2AccessTokenProvider);
+            oauth2AccessDetails = oauth2AccessTokenProvider.getAccessDetails();
         } else {
             oauth2AccessTokenProviderOptional = Optional.empty();
+            oauth2AccessDetails = null;
         }
     }
 
@@ -238,6 +233,20 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
         if (emailMessage != null) {
             this.transfer(emailMessage, context, processSession);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("host", HOST.getName());
+        config.renameProperty("port", PORT.getName());
+        config.renameProperty("authorization-mode", AUTHORIZATION_MODE.getName());
+        config.renameProperty("oauth2-access-token-provider", OAUTH2_ACCESS_TOKEN_PROVIDER.getName());
+        config.renameProperty("user", USER.getName());
+        config.renameProperty("password", PASSWORD.getName());
+        config.renameProperty("folder", FOLDER.getName());
+        config.renameProperty("fetch.size", FETCH_SIZE.getName());
+        config.renameProperty("delete.messages", SHOULD_DELETE_MESSAGES.getName());
+        config.renameProperty("connection.timeout", CONNECTION_TIMEOUT.getName());
     }
 
     @Override
@@ -313,13 +322,18 @@ abstract class AbstractEmailProcessor<T extends AbstractMailReceiver> extends Ab
             this.processSession = processSession;
             this.messageReceiver = this.buildMessageReceiver(context);
 
-            this.shouldSetDeleteFlag = context.getProperty(SHOULD_DELETE_MESSAGES).asBoolean();
             int fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
 
             this.messageReceiver.setMaxFetchSize(fetchSize);
             this.messageReceiver.setJavaMailProperties(this.buildJavaMailProperties(context));
-            // need to avoid spring warning messages
-            this.messageReceiver.setBeanFactory(new StaticListableBeanFactory());
+            // Spring Integration 7 expects an evaluation context bean; register a lightweight one for the receiver
+            final StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
+            final StandardEvaluationContext evaluationContext = new StandardEvaluationContext();
+            final ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+            evaluationContext.setBeanResolver(new BeanFactoryResolver(beanFactory));
+            beanFactory.addBean(IntegrationContextUtils.INTEGRATION_EVALUATION_CONTEXT_BEAN_NAME, evaluationContext);
+            beanFactory.addBean(IntegrationContextUtils.TASK_SCHEDULER_BEAN_NAME, new ConcurrentTaskScheduler(scheduledExecutor));
+            this.messageReceiver.setBeanFactory(beanFactory);
             this.messageReceiver.afterPropertiesSet();
 
             this.messageQueue = new ArrayBlockingQueue<>(fetchSize);

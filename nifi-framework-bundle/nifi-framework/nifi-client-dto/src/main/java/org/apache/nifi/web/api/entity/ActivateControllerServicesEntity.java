@@ -17,9 +17,9 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.RevisionDTO;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
 import java.util.Map;
 
 @XmlRootElement(name = "activateControllerServicesEntity")
@@ -45,7 +45,7 @@ public class ActivateControllerServicesEntity extends Entity {
      * @return The desired state of the descendant components. Possible states are 'RUNNING' and 'STOPPED'
      */
     @Schema(description = "The desired state of the descendant components",
-        allowableValues = STATE_ENABLED + ", " + STATE_DISABLED)
+        allowableValues = {STATE_ENABLED, STATE_DISABLED})
     public String getState() {
         return state;
     }

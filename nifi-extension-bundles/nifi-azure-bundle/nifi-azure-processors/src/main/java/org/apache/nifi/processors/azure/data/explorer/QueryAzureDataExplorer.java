@@ -64,7 +64,6 @@ public class QueryAzureDataExplorer extends AbstractProcessor {
 
     public static final PropertyDescriptor KUSTO_QUERY_SERVICE = new PropertyDescriptor.Builder()
             .name("Kusto Query Service")
-            .displayName("Kusto Query Service")
             .description("Azure Data Explorer Kusto Query Service")
             .required(true)
             .identifiesControllerService(KustoQueryService.class)
@@ -72,7 +71,6 @@ public class QueryAzureDataExplorer extends AbstractProcessor {
 
     public static final PropertyDescriptor DATABASE_NAME = new PropertyDescriptor.Builder()
             .name("Database Name")
-            .displayName("Database Name")
             .description("Azure Data Explorer Database Name for querying")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -81,7 +79,6 @@ public class QueryAzureDataExplorer extends AbstractProcessor {
 
     public static final PropertyDescriptor QUERY = new PropertyDescriptor.Builder()
             .name("Query")
-            .displayName("Query")
             .description("Query to be run against Azure Data Explorer")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -90,9 +87,16 @@ public class QueryAzureDataExplorer extends AbstractProcessor {
 
     protected static final String APPLICATION_JSON = "application/json";
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(SUCCESS, FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = List.of(KUSTO_QUERY_SERVICE, DATABASE_NAME, QUERY);
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            KUSTO_QUERY_SERVICE,
+            DATABASE_NAME,
+            QUERY
+    );
 
     private volatile KustoQueryService service;
 
@@ -103,7 +107,7 @@ public class QueryAzureDataExplorer extends AbstractProcessor {
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled

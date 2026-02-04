@@ -33,7 +33,6 @@ import org.apache.nifi.redis.util.RedisUtils;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
 
-import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -46,6 +45,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import javax.net.ssl.SSLContext;
 
 /**
  * A StateProvider backed by Redis.
@@ -56,7 +56,6 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
 
     public static final PropertyDescriptor KEY_PREFIX = new PropertyDescriptor.Builder()
             .name("Key Prefix")
-            .displayName("Key Prefix")
             .description("The prefix for each key stored by this state provider. When sharing a single Redis across multiple NiFi instances, " +
                     "setting a unique value for the Key Prefix will make it easier to identify which instances the keys came from.")
             .required(true)
@@ -65,7 +64,6 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
             .build();
     public static final PropertyDescriptor ENABLE_TLS = new PropertyDescriptor.Builder()
             .name("Enable TLS")
-            .displayName("Enable TLS")
             .description("If true, the Redis connection will be configured to use TLS, using the keystore and truststore settings configured in " +
                     "nifi.properties.  This means that a TLS-enabled Redis connection is only possible if the Apache NiFi instance is running in secure mode. " +
                     "If this property is false, an insecure Redis connection will be used even if the Apache NiFi instance is secure.")
@@ -75,7 +73,6 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
             .build();
     public static final PropertyDescriptor MAX_ATTEMPTS = new PropertyDescriptor.Builder()
             .name("Max Attempts")
-            .displayName("Max Attempts")
             .description("Maximum number of attempts when setting/clearing the state for a component. This number should be higher than the number of nodes "
                     + "in the NiFi cluster to account for the case where each node may concurrently try to clear a state with a local scope.")
             .required(true)
@@ -121,7 +118,7 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
 
         String keyPrefix = context.getProperty(KEY_PREFIX).getValue();
         if (!keyPrefix.endsWith("/")) {
-            keyPrefix = keyPrefix + "/";
+            keyPrefix = keyPrefix + "/"; // NOPMD
         }
         this.keyPrefix = keyPrefix;
 
@@ -211,7 +208,7 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
     public StateMap getState(final String componentId) throws IOException {
         return withConnection(redisConnection -> {
             final byte[] key = getComponentKey(componentId).getBytes(StandardCharsets.UTF_8);
-            final byte[] value = redisConnection.get(key);
+            final byte[] value = redisConnection.stringCommands().get(key);
 
             final RedisStateMap stateMap = serDe.deserialize(value);
             if (stateMap == null) {
@@ -234,7 +231,7 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
 
             final Optional<String> previousVersion = oldValue == null ? Optional.empty() : oldValue.getStateVersion();
 
-            final byte[] currValue = redisConnection.get(key);
+            final byte[] currValue = redisConnection.stringCommands().get(key);
             final RedisStateMap currStateMap = serDe.deserialize(currValue);
             final Optional<String> currentVersion = currStateMap == null ? Optional.empty() : currStateMap.getStateVersion();
 
@@ -253,7 +250,7 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
 
                 // if we use set(k, newVal) then the results list will always have size == 0 b/c when convertPipelineAndTxResults is set to true,
                 // status responses like "OK" are skipped over, so by using getSet we can rely on the results list to know if the transaction succeeded
-                redisConnection.getSet(key, serDe.serialize(newStateMap));
+                redisConnection.stringCommands().getSet(key, serDe.serialize(newStateMap));
             }
 
             // execute the transaction
@@ -261,7 +258,7 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
 
             // if we have a result then the replace succeeded
             // results can be null if the transaction has been aborted
-            if (results != null && results.size() > 0) {
+            if (results != null && !results.isEmpty()) {
                 replaced = true;
             }
 
@@ -293,7 +290,7 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
     public void onComponentRemoved(final String componentId) throws IOException {
         withConnection(redisConnection -> {
             final byte[] key = getComponentKey(componentId).getBytes(StandardCharsets.UTF_8);
-            redisConnection.del(key);
+            redisConnection.keyCommands().del(key);
             return true;
         });
     }
@@ -320,7 +317,7 @@ public class RedisStateProvider extends AbstractConfigurableComponent implements
         final Pattern keyPrefixComponentIdPattern = Pattern.compile(String.format(KEY_PREFIX_COMPONENT_ID_PATTERN, keyPrefix));
 
         return withConnection(redisConnection -> {
-            final Set<byte[]> keys = redisConnection.keys(keyPattern);
+            final Set<byte[]> keys = redisConnection.keyCommands().keys(keyPattern);
             final Set<byte[]> keysFound = keys == null ? Collections.emptySet() : keys;
             return keysFound.stream()
                     .map(key -> new String(key, StandardCharsets.UTF_8))

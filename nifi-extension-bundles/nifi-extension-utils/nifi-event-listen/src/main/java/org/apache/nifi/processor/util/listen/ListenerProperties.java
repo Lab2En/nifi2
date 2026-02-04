@@ -17,9 +17,7 @@
 package org.apache.nifi.processor.util.listen;
 
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
-import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.processor.util.StandardValidators;
@@ -44,55 +42,48 @@ public class ListenerProperties {
                 final NetworkInterface ifc = interfaceEnum.nextElement();
                 interfaceSet.add(ifc.getName());
             }
-        } catch (SocketException e) {
+        } catch (SocketException ignored) {
         }
     }
+
+    public static final String OLD_WORKER_THREADS_PROPERTY_NAME = "Max Number of TCP Connections";
+    public static final String OLD_MESSAGE_DELIMITER_PROPERTY_NAME = "Message Delimiter";
 
     public static final PropertyDescriptor NETWORK_INTF_NAME = new PropertyDescriptor.Builder()
             .name("Local Network Interface")
             .description("The name of a local network interface to be used to restrict listening to a specific LAN.")
-            .addValidator(new Validator() {
-                @Override
-                public ValidationResult validate(String subject, String input, ValidationContext context) {
-                    ValidationResult result = new ValidationResult.Builder()
-                            .subject("Local Network Interface").valid(true).input(input).build();
-                    if (interfaceSet.contains(input.toLowerCase())) {
+            .addValidator((subject, input, context) -> {
+                ValidationResult result = new ValidationResult.Builder()
+                        .subject("Local Network Interface").valid(true).input(input).build();
+                if (interfaceSet.contains(input.toLowerCase())) {
+                    return result;
+                }
+
+                String message;
+                String realValue = input;
+                try {
+                    if (context.isExpressionLanguagePresent(input)) {
+                        AttributeExpression ae = context.newExpressionLanguageCompiler().compile(input);
+                        realValue = ae.evaluate();
+                    }
+
+                    if (interfaceSet.contains(realValue.toLowerCase())) {
                         return result;
                     }
 
-                    String message;
-                    String realValue = input;
-                    try {
-                        if (context.isExpressionLanguagePresent(input)) {
-                            AttributeExpression ae = context.newExpressionLanguageCompiler().compile(input);
-                            realValue = ae.evaluate();
-                        }
+                    message = realValue + " is not a valid network name. Valid names are " + interfaceSet;
 
-                        if (interfaceSet.contains(realValue.toLowerCase())) {
-                            return result;
-                        }
-
-                        message = realValue + " is not a valid network name. Valid names are " + interfaceSet.toString();
-
-                    } catch (IllegalArgumentException e) {
-                        message = "Not a valid AttributeExpression: " + e.getMessage();
-                    }
-                    result = new ValidationResult.Builder().subject("Local Network Interface")
-                            .valid(false).input(input).explanation(message).build();
-
-                    return result;
+                } catch (IllegalArgumentException e) {
+                    message = "Not a valid AttributeExpression: " + e.getMessage();
                 }
+                result = new ValidationResult.Builder().subject("Local Network Interface")
+                        .valid(false).input(input).explanation(message).build();
+
+                return result;
             })
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
-    public static final PropertyDescriptor PORT = new PropertyDescriptor
-            .Builder().name("Port")
-            .description("The port to listen on for communication.")
-            .required(true)
-            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
-            .addValidator(StandardValidators.PORT_VALIDATOR)
-            .build();
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
             .name("Character Set")
             .description("Specifies the character set of the received data.")
@@ -127,8 +118,7 @@ public class ListenerProperties {
             .required(true)
             .build();
     public static final PropertyDescriptor WORKER_THREADS = new PropertyDescriptor.Builder()
-            .name("Max Number of TCP Connections")
-            .displayName("Max Number of Worker Threads")
+            .name("Worker Threads")
             .description("The maximum number of worker threads available for servicing TCP connections.")
             .addValidator(StandardValidators.createLongValidator(1, 65535, true))
             .defaultValue("2")
@@ -145,8 +135,7 @@ public class ListenerProperties {
             .required(true)
             .build();
     public static final PropertyDescriptor MESSAGE_DELIMITER = new PropertyDescriptor.Builder()
-            .name("Message Delimiter")
-            .displayName("Batching Message Delimiter")
+            .name("Batching Message Delimiter")
             .description("Specifies the delimiter to place between messages when multiple messages are bundled together (see <Max Batch Size> property).")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .defaultValue("\\n")

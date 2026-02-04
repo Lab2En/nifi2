@@ -16,39 +16,27 @@
  */
 package org.apache.nifi.processors.standard.util;
 
+import jakarta.annotation.Nullable;
 import okhttp3.Authenticator;
 import okhttp3.Credentials;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.Route;
 
-import javax.annotation.Nullable;
-import java.io.IOException;
-
 public class ProxyAuthenticator implements Authenticator {
 
-    public ProxyAuthenticator() {
-    }
+    private final String proxyUsername;
 
-    public ProxyAuthenticator(String proxyUsername, String proxyPassword) {
+    private final String proxyPassword;
+
+    public ProxyAuthenticator(final String proxyUsername, final String proxyPassword) {
         this.proxyUsername = proxyUsername;
-        this.proxyPassword = proxyPassword;
-    }
-
-    private String proxyUsername;
-    private String proxyPassword;
-
-    public void setProxyUsername(String proxyUsername) {
-        this.proxyUsername = proxyUsername;
-    }
-
-    public void setProxyPassword(String proxyPassword) {
         this.proxyPassword = proxyPassword;
     }
 
     @Nullable
     @Override
-    public Request authenticate(Route route, Response response) throws IOException {
+    public Request authenticate(Route route, Response response) {
         String credential = Credentials.basic(proxyUsername, proxyPassword);
         return response.request()
                 .newBuilder()

@@ -24,7 +24,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
+import javax.net.ssl.SSLContext;
 
 public class NiFiInstanceCache {
     private static final Logger logger = LoggerFactory.getLogger(NiFiInstanceCache.class);
@@ -213,6 +215,11 @@ public class NiFiInstanceCache {
         @Override
         public int getNumberOfNodes(final boolean includeOnlyAutoStartInstances) {
             return rawInstance.getNumberOfNodes(includeOnlyAutoStartInstances);
+        }
+
+        @Override
+        public Optional<SSLContext> getSslContext() {
+            return rawInstance.getSslContext();
         }
 
         @Override

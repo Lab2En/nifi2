@@ -30,6 +30,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -54,21 +55,41 @@ public abstract class AbstractPaginatedJsonQueryElasticsearchTest extends Abstra
     }
 
     @Test
-    void testInvalidPaginationProperties() {
+    void testInvalidPaginationTypeProperty() {
         final TestRunner runner = createRunner(false);
         runner.setProperty(AbstractJsonQueryElasticsearch.QUERY, matchAllQuery);
-        runner.setProperty(AbstractPaginatedJsonQueryElasticsearch.PAGINATION_KEEP_ALIVE, "not-a-period");
         runner.setProperty(AbstractPaginatedJsonQueryElasticsearch.PAGINATION_TYPE, "not-enum");
 
         final AssertionError assertionError = assertThrows(AssertionError.class, runner::run);
-        final String expected = String.format("Processor has 2 validation failures:\n" +
-                        "'%s' validated against 'not-enum' is invalid because Given value not found in allowed set '%s'\n" +
-                        "'%s' validated against 'not-a-period' is invalid because Must be of format <duration> <TimeUnit> where <duration> " +
-                        "is a non-negative integer and TimeUnit is a supported Time Unit, such as: nanos, millis, secs, mins, hrs, days\n",
+        final String expected = String.format("""
+                        Processor has 1 validation failures:
+                        '%s' validated against 'not-enum' is invalid because Given value not found in allowed set '%s'
+                        """,
                 AbstractPaginatedJsonQueryElasticsearch.PAGINATION_TYPE.getName(),
                 Stream.of(PaginationType.values()).map(PaginationType::getValue).collect(Collectors.joining(", ")),
                 AbstractPaginatedJsonQueryElasticsearch.PAGINATION_KEEP_ALIVE.getName());
         assertEquals(expected, assertionError.getMessage());
+    }
+
+    @ParameterizedTest
+    @EnumSource(PaginationType.class)
+    void testInvalidPaginationKeepAliveProperty(final PaginationType paginationType) {
+        final TestRunner runner = createRunner(false);
+        runner.setProperty(AbstractJsonQueryElasticsearch.QUERY, matchAllQuery);
+        runner.setProperty(AbstractPaginatedJsonQueryElasticsearch.PAGINATION_KEEP_ALIVE, "not-a-period");
+        runner.setProperty(AbstractPaginatedJsonQueryElasticsearch.PAGINATION_TYPE, paginationType.getValue());
+
+        if (paginationType.hasExpiry()) {
+            runner.assertNotValid();
+            final AssertionError assertionError = assertThrows(AssertionError.class, runner::run);
+            final String expected = String.format("Processor has 1 validation failures:\n" +
+                    "'%s' validated against 'not-a-period' is invalid because Must be of format <duration> <TimeUnit> where <duration> " +
+                    "is a non-negative integer and TimeUnit is a supported Time Unit, such as: nanos, millis, secs, mins, hrs, days\n",
+                    AbstractPaginatedJsonQueryElasticsearch.PAGINATION_KEEP_ALIVE.getName());
+            assertEquals(expected, assertionError.getMessage());
+        } else {
+            runner.assertValid();
+        }
     }
 
     @Test
@@ -130,14 +151,12 @@ public abstract class AbstractPaginatedJsonQueryElasticsearchTest extends Abstra
                 assertTrue(hit.containsKey("_source"));
                 assertTrue(hit.containsKey("_index"));
                 break;
-            default:
-                throw new IllegalArgumentException("Unknown SearchResultsFormat value: " + searchResultsFormat);
         }
     }
 
     private void assertResultsFormat(final TestRunner runner, final ResultOutputStrategy resultOutputStrategy, final SearchResultsFormat searchResultsFormat) {
-        final int flowFileCount;
-        final String hitsCount;
+        int flowFileCount = 0;
+        String hitsCount = null;
         boolean ndjson = false;
 
         switch (resultOutputStrategy) {
@@ -154,8 +173,6 @@ public abstract class AbstractPaginatedJsonQueryElasticsearchTest extends Abstra
                 flowFileCount = 1;
                 hitsCount = "10";
                 break;
-            default:
-                throw new IllegalArgumentException("Unknown ResultOutputStrategy value: " + resultOutputStrategy);
         }
 
         // Test Relationship counts
@@ -163,7 +180,8 @@ public abstract class AbstractPaginatedJsonQueryElasticsearchTest extends Abstra
 
         // Per response outputs an array of values
         final boolean ndJsonCopy = ndjson;
-        runner.getFlowFilesForRelationship(AbstractJsonQueryElasticsearch.REL_HITS).forEach( hit -> {
+        final List<MockFlowFile> hits = runner.getFlowFilesForRelationship(AbstractJsonQueryElasticsearch.REL_HITS);
+        for (MockFlowFile hit : hits) {
             hit.assertAttributeEquals("hit.count", hitsCount);
             AbstractJsonQueryElasticsearchTest.assertOutputContent(hit.getContent(), Integer.parseInt(hitsCount), ndJsonCopy);
             if (ResultOutputStrategy.PER_RESPONSE.equals(resultOutputStrategy)) {
@@ -175,7 +193,7 @@ public abstract class AbstractPaginatedJsonQueryElasticsearchTest extends Abstra
 
             assertEquals(1L, runner.getProvenanceEvents().stream().filter(event ->
                     ProvenanceEventType.RECEIVE.equals(event.getEventType()) && event.getAttribute("uuid").equals(hit.getAttribute("uuid"))).count());
-        });
+        }
     }
 
     @ParameterizedTest

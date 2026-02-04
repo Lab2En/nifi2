@@ -26,6 +26,7 @@ import org.apache.nifi.registry.flow.FlowRegistryClientConfigurationContext;
 import org.apache.nifi.registry.flow.FlowRegistryException;
 import org.apache.nifi.registry.flow.git.AbstractGitFlowRegistryClient;
 import org.apache.nifi.registry.flow.git.client.GitRepositoryClient;
+import org.apache.nifi.ssl.SSLContextProvider;
 
 import java.io.IOException;
 import java.util.List;
@@ -34,7 +35,8 @@ import java.util.List;
  * Implementation of {@link org.apache.nifi.registry.flow.FlowRegistryClient} that uses GitHub for version controlling flows.
  */
 @Tags({"git", "github", "registry", "flow"})
-@CapabilityDescription("Flow Registry Client that uses the GitHub REST API to version control flows in a GitHub repository.")
+@CapabilityDescription("Flow Registry Client that uses the GitHub REST API to version control flows in a GitHub repository. "
+        + "Note that for a given flow, the registry client will retrieve at most the last 10 commits to limit API calls.")
 public class GitHubFlowRegistryClient extends AbstractGitFlowRegistryClient {
 
     static final PropertyDescriptor GITHUB_API_URL = new PropertyDescriptor.Builder()
@@ -115,6 +117,7 @@ public class GitHubFlowRegistryClient extends AbstractGitFlowRegistryClient {
     @Override
     protected GitHubRepositoryClient createRepositoryClient(final FlowRegistryClientConfigurationContext context) throws IOException, FlowRegistryException {
         return GitHubRepositoryClient.builder()
+                .logger(getLogger())
                 .apiUrl(context.getProperty(GITHUB_API_URL).getValue())
                 .authenticationType(GitHubAuthenticationType.valueOf(context.getProperty(AUTHENTICATION_TYPE).getValue()))
                 .personalAccessToken(context.getProperty(PERSONAL_ACCESS_TOKEN).getValue())
@@ -123,6 +126,7 @@ public class GitHubFlowRegistryClient extends AbstractGitFlowRegistryClient {
                 .repoOwner(context.getProperty(REPOSITORY_OWNER).getValue())
                 .repoName(context.getProperty(REPOSITORY_NAME).getValue())
                 .repoPath(context.getProperty(REPOSITORY_PATH).getValue())
+                .sslContext(context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextProvider.class))
                 .build();
     }
 

@@ -16,11 +16,6 @@
  */
 package org.apache.nifi.csv;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.serialization.MalformedRecordException;
@@ -32,12 +27,18 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class ITJacksonCSVRecordReader {
 
-    private final CSVFormat format = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setTrim(true).setQuote('"').build();
+    private final CSVFormat format = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setTrim(true).setQuote('"').get();
 
     private List<RecordField> getDefaultFields() {
         final List<RecordField> fields = new ArrayList<>();
@@ -51,13 +52,11 @@ public class ITJacksonCSVRecordReader {
     public void testParserPerformance() throws IOException, MalformedRecordException {
         // Generates about 130MB of data
         final int NUM_LINES = 2500000;
-        StringBuilder sb = new StringBuilder("id,name,balance,address,city,state,zipCode,country\n");
-        for (int i = 0; i < NUM_LINES; i++) {
-            sb.append("1,John Doe,4750.89D,123 My Street,My City,MS,11111,USA\n");
-        }
+        String sb = "id,name,balance,address,city,state,zipCode,country\n" +
+                "1,John Doe,4750.89D,123 My Street,My City,MS,11111,USA\n".repeat(NUM_LINES);
         final RecordSchema schema = new SimpleRecordSchema(getDefaultFields());
 
-        try (final InputStream bais = new ByteArrayInputStream(sb.toString().getBytes());
+        try (final InputStream bais = new ByteArrayInputStream(sb.getBytes());
              final JacksonCSVRecordReader reader = new JacksonCSVRecordReader(bais, Mockito.mock(ComponentLog.class), schema, format, true, false,
                      RecordFieldType.DATE.getDefaultFormat(), RecordFieldType.TIME.getDefaultFormat(), RecordFieldType.TIMESTAMP.getDefaultFormat(), "UTF-8")) {
 

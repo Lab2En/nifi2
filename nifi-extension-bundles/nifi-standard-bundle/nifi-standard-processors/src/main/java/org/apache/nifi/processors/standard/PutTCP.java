@@ -68,7 +68,6 @@ public class PutTCP extends AbstractPutEventProcessor<InputStream> {
 
     static final PropertyDescriptor TRANSMISSION_STRATEGY = new PropertyDescriptor.Builder()
             .name("Transmission Strategy")
-            .displayName("Transmission Strategy")
             .description("Specifies the strategy used for reading input FlowFiles and transmitting messages to the destination socket address")
             .required(true)
             .allowableValues(TransmissionStrategy.class)
@@ -87,7 +86,6 @@ public class PutTCP extends AbstractPutEventProcessor<InputStream> {
 
     static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
             .name("Record Reader")
-            .displayName("Record Reader")
             .description("Specifies the Controller Service to use for reading Records from input FlowFiles")
             .identifiesControllerService(RecordReaderFactory.class)
             .required(true)
@@ -96,7 +94,6 @@ public class PutTCP extends AbstractPutEventProcessor<InputStream> {
 
     static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
             .name("Record Writer")
-            .displayName("Record Writer")
             .description("Specifies the Controller Service to use for writing Records to the configured socket address")
             .identifiesControllerService(RecordSetWriterFactory.class)
             .required(true)
@@ -166,7 +163,7 @@ public class PutTCP extends AbstractPutEventProcessor<InputStream> {
 
             final String delimiter = getOutgoingMessageDelimiter(context, flowFile);
             if (delimiter != null) {
-                final Charset charSet = Charset.forName(context.getProperty(CHARSET).getValue());
+                final Charset charSet = Charset.forName(context.getProperty(CHARSET).evaluateAttributeExpressions().getValue());
                 inputStreamEvent = new DelimitedInputStream(inputStream, delimiter.getBytes(charSet));
             }
 

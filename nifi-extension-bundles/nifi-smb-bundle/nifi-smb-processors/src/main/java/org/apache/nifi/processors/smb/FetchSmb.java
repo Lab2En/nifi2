@@ -24,6 +24,7 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -35,14 +36,11 @@ import org.apache.nifi.services.smb.SmbClientProviderService;
 import org.apache.nifi.services.smb.SmbClientService;
 import org.apache.nifi.services.smb.SmbException;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static java.util.Arrays.asList;
-import static java.util.Collections.unmodifiableSet;
 import static org.apache.nifi.expression.ExpressionLanguageScope.FLOWFILE_ATTRIBUTES;
 import static org.apache.nifi.processor.util.StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR;
 
@@ -60,8 +58,7 @@ public class FetchSmb extends AbstractProcessor {
     public static final String ERROR_MESSAGE_ATTRIBUTE = "error.message";
 
     public static final PropertyDescriptor REMOTE_FILE = new PropertyDescriptor.Builder()
-            .name("remote-file")
-            .displayName("Remote File")
+            .name("Remote File")
             .description("The full path of the file to be retrieved from the remote server. Expression language is supported.")
             .required(true)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
@@ -97,8 +94,7 @@ public class FetchSmb extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor SMB_CLIENT_PROVIDER_SERVICE = new PropertyDescriptor.Builder()
-            .name("smb-client-provider-service")
-            .displayName("SMB Client Provider Service")
+            .name("SMB Client Provider Service")
             .description("Specifies the SMB client provider to use for creating SMB connections.")
             .required(true)
             .identifiesControllerService(SmbClientProviderService.class)
@@ -116,12 +112,12 @@ public class FetchSmb extends AbstractProcessor {
                     .description("A FlowFile will be routed here when failed to fetch its content.")
                     .build();
 
-    public static final Set<Relationship> RELATIONSHIPS = unmodifiableSet(new HashSet<>(asList(
+    public static final Set<Relationship> RELATIONSHIPS = Set.of(
             REL_SUCCESS,
             REL_FAILURE
-    )));
+    );
 
-    private static final List<PropertyDescriptor> PROPERTIES = asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             SMB_CLIENT_PROVIDER_SERVICE,
             REMOTE_FILE,
             COMPLETION_STRATEGY,
@@ -138,7 +134,7 @@ public class FetchSmb extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -153,7 +149,7 @@ public class FetchSmb extends AbstractProcessor {
 
         final SmbClientProviderService clientProviderService = context.getProperty(SMB_CLIENT_PROVIDER_SERVICE).asControllerService(SmbClientProviderService.class);
 
-        try (SmbClientService client = clientProviderService.getClient()) {
+        try (SmbClientService client = clientProviderService.getClient(getLogger())) {
             flowFile = session.write(flowFile, outputStream -> client.readFile(filePath, outputStream));
 
             session.transfer(flowFile, REL_SUCCESS);
@@ -166,6 +162,12 @@ public class FetchSmb extends AbstractProcessor {
         }
 
         session.commitAsync(() -> performCompletionStrategy(context, attributes));
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("remote-file", REMOTE_FILE.getName());
+        config.renameProperty("smb-client-provider-service", SMB_CLIENT_PROVIDER_SERVICE.getName());
     }
 
     private String getErrorCode(final Exception exception) {
@@ -186,7 +188,7 @@ public class FetchSmb extends AbstractProcessor {
 
         final SmbClientProviderService clientProviderService = context.getProperty(SMB_CLIENT_PROVIDER_SERVICE).asControllerService(SmbClientProviderService.class);
 
-        try (SmbClientService client = clientProviderService.getClient()) {
+        try (SmbClientService client = clientProviderService.getClient(getLogger())) {
             if (completionStrategy == CompletionStrategy.MOVE) {
                 final String destinationDirectory = context.getProperty(DESTINATION_DIRECTORY).evaluateAttributeExpressions(attributes).getValue();
                 final boolean createDestinationDirectory = context.getProperty(CREATE_DESTINATION_DIRECTORY).asBoolean();

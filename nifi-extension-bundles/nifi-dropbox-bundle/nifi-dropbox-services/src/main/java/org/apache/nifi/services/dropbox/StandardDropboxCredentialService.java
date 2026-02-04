@@ -16,9 +16,6 @@
  */
 package org.apache.nifi.services.dropbox;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnEnabled;
@@ -28,15 +25,17 @@ import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.dropbox.credentials.service.DropboxCredentialDetails;
 import org.apache.nifi.dropbox.credentials.service.DropboxCredentialService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
+
+import java.util.List;
 
 @CapabilityDescription("Defines credentials for Dropbox processors.")
 @Tags({"dropbox", "credentials", "provider"})
 public class StandardDropboxCredentialService extends AbstractControllerService implements DropboxCredentialService {
 
     public static final PropertyDescriptor APP_KEY = new PropertyDescriptor.Builder()
-            .name("app-key")
-            .displayName("App Key")
+            .name("App Key")
             .description("App Key of the user's Dropbox app." +
                     " See Additional Details for more information.")
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -45,8 +44,7 @@ public class StandardDropboxCredentialService extends AbstractControllerService 
             .build();
 
     public static final PropertyDescriptor APP_SECRET = new PropertyDescriptor.Builder()
-            .name("app-secret")
-            .displayName("App Secret")
+            .name("App Secret")
             .description("App Secret of the user's Dropbox app." +
                     " See Additional Details for more information.")
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -56,8 +54,7 @@ public class StandardDropboxCredentialService extends AbstractControllerService 
             .build();
 
     public static final PropertyDescriptor ACCESS_TOKEN = new PropertyDescriptor.Builder()
-            .name("access-token")
-            .displayName("Access Token")
+            .name("Access Token")
             .description("Access Token of the user's Dropbox app." +
                     " See Additional Details for more information about Access Token generation.")
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -67,8 +64,7 @@ public class StandardDropboxCredentialService extends AbstractControllerService 
             .build();
 
     public static final PropertyDescriptor REFRESH_TOKEN = new PropertyDescriptor.Builder()
-            .name("refresh-token")
-            .displayName("Refresh Token")
+            .name("Refresh Token")
             .description("Refresh Token of the user's Dropbox app." +
                     " See Additional Details for more information about Refresh Token generation.")
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -77,22 +73,18 @@ public class StandardDropboxCredentialService extends AbstractControllerService 
             .required(true)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES;
-
-    static {
-        final List<PropertyDescriptor> props = new ArrayList<>();
-        props.add(APP_KEY);
-        props.add(APP_SECRET);
-        props.add(ACCESS_TOKEN);
-        props.add(REFRESH_TOKEN);
-        PROPERTIES = Collections.unmodifiableList(props);
-    }
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            APP_KEY,
+            APP_SECRET,
+            ACCESS_TOKEN,
+            REFRESH_TOKEN
+    );
 
     private DropboxCredentialDetails credential;
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -108,5 +100,13 @@ public class StandardDropboxCredentialService extends AbstractControllerService 
     @Override
     public DropboxCredentialDetails getDropboxCredential() {
         return credential;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("app-key", APP_KEY.getName());
+        config.renameProperty("app-secret", APP_SECRET.getName());
+        config.renameProperty("access-token", ACCESS_TOKEN.getName());
+        config.renameProperty("refresh-token", REFRESH_TOKEN.getName());
     }
 }

@@ -29,7 +29,6 @@ import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AsyncPipe } from '@angular/common';
 import { debounceTime, Observable, tap } from 'rxjs';
 import { ProvenanceEventSummary } from '../../../../../state/shared';
-import { RouterLink } from '@angular/router';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
 import { Lineage, LineageRequest } from '../../../state/lineage';
@@ -37,7 +36,6 @@ import { LineageComponent } from './lineage/lineage.component';
 import { GoToProvenanceEventSourceRequest, ProvenanceEventRequest } from '../../../state/provenance-event-listing';
 import { MatSliderModule } from '@angular/material/slider';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ErrorBanner } from '../../../../../ui/common/error-banner/error-banner.component';
 import { ClusterSummary } from '../../../../../state/cluster-summary';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
@@ -46,7 +44,6 @@ import { ErrorContextKey } from '../../../../../state/error';
 
 @Component({
     selector: 'provenance-event-table',
-    standalone: true,
     templateUrl: './provenance-event-table.component.html',
     imports: [
         MatTableModule,
@@ -56,13 +53,11 @@ import { ErrorContextKey } from '../../../../../state/error';
         MatOptionModule,
         MatSelectModule,
         ReactiveFormsModule,
-        RouterLink,
         NgxSkeletonLoaderModule,
         AsyncPipe,
         MatPaginatorModule,
         LineageComponent,
         MatSliderModule,
-        ErrorBanner,
         MatButtonModule,
         MatMenu,
         MatMenuItem,
@@ -72,6 +67,9 @@ import { ErrorContextKey } from '../../../../../state/error';
     styleUrls: ['./provenance-event-table.component.scss']
 })
 export class ProvenanceEventTable implements AfterViewInit {
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() set events(events: ProvenanceEventSummary[]) {
         if (events) {
             this.dataSource.data = this.sortEvents(events, this.sort);
@@ -226,10 +224,7 @@ export class ProvenanceEventTable implements AfterViewInit {
     initialEventTimestampThreshold = 0;
     currentEventTimestampThreshold = 0;
 
-    constructor(
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         this.filterForm = this.formBuilder.group({ filterTerm: '', filterColumn: this.filterColumnOptions[0] });
     }
 
@@ -267,9 +262,8 @@ export class ProvenanceEventTable implements AfterViewInit {
             let retVal = 0;
             switch (sort.active) {
                 case 'eventTime':
-                    // event ideas are increasing, so we can use this simple number for sorting purposes
-                    // since we don't surface the timestamp as millis
-                    retVal = this.nifiCommon.compareNumber(a.eventId, b.eventId);
+                    // Compare Event Timestamp with ISO8601 formatting
+                    retVal = this.nifiCommon.compareString(a.eventTimestamp, b.eventTimestamp);
                     break;
                 case 'eventType':
                     retVal = this.nifiCommon.compareString(a.eventType, b.eventType);

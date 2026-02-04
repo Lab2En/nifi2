@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input, viewChild } from '@angular/core';
+import { Component, Input, viewChild, inject } from '@angular/core';
 import { ConfigurableExtensionDefinition, PropertyDescriptor } from '../../../state';
 import { MatAccordion, MatExpansionModule } from '@angular/material/expansion';
 import { MatButtonModule } from '@angular/material/button';
@@ -24,12 +24,13 @@ import { PropertyDefinitionComponent } from '../property-definition/property-def
 
 @Component({
     selector: 'properties-definition',
-    standalone: true,
     imports: [MatAccordion, MatExpansionModule, MatButtonModule, PropertyDefinitionComponent],
     templateUrl: './properties-definition.component.html',
     styleUrl: './properties-definition.component.scss'
 })
 export class PropertiesDefinitionComponent {
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() set configurableExtensionDefinition(configurableExtensionDefinition: ConfigurableExtensionDefinition) {
         if (configurableExtensionDefinition.propertyDescriptors) {
             this.propertyDescriptors = Object.values(configurableExtensionDefinition.propertyDescriptors).sort(
@@ -42,8 +43,6 @@ export class PropertiesDefinitionComponent {
 
     propertyDescriptors: PropertyDescriptor[] | null = null;
     propertiesAccordion = viewChild.required(MatAccordion);
-
-    constructor(private nifiCommon: NiFiCommon) {}
 
     formatTitle(descriptor: PropertyDescriptor): string {
         if (descriptor.required) {

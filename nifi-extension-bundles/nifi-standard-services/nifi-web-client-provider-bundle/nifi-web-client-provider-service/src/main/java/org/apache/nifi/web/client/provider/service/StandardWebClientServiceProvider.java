@@ -24,30 +24,31 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.proxy.ProxyConfiguration;
 import org.apache.nifi.proxy.ProxyConfigurationService;
 import org.apache.nifi.ssl.SSLContextProvider;
 import org.apache.nifi.web.client.StandardHttpUriBuilder;
-import org.apache.nifi.web.client.api.HttpUriBuilder;
-import org.apache.nifi.web.client.proxy.ProxyContext;
 import org.apache.nifi.web.client.StandardWebClientService;
-import org.apache.nifi.web.client.redirect.RedirectHandling;
-import org.apache.nifi.web.client.ssl.TlsContext;
+import org.apache.nifi.web.client.api.HttpUriBuilder;
 import org.apache.nifi.web.client.api.WebClientService;
 import org.apache.nifi.web.client.provider.api.WebClientServiceProvider;
+import org.apache.nifi.web.client.proxy.ProxyContext;
+import org.apache.nifi.web.client.redirect.RedirectHandling;
+import org.apache.nifi.web.client.ssl.TlsContext;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509KeyManager;
-import javax.net.ssl.X509TrustManager;
 import java.net.Proxy;
+import java.net.http.HttpClient.Version;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.X509ExtendedKeyManager;
+import javax.net.ssl.X509KeyManager;
+import javax.net.ssl.X509TrustManager;
 
 import static org.apache.nifi.proxy.ProxyConfigurationService.PROXY_CONFIGURATION_SERVICE;
 
@@ -56,8 +57,7 @@ import static org.apache.nifi.proxy.ProxyConfigurationService.PROXY_CONFIGURATIO
 public class StandardWebClientServiceProvider extends AbstractControllerService implements WebClientServiceProvider {
 
     static final PropertyDescriptor CONNECT_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("connect-timeout")
-            .displayName("Connect Timeout")
+            .name("Connect Timeout")
             .description("Maximum amount of time to wait before failing during initial socket connection")
             .required(true)
             .defaultValue("10 secs")
@@ -65,8 +65,7 @@ public class StandardWebClientServiceProvider extends AbstractControllerService 
             .build();
 
     static final PropertyDescriptor READ_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("read-timeout")
-            .displayName("Read Timeout")
+            .name("Read Timeout")
             .description("Maximum amount of time to wait before failing while reading socket responses")
             .required(true)
             .defaultValue("10 secs")
@@ -74,8 +73,7 @@ public class StandardWebClientServiceProvider extends AbstractControllerService 
             .build();
 
     static final PropertyDescriptor WRITE_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("write-timeout")
-            .displayName("Write Timeout")
+            .name("Write Timeout")
             .description("Maximum amount of time to wait before failing while writing socket requests")
             .required(true)
             .defaultValue("10 secs")
@@ -83,32 +81,49 @@ public class StandardWebClientServiceProvider extends AbstractControllerService 
             .build();
 
     static final PropertyDescriptor REDIRECT_HANDLING_STRATEGY = new PropertyDescriptor.Builder()
-            .name("redirect-handling-strategy")
-            .displayName("Redirect Handling Strategy")
+            .name("Redirect Handling Strategy")
             .description("Handling strategy for responding to HTTP 301 or 302 redirects received with a Location header")
             .required(true)
             .defaultValue(RedirectHandling.FOLLOWED.name())
             .allowableValues(RedirectHandling.values())
             .build();
 
+    static final PropertyDescriptor HTTP_PROTOCOL_VERSION = new PropertyDescriptor.Builder()
+            .name("HTTP Protocol Version")
+            .description("Preferred HTTP protocol version for requests")
+            .required(true)
+            .defaultValue(Version.HTTP_2.name())
+            .allowableValues(Version.values())
+            .build();
+
     static final PropertyDescriptor SSL_CONTEXT_SERVICE = new PropertyDescriptor.Builder()
-            .name("ssl-context-service")
-            .displayName("SSL Context Service")
+            .name("SSL Context Service")
             .description("SSL Context Service overrides system default TLS settings for HTTPS communication")
             .required(false)
             .identifiesControllerService(SSLContextProvider.class)
             .build();
 
-    static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             CONNECT_TIMEOUT,
             READ_TIMEOUT,
             WRITE_TIMEOUT,
             REDIRECT_HANDLING_STRATEGY,
+            HTTP_PROTOCOL_VERSION,
             SSL_CONTEXT_SERVICE,
             PROXY_CONFIGURATION_SERVICE
     );
 
     private StandardWebClientService webClientService;
+
+    @Override
+    public void migrateProperties(final PropertyConfiguration propertyConfiguration) {
+        propertyConfiguration.renameProperty("connect-timeout", CONNECT_TIMEOUT.getName());
+        propertyConfiguration.renameProperty("read-timeout", READ_TIMEOUT.getName());
+        propertyConfiguration.renameProperty("write-timeout", WRITE_TIMEOUT.getName());
+        propertyConfiguration.renameProperty("redirect-handling-strategy", REDIRECT_HANDLING_STRATEGY.getName());
+        propertyConfiguration.renameProperty("ssl-context-service", SSL_CONTEXT_SERVICE.getName());
+        propertyConfiguration.renameProperty(ProxyConfigurationService.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyConfigurationService.PROXY_CONFIGURATION_SERVICE.getName());
+    }
 
     @OnEnabled
     public void onEnabled(final ConfigurationContext context) {
@@ -121,11 +136,14 @@ public class StandardWebClientServiceProvider extends AbstractControllerService 
         standardWebClientService.setReadTimeout(readTimeout);
 
         final Duration writeTimeout = getDuration(context, WRITE_TIMEOUT);
-        standardWebClientService.setReadTimeout(writeTimeout);
+        standardWebClientService.setWriteTimeout(writeTimeout);
 
         final String redirectHandlingStrategy = context.getProperty(REDIRECT_HANDLING_STRATEGY).getValue();
         final RedirectHandling redirectHandling = RedirectHandling.valueOf(redirectHandlingStrategy);
         standardWebClientService.setRedirectHandling(redirectHandling);
+
+        final Version httpVersion = context.getProperty(HTTP_PROTOCOL_VERSION).asAllowableValue(Version.class);
+        standardWebClientService.setHttpVersion(httpVersion);
 
         final PropertyValue sslContextServiceProperty = context.getProperty(SSL_CONTEXT_SERVICE);
         if (sslContextServiceProperty.isSet()) {

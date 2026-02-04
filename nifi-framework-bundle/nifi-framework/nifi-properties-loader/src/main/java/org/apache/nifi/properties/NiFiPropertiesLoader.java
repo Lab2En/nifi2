@@ -116,7 +116,7 @@ public class NiFiPropertiesLoader {
      * @see NiFiPropertiesLoader#load(File)
      */
     public NiFiProperties load(String path) {
-        if (path != null && !path.trim().isEmpty()) {
+        if (path != null && !path.isBlank()) {
             return load(new File(path));
         } else {
             return loadDefault();
@@ -200,7 +200,6 @@ public class NiFiPropertiesLoader {
         private final Set<String> duplicateKeys = new HashSet<>();  // duplicate key with different values
         private final Set<String> redundantKeys = new HashSet<>();  // duplicate key with same value
         public DuplicateDetectingProperties() {
-            super();
         }
 
         public Set<String> duplicateKeySet() {

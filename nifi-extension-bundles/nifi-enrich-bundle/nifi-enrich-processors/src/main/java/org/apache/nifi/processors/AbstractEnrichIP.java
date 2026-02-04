@@ -20,13 +20,15 @@ import com.maxmind.geoip2.DatabaseReader;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.ValidationResult;
+import org.apache.nifi.components.Validator;
 import org.apache.nifi.components.resource.ResourceCardinality;
 import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
-import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
@@ -36,9 +38,6 @@ import org.apache.nifi.util.file.monitor.SynchronousFileWatcher;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -46,14 +45,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.regex.Pattern;
 
 public abstract class AbstractEnrichIP extends AbstractProcessor {
 
     public static final PropertyDescriptor GEO_DATABASE_FILE = new PropertyDescriptor.Builder()
-            // Name has been left untouched so that we don't cause a breaking change
-            // but ideally this should be renamed to MaxMind Database File or something similar
-            .name("Geo Database File")
-            .displayName("MaxMind Database File")
+            .name("MaxMind Database File")
             .description("Path to Maxmind IP Enrichment Database File")
             .required(true)
             .identifiesExternalResource(ResourceCardinality.SINGLE, ResourceType.FILE, ResourceType.DIRECTORY)
@@ -62,7 +59,6 @@ public abstract class AbstractEnrichIP extends AbstractProcessor {
 
     public static final PropertyDescriptor IP_ADDRESS_ATTRIBUTE = new PropertyDescriptor.Builder()
             .name("IP Address Attribute")
-            .displayName("IP Address Attribute")
             .required(true)
             .description("The name of an attribute whose value is a dotted decimal IP address for which enrichment should occur")
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -70,12 +66,30 @@ public abstract class AbstractEnrichIP extends AbstractProcessor {
             .addValidator(StandardValidators.createAttributeExpressionLanguageValidator(AttributeExpression.ResultType.STRING))
             .build();
 
+    private static final Pattern LOG_LEVEL_PATTERN = Pattern.compile("^(?:INFO|DEBUG|WARN|ERROR)$");
+    private static final Validator LOG_LEVEL_VALIDATOR = (subject, input, context) -> {
+        final boolean matches = LOG_LEVEL_PATTERN.matcher(input).matches();
+        if (matches || context.isExpressionLanguagePresent(input)) {
+            return (new ValidationResult.Builder())
+                    .subject(subject)
+                    .input(input)
+                    .valid(true)
+                    .build();
+        } else {
+            return (new ValidationResult.Builder())
+                    .subject(subject)
+                    .valid(false)
+                    .explanation(String.format("%s must be either INFO, DEBUG, WARN or ERROR", subject))
+                    .input(input)
+                    .build();
+        }
+    };
+
     public static final PropertyDescriptor LOG_LEVEL = new PropertyDescriptor.Builder()
             .name("Log Level")
-            .displayName("Log Level")
             .required(true)
             .description("The Log Level to use when an IP is not found in the database. Accepted values: INFO, DEBUG, WARN, ERROR.")
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .addValidator(LOG_LEVEL_VALIDATOR)
             .defaultValue(MessageLogLevel.WARN.toString())
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
@@ -94,8 +108,17 @@ public abstract class AbstractEnrichIP extends AbstractProcessor {
         DEBUG, INFO, WARN, ERROR
     }
 
-    private Set<Relationship> relationships;
-    private List<PropertyDescriptor> propertyDescriptors;
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_FOUND,
+            REL_NOT_FOUND
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            GEO_DATABASE_FILE,
+            IP_ADDRESS_ATTRIBUTE,
+            LOG_LEVEL
+        );
+
     final AtomicReference<DatabaseReader> databaseReaderRef = new AtomicReference<>(null);
     private volatile SynchronousFileWatcher watcher;
 
@@ -107,12 +130,12 @@ public abstract class AbstractEnrichIP extends AbstractProcessor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled
@@ -130,26 +153,17 @@ public abstract class AbstractEnrichIP extends AbstractProcessor {
         databaseReaderRef.set(reader);
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("Geo Database File", GEO_DATABASE_FILE.getName());
+    }
+
     @OnStopped
     public void closeReader() throws IOException {
         final DatabaseReader reader = databaseReaderRef.get();
         if (reader != null) {
             reader.close();
         }
-    }
-
-    @Override
-    protected void init(final ProcessorInitializationContext context) {
-        final Set<Relationship> rels = new HashSet<>();
-        rels.add(REL_FOUND);
-        rels.add(REL_NOT_FOUND);
-        this.relationships = Collections.unmodifiableSet(rels);
-
-        final List<PropertyDescriptor> props = new ArrayList<>();
-        props.add(GEO_DATABASE_FILE);
-        props.add(IP_ADDRESS_ATTRIBUTE);
-        props.add(LOG_LEVEL);
-        this.propertyDescriptors = Collections.unmodifiableList(props);
     }
 
     protected SynchronousFileWatcher getWatcher() {

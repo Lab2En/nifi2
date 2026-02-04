@@ -16,25 +16,24 @@
  */
 package org.apache.nifi.amqp.processors;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.atMost;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import com.rabbitmq.client.AMQP.BasicProperties;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ReturnListener;
+import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.util.MockComponentLog;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.nifi.logging.ComponentLog;
-import org.apache.nifi.util.MockComponentLog;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-
-import com.rabbitmq.client.AMQP.BasicProperties;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ReturnListener;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.atMost;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 public class AMQPPublisherTest {
 
@@ -67,7 +66,7 @@ public class AMQPPublisherTest {
     }
 
     @Test
-    public void validateSuccessfullPublishingAndRouting() throws Exception {
+    public void validateSuccessfulPublishingAndRouting() throws Exception {
         Map<String, List<String>> routingMap = new HashMap<>();
         routingMap.put("key1", Arrays.asList("queue1", "queue2"));
         Map<String, String> exchangeToRoutingKeymap = new HashMap<>();
@@ -86,7 +85,7 @@ public class AMQPPublisherTest {
     }
 
     @Test
-    public void validateSuccessfullPublishingAndUndeliverableRoutingKey() throws Exception {
+    public void validateSuccessfulPublishingAndUndeliverableRoutingKey() throws Exception {
         Map<String, List<String>> routingMap = new HashMap<>();
         routingMap.put("key1", Arrays.asList("queue1", "queue2"));
         Map<String, String> exchangeToRoutingKeymap = new HashMap<>();

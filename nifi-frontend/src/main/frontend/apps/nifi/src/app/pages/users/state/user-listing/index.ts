@@ -15,7 +15,8 @@
  * limitations under the License.
  */
 
-import { AccessPolicySummaryEntity, Revision, UserEntity, UserGroupEntity } from '../../../../state/shared';
+import { AccessPolicySummaryEntity, UserEntity, UserGroupEntity } from '../../../../state/shared';
+import { Revision } from '@nifi/shared';
 
 export interface SelectedTenant {
     id: string;
@@ -58,7 +59,6 @@ export interface CreateUserGroupResponse {
 export interface UpdateUserRequest {
     revision: Revision;
     id: string;
-    uri: string;
     userPayload: any;
     userGroupUpdate?: {
         requestId: number;
@@ -80,7 +80,6 @@ export interface UpdateUserGroupRequest {
     requestId?: number;
     revision: Revision;
     id: string;
-    uri: string;
     userGroupPayload: any;
 }
 

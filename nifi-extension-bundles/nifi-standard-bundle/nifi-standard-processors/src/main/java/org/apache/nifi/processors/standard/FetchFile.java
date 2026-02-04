@@ -35,6 +35,7 @@ import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.LogLevel;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -58,6 +59,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+// Note: we do not use @SupportsBatching annotation here because session commits must happen before files are deleted/moved.
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @Tags({"local", "files", "filesystem", "ingest", "ingress", "get", "source", "input", "fetch"})
 @CapabilityDescription("Reads the contents of a file from disk and streams it into the contents of an incoming FlowFile. Once this is done, the file is optionally moved elsewhere or deleted "
@@ -162,21 +164,21 @@ public class FetchFile extends AbstractProcessor {
         .required(true)
         .build();
     static final PropertyDescriptor FILE_NOT_FOUND_LOG_LEVEL = new PropertyDescriptor.Builder()
-        .name("Log level when file not found")
+        .name("File not Found Log Level")
         .description("Log level to use in case the file does not exist when the processor is triggered")
         .allowableValues(LogLevel.values())
         .defaultValue(LogLevel.ERROR.toString())
         .required(true)
         .build();
     static final PropertyDescriptor PERM_DENIED_LOG_LEVEL = new PropertyDescriptor.Builder()
-        .name("Log level when permission denied")
-        .description("Log level to use in case user " + System.getProperty("user.name") + " does not have sufficient permissions to read the file")
+        .name("Permission Denied Log Level")
+        .description("Log level to use if the current application user does not have sufficient permissions to read the file")
         .allowableValues(LogLevel.values())
         .defaultValue(LogLevel.ERROR.toString())
         .required(true)
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FILENAME,
             COMPLETION_STRATEGY,
             MOVE_DESTINATION_DIR,
@@ -212,7 +214,7 @@ public class FetchFile extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -251,7 +253,7 @@ public class FetchFile extends AbstractProcessor {
         Path filePath = file.toPath();
         if (!Files.exists(filePath) && !Files.notExists(filePath)) { // see https://docs.oracle.com/javase/tutorial/essential/io/check.html for more details
             getLogger().log(levelFileNotFound, "Could not fetch file {} from file system for {} because the existence of the file cannot be verified; routing to failure",
-                    new Object[] {file, flowFile});
+                    file, flowFile);
             session.transfer(session.penalize(flowFile), REL_FAILURE);
             return;
         } else if (!Files.exists(filePath)) {
@@ -265,7 +267,7 @@ public class FetchFile extends AbstractProcessor {
         final String user = System.getProperty("user.name");
         if (!isReadable(file)) {
             getLogger().log(levelPermDenied, "Could not fetch file {} from file system for {} due to user {} not having sufficient permissions to read the file; routing to permission.denied",
-                new Object[] {file, flowFile, user});
+                    file, flowFile, user);
             session.getProvenanceReporter().route(flowFile, REL_PERMISSION_DENIED);
             session.transfer(session.penalize(flowFile), REL_PERMISSION_DENIED);
             return;
@@ -281,7 +283,7 @@ public class FetchFile extends AbstractProcessor {
                 if (targetDir.exists() && (!isWritable(targetDir) || !isDirectory(targetDir))) {
                     getLogger().error("Could not fetch file {} from file system for {} because Completion Strategy is configured to move the original file to {}, "
                         + "but that is not a directory or user {} does not have permissions to write to that directory",
-                        new Object[] {file, flowFile, targetDir, user});
+                            file, flowFile, targetDir, user);
                     session.transfer(flowFile, REL_FAILURE);
                     return;
                 }
@@ -305,7 +307,7 @@ public class FetchFile extends AbstractProcessor {
                     if (targetFile.exists()) {
                         getLogger().error("Could not fetch file {} from file system for {} because Completion Strategy is configured to move the original file to {}, "
                             + "but a file with name {} already exists in that directory and the Move Conflict Strategy is configured for failure",
-                            new Object[] {file, flowFile, targetDir, file.getName()});
+                                file, flowFile, targetDir, file.getName());
                         session.transfer(flowFile, REL_FAILURE);
                         return;
                     }
@@ -332,6 +334,12 @@ public class FetchFile extends AbstractProcessor {
         session.commitAsync(() -> {
             performCompletionAction(completionStrategy, file, targetDirectoryName, fetched, context);
         });
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("Log level when file not found", FILE_NOT_FOUND_LOG_LEVEL.getName());
+        config.renameProperty("Log level when permission denied", PERM_DENIED_LOG_LEVEL.getName());
     }
 
     private void performCompletionAction(final String completionStrategy, final File file, final String targetDirectoryName, final FlowFile flowFile, final ProcessContext context) {

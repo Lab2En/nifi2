@@ -17,13 +17,13 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.apache.nifi.web.api.dto.util.TimeAdapter;
-
 import jakarta.xml.bind.annotation.XmlType;
 import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
+import org.apache.nifi.web.api.dto.util.TimeAdapter;
+
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DTO for serializing the status history of a single component across the cluster.
@@ -33,7 +33,7 @@ public class StatusHistoryDTO {
 
     private Date generated;
 
-    private LinkedHashMap<String, String> componentDetails;
+    private Map<String, String> componentDetails;
     private List<StatusDescriptorDTO> fieldDescriptors;
     private List<StatusSnapshotDTO> aggregateSnapshots;
     private List<NodeStatusSnapshotsDTO> nodeSnapshots;
@@ -57,11 +57,11 @@ public class StatusHistoryDTO {
      * @return key/value pairs that describe the component that the status history belongs to
      */
     @Schema(description = "A Map of key/value pairs that describe the component that the status history belongs to")
-    public LinkedHashMap<String, String> getComponentDetails() {
+    public Map<String, String> getComponentDetails() {
         return componentDetails;
     }
 
-    public void setComponentDetails(LinkedHashMap<String, String> componentDetails) {
+    public void setComponentDetails(Map<String, String> componentDetails) {
         this.componentDetails = componentDetails;
     }
 

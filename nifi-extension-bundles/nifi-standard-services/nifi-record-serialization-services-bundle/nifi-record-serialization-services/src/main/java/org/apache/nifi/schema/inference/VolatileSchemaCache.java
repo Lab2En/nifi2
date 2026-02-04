@@ -26,6 +26,7 @@ import org.apache.nifi.components.PropertyDescriptor.Builder;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSchemaCacheService;
 import org.apache.nifi.serialization.record.DataType;
@@ -38,7 +39,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,8 +49,7 @@ import java.util.UUID;
 public class VolatileSchemaCache extends AbstractControllerService implements RecordSchemaCacheService {
 
     static final PropertyDescriptor MAX_SIZE = new Builder()
-        .name("max-cache-size")
-        .displayName("Maximum Cache Size")
+        .name("Maximum Cache Size")
         .description("The maximum number of Schemas to cache.")
         .required(true)
         .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
@@ -60,11 +59,15 @@ public class VolatileSchemaCache extends AbstractControllerService implements Re
 
     private static final Base64.Encoder ENCODER = Base64.getEncoder().withoutPadding();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        MAX_SIZE
+    );
+
     private volatile Cache<String, RecordSchema> cache;
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return Collections.singletonList(MAX_SIZE);
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -108,6 +111,11 @@ public class VolatileSchemaCache extends AbstractControllerService implements Re
     public Optional<RecordSchema> getSchema(final String schemaIdentifier) {
         final RecordSchema cachedSchema = cache.getIfPresent(schemaIdentifier);
         return Optional.ofNullable(cachedSchema);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("max-cache-size", MAX_SIZE.getName());
     }
 
     protected String createIdentifier(final RecordSchema schema) {

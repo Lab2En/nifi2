@@ -27,6 +27,7 @@ import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.type.RecordDataType;
+import org.apache.nifi.util.NoOpProcessor;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.bson.Document;
@@ -45,6 +46,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -62,12 +65,11 @@ public class MongoDBLookupServiceIT extends AbstractMongoIT {
 
     @BeforeEach
     public void before() throws Exception {
-        runner = TestRunners.newTestRunner(TestLookupServiceProcessor.class);
+        runner = TestRunners.newTestRunner(NoOpProcessor.class);
         service = new MongoDBLookupService();
         controllerService = new MongoDBControllerService();
         runner.addControllerService("Client Service", service);
         runner.addControllerService("Client Service 2", controllerService);
-        runner.setProperty(TestLookupServiceProcessor.CLIENT_SERVICE, "Client Service");
         runner.setProperty(service, MongoDBLookupService.DATABASE_NAME, DB_NAME);
         runner.setProperty(service, MongoDBLookupService.COLLECTION_NAME, COL_NAME);
         runner.setProperty(controllerService, MongoDBControllerService.URI, MONGO_CONTAINER.getConnectionString());
@@ -122,7 +124,7 @@ public class MongoDBLookupServiceIT extends AbstractMongoIT {
             fail();
         }
 
-        assertTrue(!result.isPresent());
+        assertFalse(result.isPresent());
     }
 
     @Test
@@ -211,7 +213,7 @@ public class MongoDBLookupServiceIT extends AbstractMongoIT {
         Optional result = service.lookup(criteria);
 
         assertNotNull(result.get(), "The value was null.");
-        assertTrue(result.get() instanceof MapRecord, "The value was wrong.");
+        assertInstanceOf(MapRecord.class, result.get(), "The value was wrong.");
         MapRecord record = (MapRecord) result.get();
         RecordSchema subSchema = ((RecordDataType) record.getSchema().getField("subrecordField").get().getDataType()).getChildSchema();
 
@@ -238,7 +240,7 @@ public class MongoDBLookupServiceIT extends AbstractMongoIT {
             fail();
         }
 
-        assertTrue(!result.isPresent());
+        assertFalse(result.isPresent());
     }
 
     @Test

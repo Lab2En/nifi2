@@ -52,6 +52,7 @@ import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -71,7 +72,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -122,17 +122,15 @@ public class PutEmail extends AbstractProcessor {
     );
 
     public static final PropertyDescriptor AUTHORIZATION_MODE = new PropertyDescriptor.Builder()
-            .name("authorization-mode")
-            .displayName("Authorization Mode")
+            .name("Authorization Mode")
             .description("How to authorize sending email on the user's behalf.")
             .required(true)
             .allowableValues(PASSWORD_BASED_AUTHORIZATION_MODE, OAUTH_AUTHORIZATION_MODE)
-            .defaultValue(PASSWORD_BASED_AUTHORIZATION_MODE.getValue())
+            .defaultValue(PASSWORD_BASED_AUTHORIZATION_MODE)
             .build();
 
     public static final PropertyDescriptor OAUTH2_ACCESS_TOKEN_PROVIDER = new PropertyDescriptor.Builder()
-            .name("oauth2-access-token-provider")
-            .displayName("OAuth2 Access Token Provider")
+            .name("OAuth2 Access Token Provider")
             .description("OAuth2 service that can provide access tokens.")
             .identifiesControllerService(OAuth2AccessTokenProvider.class)
             .dependsOn(AUTHORIZATION_MODE, OAUTH_AUTHORIZATION_MODE)
@@ -164,8 +162,7 @@ public class PutEmail extends AbstractProcessor {
             .defaultValue("true")
             .build();
     public static final PropertyDescriptor SMTP_TLS = new PropertyDescriptor.Builder()
-            .name("SMTP TLS")
-            .displayName("SMTP STARTTLS")
+            .name("SMTP START TLS")
             .description("Flag indicating whether Opportunistic TLS should be enabled using STARTTLS command")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -189,8 +186,7 @@ public class PutEmail extends AbstractProcessor {
             .defaultValue("NiFi")
             .build();
     public static final PropertyDescriptor ATTRIBUTE_NAME_REGEX = new PropertyDescriptor.Builder()
-            .name("attribute-name-regex")
-            .displayName("Attributes to Send as Headers (Regex)")
+            .name("Attributes to Send as Headers Regular Expression")
             .description("A Regular Expression that is matched against all FlowFile attribute names. "
                     + "Any attribute whose name matches the regex will be added to the Email messages as a Header. "
                     + "If not specified, no FlowFile attributes will be added as headers.")
@@ -269,8 +265,7 @@ public class PutEmail extends AbstractProcessor {
             .defaultValue("false")
             .build();
     public static final PropertyDescriptor CONTENT_AS_MESSAGE = new PropertyDescriptor.Builder()
-            .name("email-ff-content-as-message")
-            .displayName("Flow file content as message")
+            .name("FlowFile Content as Message")
             .description("Specifies whether or not the FlowFile content should be the message of the email. If true, the 'Message' property is ignored.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -285,8 +280,7 @@ public class PutEmail extends AbstractProcessor {
             .defaultValue("false")
             .build();
     public static final PropertyDescriptor INPUT_CHARACTER_SET = new PropertyDescriptor.Builder()
-            .name("input-character-set")
-            .displayName("Input Character Set")
+            .name("Input Character Set")
             .description("Specifies the character set of the FlowFile contents "
                     + "for reading input FlowFile contents to generate the message body "
                     + "or as an attachment to the message. "
@@ -296,7 +290,7 @@ public class PutEmail extends AbstractProcessor {
             .defaultValue(StandardCharsets.UTF_8.name())
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             SMTP_HOSTNAME,
             SMTP_PORT,
             AUTHORIZATION_MODE,
@@ -340,14 +334,14 @@ public class PutEmail extends AbstractProcessor {
      * Mapping of the mail properties to the NiFi PropertyDescriptors that will be evaluated at runtime
      */
     private static final Map<String, PropertyDescriptor> propertyToContext = Map.of(
-    "mail.smtp.host", SMTP_HOSTNAME,
-    "mail.smtp.port", SMTP_PORT,
-    "mail.smtp.socketFactory.port", SMTP_PORT,
-    "mail.smtp.socketFactory.class", SMTP_SOCKET_FACTORY,
-    "mail.smtp.auth", SMTP_AUTH,
-    "mail.smtp.starttls.enable", SMTP_TLS,
-    "mail.smtp.user", SMTP_USERNAME,
-    "mail.smtp.password", SMTP_PASSWORD
+        "mail.smtp.host", SMTP_HOSTNAME,
+        "mail.smtp.port", SMTP_PORT,
+        "mail.smtp.socketFactory.port", SMTP_PORT,
+        "mail.smtp.socketFactory.class", SMTP_SOCKET_FACTORY,
+        "mail.smtp.auth", SMTP_AUTH,
+        "mail.smtp.starttls.enable", SMTP_TLS,
+        "mail.smtp.user", SMTP_USERNAME,
+        "mail.smtp.password", SMTP_PASSWORD
     );
 
     @Override
@@ -357,7 +351,7 @@ public class PutEmail extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -389,21 +383,20 @@ public class PutEmail extends AbstractProcessor {
 
     private volatile Pattern attributeNamePattern = null;
 
-    private volatile Optional<OAuth2AccessTokenProvider> oauth2AccessTokenProviderOptional;
+    private volatile OAuth2AccessTokenProvider oauth2AccessTokenProvider;
 
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
         final String attributeNameRegex = context.getProperty(ATTRIBUTE_NAME_REGEX).getValue();
         this.attributeNamePattern = attributeNameRegex == null ? null : Pattern.compile(attributeNameRegex);
 
-        if (context.getProperty(OAUTH2_ACCESS_TOKEN_PROVIDER).isSet()) {
-            OAuth2AccessTokenProvider oauth2AccessTokenProvider = context.getProperty(OAUTH2_ACCESS_TOKEN_PROVIDER).asControllerService(OAuth2AccessTokenProvider.class);
+        if (context.getProperty(AUTHORIZATION_MODE).getValue().equals(OAUTH_AUTHORIZATION_MODE.getValue())) {
+            oauth2AccessTokenProvider =
+                    context.getProperty(OAUTH2_ACCESS_TOKEN_PROVIDER).asControllerService(OAuth2AccessTokenProvider.class);
 
             oauth2AccessTokenProvider.getAccessDetails();
-
-            oauth2AccessTokenProviderOptional = Optional.of(oauth2AccessTokenProvider);
         } else {
-            oauth2AccessTokenProviderOptional = Optional.empty();
+            oauth2AccessTokenProvider = null;
         }
     }
 
@@ -508,6 +501,16 @@ public class PutEmail extends AbstractProcessor {
         }
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("authorization-mode", AUTHORIZATION_MODE.getName());
+        config.renameProperty("oauth2-access-token-provider", OAUTH2_ACCESS_TOKEN_PROVIDER.getName());
+        config.renameProperty("SMTP TLS", SMTP_TLS.getName());
+        config.renameProperty("attribute-name-regex", ATTRIBUTE_NAME_REGEX.getName());
+        config.renameProperty("email-ff-content-as-message", CONTENT_AS_MESSAGE.getName());
+        config.renameProperty("input-character-set", INPUT_CHARACTER_SET.getName());
+    }
+
     private String getMessage(final FlowFile flowFile, final ProcessContext context, final ProcessSession session) {
         String messageText = "";
 
@@ -562,22 +565,29 @@ public class PutEmail extends AbstractProcessor {
         final Properties properties = new Properties();
 
         for (final Entry<String, PropertyDescriptor> entry : propertyToContext.entrySet()) {
+            final String mailProperty = entry.getKey();
+            final PropertyDescriptor propertyDescriptor = entry.getValue();
+
+            if (propertyDescriptor == SMTP_PASSWORD
+                    && !context.getProperty(AUTHORIZATION_MODE).getValue().equals(PASSWORD_BASED_AUTHORIZATION_MODE.getValue())) {
+                continue; // password property is only available for password based authentication; skip evaluation otherwise
+            }
+
             // Evaluate the property descriptor against the flow file
-            final String flowFileValue = context.getProperty(entry.getValue()).evaluateAttributeExpressions(flowFile).getValue();
-            final String property = entry.getKey();
+            final String flowFileValue = context.getProperty(propertyDescriptor).evaluateAttributeExpressions(flowFile).getValue();
 
             // Nullable values are not allowed, so filter out
             if (null != flowFileValue) {
-                properties.setProperty(property, flowFileValue);
+                properties.setProperty(mailProperty, flowFileValue);
             }
         }
 
-        oauth2AccessTokenProviderOptional.ifPresent(oAuth2AccessTokenProvider -> {
-            String accessToken = oAuth2AccessTokenProvider.getAccessDetails().getAccessToken();
+        if (oauth2AccessTokenProvider != null) {
+            String accessToken = oauth2AccessTokenProvider.getAccessDetails().getAccessToken();
 
             properties.setProperty("mail.smtp.password", accessToken);
             properties.put("mail.smtp.auth.mechanisms", "XOAUTH2");
-        });
+        }
 
         for (final PropertyDescriptor descriptor : context.getProperties().keySet()) {
             if (descriptor.isDynamic()) {

@@ -24,6 +24,8 @@ import org.apache.nifi.json.JsonRecordSetWriter;
 import org.apache.nifi.json.JsonTreeReader;
 import org.apache.nifi.provenance.ProvenanceEventType;
 import org.apache.nifi.schema.access.SchemaAccessUtils;
+import org.apache.nifi.schema.inference.SchemaInferenceUtil;
+import org.apache.nifi.serialization.DateTimeUtils;
 import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
 import org.apache.nifi.serialization.record.MockRecordParser;
@@ -54,6 +56,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,7 +65,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
+class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
     private static final int DATE_YEAR = 2020;
     private static final int DATE_MONTH = 11;
     private static final int DATE_DAY = 27;
@@ -84,7 +87,8 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
     private static RecordSchema errorTestSchema;
 
     private MockSchemaRegistry registry;
-    private JsonRecordSetWriter writer;
+    private RecordSetWriterFactory writer;
+    private RecordReaderFactory reader;
 
     @Override
     public Class<? extends AbstractPutElasticsearch> getTestProcessor() {
@@ -92,7 +96,7 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
     }
 
     @BeforeAll
-    public static void setUpBeforeClass() throws Exception {
+    static void setUpBeforeClass() throws Exception {
         flowFileContentMaps = JsonUtils.readString(Paths.get(TEST_DIR, "flowFileContentMaps.json"));
         simpleSchema = getRecordSchema(Paths.get(TEST_DIR, "simpleSchema.json"));
         recordPathTestSchema = getRecordSchema(Paths.get(TEST_DIR, "recordPathTestSchema.json"));
@@ -111,7 +115,7 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         runner.assertValid(registry);
         runner.enableControllerService(registry);
 
-        final RecordReaderFactory reader = new JsonTreeReader();
+        reader = new JsonTreeReader();
         runner.addControllerService("reader", reader);
         runner.setProperty(reader, SchemaAccessUtils.SCHEMA_REGISTRY, "registry");
         runner.setProperty(reader, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.SCHEMA_NAME_PROPERTY);
@@ -209,14 +213,14 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         assertTrue(runner.getProcessContext().getProperties().keySet().stream().noneMatch(pd -> "put-es-record-not_found-is-error".equals(pd.getName())));
 
         assertTrue(runner.getProcessContext().getProperties().containsKey(PutElasticsearchRecord.RESULT_RECORD_WRITER));
-        final RecordSetWriterFactory writer = runner.getControllerService(
+        final RecordSetWriterFactory migratedWriter = runner.getControllerService(
                 runner.getProcessContext().getProperty(PutElasticsearchRecord.RESULT_RECORD_WRITER.getName()).getValue(),
                 RecordSetWriterFactory.class
         );
-        assertNotNull(writer);
-        assertTrue(runner.isControllerServiceEnabled(writer));
+        assertNotNull(migratedWriter);
+        assertTrue(runner.isControllerServiceEnabled(migratedWriter));
 
-        assertEquals(1, result.getPropertiesRenamed().size());
+        assertTrue(1 < result.getPropertiesRenamed().size());
         assertEquals(AbstractPutElasticsearch.NOT_FOUND_IS_SUCCESSFUL.getName(), result.getPropertiesRenamed().get("put-es-record-not_found-is-error"));
         assertEquals(0, result.getPropertiesRemoved().size());
         assertEquals(1, result.getPropertiesUpdated().size());
@@ -264,7 +268,8 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         runner.setProperty("another", "${blank}");
         runner.setEnvironmentVariableValue("slices", "auto");
         runner.setEnvironmentVariableValue("version", "/version");
-        testWithRequestParametersAndBulkHeaders(null);
+        runner.setEnvironmentVariableValue("accept", "application/json");
+        testWithRequestParametersAndBulkHeadersAndRequestHeaders(null);
     }
 
     @Test
@@ -274,7 +279,8 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         attributes.put("version", "/version");
         attributes.put("slices", "auto");
         attributes.put("blank", " ");
-        testWithRequestParametersAndBulkHeaders(attributes);
+        attributes.put("accept", "application/json");
+        testWithRequestParametersAndBulkHeadersAndRequestHeaders(attributes);
     }
 
     @Test
@@ -288,6 +294,7 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         runner.addControllerService("mockReader", mockReader);
         runner.setProperty(PutElasticsearchRecord.RECORD_READER, "mockReader");
         runner.enableControllerService(mockReader);
+        runner.setAllowRecursiveReads(true);
 
         basicTest(0, 0, 1);
     }
@@ -299,8 +306,8 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
     }
 
     @Test
-    void testRetriable() {
-        clientService.setThrowRetriableError(true);
+    void testRetryable() {
+        clientService.setThrowRetryableError(true);
         basicTest(0, 1, 0);
     }
 
@@ -319,7 +326,7 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
             final long empties = items.stream().filter(item -> ("".equals(item.getFields().get("msg")))).count();
             final long nulls = items.stream().filter(item -> null == item.getFields().get("msg")).count();
             final long timestamp = items.stream().filter(item ->
-                    LOCAL_DATE_TIME.format(DateTimeFormatter.ofPattern(RecordFieldType.TIMESTAMP.getDefaultFormat())).equals(item.getFields().get("@timestamp"))).count();
+                    LOCAL_DATE_TIME.format(DateTimeFormatter.ofPattern(Objects.requireNonNull(RecordFieldType.TIMESTAMP.getDefaultFormat()))).equals(item.getFields().get("@timestamp"))).count();
             final long timestampDefault = items.stream().filter(item ->  "test_timestamp".equals(item.getFields().get("@timestamp"))).count();
             final long ts = items.stream().filter(item ->  item.getFields().get("ts") != null).count();
             final long id = items.stream().filter(item ->  item.getFields().get("id") != null).count();
@@ -378,9 +385,9 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
     }
 
     @Test
-    void testTimestampDateFormatAndScriptRecordPath() throws Exception {
+    void testTimestampDateFormatAndScriptWithParamsRecordPath() throws Exception {
         final Map<String, Object> script =
-                JsonUtils.readMap(JsonUtils.readString(Paths.get(TEST_DIR, "script.json")));
+                JsonUtils.readMap(JsonUtils.readString(Paths.get(TEST_DIR, "scriptParams.json")));
         clientService.setEvalConsumer((final List<IndexOperationRequest> items) -> {
             final long testTypeCount = items.stream().filter(item ->  "test_type".equals(item.getType())).count();
             final long messageTypeCount = items.stream().filter(item ->  "message".equals(item.getType())).count();
@@ -433,6 +440,67 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         runner.assertTransferCount(AbstractPutElasticsearch.REL_ERRORS, 0);
         runner.assertTransferCount(AbstractPutElasticsearch.REL_SUCCESSFUL, 1);
         runner.assertTransferCount(AbstractPutElasticsearch.REL_ERROR_RESPONSES, 0);
+
+
+        // re-run the same test but with schema inference rather
+        runner.disableControllerService(reader);
+        runner.removeProperty(reader, SchemaAccessUtils.SCHEMA_REGISTRY);
+        runner.setProperty(reader, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaInferenceUtil.INFER_SCHEMA);
+        runner.setProperty(reader, DateTimeUtils.DATE_FORMAT, "dd/MM/yyyy");
+        runner.assertValid(reader);
+        runner.enableControllerService(reader);
+
+        runner.clearTransferState();
+        attributes.remove(SCHEMA_NAME_ATTRIBUTE);
+
+        // schema inference doesn't convert longs to date/timestamp values, the FlowFile content must match the DATE_FORMAT already
+        flowFileContents = flowFileContents.replaceFirst("\\d{13}", "\"" + LOCAL_DATE.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "\"");
+        runner.enqueue(flowFileContents, attributes);
+        runner.run();
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ORIGINAL, 1);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_FAILURE, 0);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_RETRY, 0);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ERRORS, 0);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_SUCCESSFUL, 1);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ERROR_RESPONSES, 0);
+    }
+
+    @Test
+    void testStringifiedScriptWithParamsRecordPath() throws Exception {
+        final Map<String, Object> script =
+                JsonUtils.readMap(JsonUtils.readString(Paths.get(TEST_DIR, "scriptParams.json")));
+        clientService.setEvalConsumer((final List<IndexOperationRequest> items) -> {
+            final long messageTypeCount = items.stream().filter(item ->  "message".equals(item.getType())).count();
+            final long testIndexCount = items.stream().filter(item ->  "test_index".equals(item.getIndex())).count();
+            final long indexOperationCount = items.stream().filter(item ->  IndexOperationRequest.Operation.Index.equals(item.getOperation())).count();
+            final long idCount = items.stream().filter(item ->  item.getFields().get("id") != null).count();
+            final long scriptCount = items.stream().filter(item ->  script.equals(item.getScript())).count();
+            assertEquals(1, messageTypeCount, getUnexpectedCountMsg("message type"));
+            assertEquals(1, testIndexCount, getUnexpectedCountMsg("test index"));
+            assertEquals(1, indexOperationCount, getUnexpectedCountMsg("index operation"));
+            assertEquals(1, idCount, getUnexpectedCountMsg("id"));
+            assertEquals(1, scriptCount, getUnexpectedCountMsg("script"));
+        });
+
+        registry.addSchema(RECORD_PATH_TEST_SCHEMA, recordPathTestSchema);
+        runner.setProperty(PutElasticsearchRecord.INDEX_OP, "${operation}");
+        runner.setProperty(PutElasticsearchRecord.RETAIN_ID_FIELD, "true");
+        runner.setProperty(PutElasticsearchRecord.INDEX_OP_RECORD_PATH, "/op");
+        runner.setProperty(PutElasticsearchRecord.TYPE_RECORD_PATH, "/type");
+        runner.setProperty(PutElasticsearchRecord.INDEX_RECORD_PATH, "/index");
+        runner.setProperty(PutElasticsearchRecord.SCRIPT_RECORD_PATH, "/script_stringified");
+        final Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put(SCHEMA_NAME_ATTRIBUTE, RECORD_PATH_TEST_SCHEMA);
+        attributes.put("operation", "index");
+        final String flowFileContents = JsonUtils.readString(Paths.get(TEST_DIR, "2_flowFileContents_stringified.json"));
+        runner.enqueue(flowFileContents, attributes);
+        runner.run();
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ORIGINAL, 1);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_FAILURE, 0);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_RETRY, 0);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ERRORS, 0);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_SUCCESSFUL, 1);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ERROR_RESPONSES, 0);
     }
 
     @Test
@@ -443,7 +511,7 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
             final long nullIdCount = items.stream().filter(item -> item.getId() == null).count();
             final long recIdCount = items.stream().filter(item -> StringUtils.startsWith(item.getId(), "rec-")).count();
             final long timestampCount = items.stream().filter(item ->
-                    LOCAL_TIME.format(DateTimeFormatter.ofPattern(RecordFieldType.TIME.getDefaultFormat())).equals(item.getFields().get("@timestamp"))).count();
+                    LOCAL_TIME.format(DateTimeFormatter.ofPattern(Objects.requireNonNull(RecordFieldType.TIME.getDefaultFormat()))).equals(item.getFields().get("@timestamp"))).count();
             assertEquals(5, nullTypeCount, getUnexpectedCountMsg("null type"));
             assertEquals(1, messageTypeCount, getUnexpectedCountMsg("message type"));
             assertEquals(2, nullIdCount, getUnexpectedCountMsg("null id"));
@@ -479,7 +547,7 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
             final long upsert = items.stream().filter(item ->  IndexOperationRequest.Operation.Upsert.equals(item.getOperation())).count();
             final long delete = items.stream().filter(item ->  IndexOperationRequest.Operation.Delete.equals(item.getOperation())).count();
             final long timestampCount = items.stream().filter(item -> Long.valueOf(101).equals(item.getFields().get("@timestamp"))).count();
-            final long noTimestampCount = items.stream().filter(item -> !item.getFields().containsKey("@timestamp") ).count();
+            final long noTimestampCount = items.stream().filter(item -> !item.getFields().containsKey("@timestamp")).count();
             assertEquals(1, index, getUnexpectedCountMsg("index"));
             assertEquals(2, create, getUnexpectedCountMsg("create"));
             assertEquals(1, update, getUnexpectedCountMsg("update"));
@@ -599,11 +667,13 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         clientService.setEvalConsumer((final List<IndexOperationRequest> items) -> {
             final long msg = items.stream().filter(item ->  (item.getFields().get("msg") != null)).count();
             final long timestamp = items.stream().filter(item ->
-                    LOCAL_DATE_TIME.format(DateTimeFormatter.ofPattern(RecordFieldType.TIMESTAMP.getDefaultFormat())).equals(item.getFields().get("ts"))).count(); // "yyyy-MM-dd HH:mm:ss"
+                    LOCAL_DATE_TIME.format(
+                            DateTimeFormatter.ofPattern(Objects.requireNonNull(RecordFieldType.TIMESTAMP.getDefaultFormat()))
+                    ).equals(item.getFields().get("ts"))).count(); // "yyyy-MM-dd HH:mm:ss"
             final long date = items.stream().filter(item ->
-                    LOCAL_DATE.format(DateTimeFormatter.ofPattern(RecordFieldType.DATE.getDefaultFormat())).equals(item.getFields().get("date"))).count(); // "yyyy-MM-dd"
+                    LOCAL_DATE.format(DateTimeFormatter.ofPattern(Objects.requireNonNull(RecordFieldType.DATE.getDefaultFormat()))).equals(item.getFields().get("date"))).count(); // "yyyy-MM-dd"
             final long time = items.stream().filter(item ->
-                    LOCAL_TIME.format(DateTimeFormatter.ofPattern(RecordFieldType.TIME.getDefaultFormat())).equals(item.getFields().get("time"))).count(); // "HH:mm:ss"
+                    LOCAL_TIME.format(DateTimeFormatter.ofPattern(Objects.requireNonNull(RecordFieldType.TIME.getDefaultFormat()))).equals(item.getFields().get("time"))).count(); // "HH:mm:ss"
             final long choiceTs = items.stream().filter(item ->
                     LOCAL_DATE_TIME.format(DateTimeFormatter.ofPattern(RecordFieldType.TIMESTAMP.getDefaultFormat())).equals(item.getFields().get("choice_ts"))).count();
             final long choiceNotTs = items.stream().filter(item ->  "not-timestamp".equals(item.getFields().get("choice_ts"))).count();
@@ -724,6 +794,8 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
 
     @Test
     void testFailedRecordsOutput() throws Exception {
+        runner.setProperty(PutElasticsearchRecord.ID_RECORD_PATH, "/id");
+        runner.setProperty(PutElasticsearchRecord.RETAIN_ID_FIELD, "true");
         runner.setProperty(PutElasticsearchRecord.NOT_FOUND_IS_SUCCESSFUL, "true");
         runner.setProperty(PutElasticsearchRecord.LOG_ERROR_RESPONSES, "true");
         final int errorCount = 3;
@@ -732,7 +804,34 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
 
         runner.assertTransferCount(AbstractPutElasticsearch.REL_ORIGINAL, 1);
         runner.assertTransferCount(AbstractPutElasticsearch.REL_ERRORS, 1);
+        // id should remain in errors output
+        assertTrue(runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_ERRORS).getFirst().getContent().contains("\"id\":\"5\""));
         runner.assertTransferCount(AbstractPutElasticsearch.REL_SUCCESSFUL, 1);
+        // id should remain in successful output
+        assertTrue(runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_SUCCESSFUL).getFirst().getContent().contains("\"id\":\"1\""));
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ERROR_RESPONSES, 0);
+        runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_ERRORS).getFirst().assertAttributeEquals(PutElasticsearchRecord.ATTR_RECORD_COUNT, String.valueOf(errorCount));
+        runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_SUCCESSFUL).getFirst().assertAttributeEquals(PutElasticsearchRecord.ATTR_RECORD_COUNT,
+                String.valueOf(successCount));
+    }
+
+    @Test
+    void testFailedRecordsOutputRemoveIdField() throws Exception {
+        runner.setProperty(PutElasticsearchRecord.ID_RECORD_PATH, "/id");
+        runner.setProperty(PutElasticsearchRecord.RETAIN_ID_FIELD, "false");
+        runner.setProperty(PutElasticsearchRecord.NOT_FOUND_IS_SUCCESSFUL, "true");
+        runner.setProperty(PutElasticsearchRecord.LOG_ERROR_RESPONSES, "true");
+        final int errorCount = 3;
+        final int successCount = 4;
+        testErrorRelationship(errorCount, 1, successCount);
+
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ORIGINAL, 1);
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_ERRORS, 1);
+        // id should remain in errors output
+        assertTrue(runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_ERRORS).getFirst().getContent().contains("\"id\":\"5\""));
+        runner.assertTransferCount(AbstractPutElasticsearch.REL_SUCCESSFUL, 1);
+        // id should be removed from successful output
+        assertFalse(runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_SUCCESSFUL).getFirst().getContent().contains("\"id\":\"1\""));
         runner.assertTransferCount(AbstractPutElasticsearch.REL_ERROR_RESPONSES, 0);
         runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_ERRORS).getFirst().assertAttributeEquals(PutElasticsearchRecord.ATTR_RECORD_COUNT, String.valueOf(errorCount));
         runner.getFlowFilesForRelationship(AbstractPutElasticsearch.REL_SUCCESSFUL).getFirst().assertAttributeEquals(PutElasticsearchRecord.ATTR_RECORD_COUNT,
@@ -889,19 +988,25 @@ public class PutElasticsearchRecordTest extends AbstractPutElasticsearchTest {
         runner.assertTransferCount(AbstractPutElasticsearch.REL_ERROR_RESPONSES, 0);
     }
 
-    private void testWithRequestParametersAndBulkHeaders(final Map<String, String> attributes) {
+    private void testWithRequestParametersAndBulkHeadersAndRequestHeaders(final Map<String, String> attributes) {
         runner.setProperty("refresh", "true");
         runner.setProperty("slices", "${slices}");
         runner.setProperty(AbstractPutElasticsearch.BULK_HEADER_PREFIX + "routing", "/routing");
         runner.setProperty(AbstractPutElasticsearch.BULK_HEADER_PREFIX + "version", "${version}");
         runner.setProperty(AbstractPutElasticsearch.BULK_HEADER_PREFIX + "empty", "${empty}");
+        runner.setProperty(ElasticsearchRestProcessor.DYNAMIC_PROPERTY_PREFIX_REQUEST_HEADER + "Accept", "${accept}");
         runner.setEnvironmentVariableValue("blank", " ");
         runner.assertValid();
 
-        clientService.setEvalParametersConsumer( (final Map<String, String> params) -> {
+        clientService.setEvalParametersConsumer((final Map<String, String> params) -> {
             assertEquals(2, params.size());
             assertEquals("true", params.get("refresh"));
             assertEquals("auto", params.get("slices"));
+        });
+
+        clientService.setEvalHeadersConsumer((final Map<String, String> headers) -> {
+            assertEquals(1, headers.size());
+            assertEquals("application/json", headers.get("Accept"));
         });
 
         final Consumer<List<IndexOperationRequest>> consumer = (final List<IndexOperationRequest> items) -> {

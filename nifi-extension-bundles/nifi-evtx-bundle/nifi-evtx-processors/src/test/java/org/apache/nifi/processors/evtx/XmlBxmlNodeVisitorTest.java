@@ -39,15 +39,15 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
 
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
@@ -319,7 +319,7 @@ public class XmlBxmlNodeVisitorTest {
         verify(child).accept(captor.capture());
 
         BxmlNodeVisitor value = captor.getValue();
-        assertTrue(value instanceof XmlBxmlNodeVisitor);
+        assertInstanceOf(XmlBxmlNodeVisitor.class, value);
         assertNotEquals(xmlBxmlNodeVisitor, value);
     }
 }

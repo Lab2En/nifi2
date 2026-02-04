@@ -18,16 +18,13 @@
 import { Component, forwardRef, Input } from '@angular/core';
 import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
-import { NifiTooltipDirective, TextTip } from '@nifi/shared';
-import { SelectOption } from 'libs/shared/src';
+import { NifiTooltipDirective, TextTip, SelectOption } from '@nifi/shared';
 
 @Component({
     selector: 'destination-remote-process-group',
-    standalone: true,
     templateUrl: './destination-remote-process-group.component.html',
     styleUrls: ['./destination-remote-process-group.component.scss'],
     imports: [

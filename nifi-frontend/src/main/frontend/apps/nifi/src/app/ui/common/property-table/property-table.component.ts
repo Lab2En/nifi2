@@ -30,26 +30,27 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule } from '@angular/material/dialog';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
-import { NiFiCommon, NifiTooltipDirective, TextTip } from '@nifi/shared';
+import { NiFiCommon, NifiTooltipDirective, Parameter, TextTip } from '@nifi/shared';
 import { NgTemplateOutlet } from '@angular/common';
 import {
     AllowableValueEntity,
     ComponentHistory,
     InlineServiceCreationRequest,
     InlineServiceCreationResponse,
-    Parameter,
     ParameterConfig,
     ParameterContextEntity,
     Property,
     PropertyDependency,
     PropertyDescriptor,
-    PropertyTipInput
+    PropertyTipInput,
+    PropertyValueTipInput
 } from '../../../state/shared';
 import { PropertyTip } from '../tooltips/property-tip/property-tip.component';
 import { NfEditor } from './editors/nf-editor/nf-editor.component';
 import {
     CdkConnectedOverlay,
     CdkOverlayOrigin,
+    ConnectedPosition,
     ConnectionPositionPair,
     OriginConnectionPosition,
     OverlayConnectionPosition
@@ -59,21 +60,11 @@ import { Observable, take } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ConvertToParameterResponse } from '../../../pages/flow-designer/service/parameter-helper.service';
 import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
-
-export interface PropertyItem extends Property {
-    id: number;
-    triggerEdit: boolean;
-    deleted: boolean;
-    dirty: boolean;
-    added: boolean;
-    type: 'required' | 'userDefined' | 'optional';
-    savedValue: string | null;
-    serviceLink?: string[];
-}
+import { PropertyItem } from './property-item';
+import { PropertyValueTip } from '../tooltips/property-value-tip/property-value-tip.component';
 
 @Component({
     selector: 'property-table',
-    standalone: true,
     templateUrl: './property-table.component.html',
     imports: [
         MatButtonModule,
@@ -99,6 +90,9 @@ export interface PropertyItem extends Property {
     ]
 })
 export class PropertyTable implements AfterViewInit, ControlValueAccessor {
+    private changeDetector = inject(ChangeDetectorRef);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() createNewProperty!: (existingProperties: string[], allowsSensitive: boolean) => Observable<Property>;
     @Input() createNewService!: (request: InlineServiceCreationRequest) => Observable<InlineServiceCreationResponse>;
     @Input() parameterContext: ParameterContextEntity | undefined;
@@ -150,10 +144,13 @@ export class PropertyTable implements AfterViewInit, ControlValueAccessor {
     };
     public editorPositions: ConnectionPositionPair[] = [];
 
-    constructor(
-        private changeDetector: ChangeDetectorRef,
-        private nifiCommon: NiFiCommon
-    ) {}
+    tooltipPosition: ConnectedPosition = {
+        originX: 'start',
+        originY: 'bottom',
+        overlayX: 'start',
+        overlayY: 'top',
+        offsetY: 4
+    };
 
     ngAfterViewInit(): void {
         this.initFilter();
@@ -236,7 +233,7 @@ export class PropertyTable implements AfterViewInit, ControlValueAccessor {
                 // the dependent value contains parameter reference, if the user can view
                 // the parameter context resolve the parameter value to see if it
                 // satisfies the dependent values
-                if (this.parameterContext?.permissions.canRead) {
+                if (this.parameterContext?.permissions.canRead && this.parameterContext.component) {
                     const referencedParameter = this.parameterContext.component.parameters
                         .map((parameterEntity) => parameterEntity.parameter)
                         .find((parameter: Parameter) => dependentValue == `#{${parameter.name}}`);
@@ -329,7 +326,7 @@ export class PropertyTable implements AfterViewInit, ControlValueAccessor {
         if (!this.supportsParameters || !this.parameterContext) {
             return null;
         }
-        if (this.parameterContext.permissions.canRead) {
+        if (this.parameterContext.permissions.canRead && this.parameterContext.component) {
             return this.parameterContext.component.parameters
                 .map((parameterEntity) => parameterEntity.parameter)
                 .filter((parameter: Parameter) => parameter.sensitive == propertyItem.descriptor.sensitive);
@@ -440,6 +437,13 @@ export class PropertyTable implements AfterViewInit, ControlValueAccessor {
         return {
             descriptor: item.descriptor,
             propertyHistory: this.propertyHistory?.propertyHistory[item.property]
+        };
+    }
+
+    getPropertyValueTipData(item: PropertyItem): PropertyValueTipInput {
+        return {
+            property: item,
+            parameters: this.parameterContext?.component?.parameters || []
         };
     }
 
@@ -629,4 +633,6 @@ export class PropertyTable implements AfterViewInit, ControlValueAccessor {
         }
         return false;
     }
+
+    protected readonly PropertyValueTip = PropertyValueTip;
 }

@@ -19,6 +19,7 @@ import inspect
 import logging
 import os
 import pkgutil
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -60,9 +61,11 @@ class ExtensionManager:
     processor_class_by_name = {}
     module_files_by_extension_type = {}
     dependency_directories = {}
+    astral_uv_installed = False
 
     def __init__(self, gateway):
         self.gateway = gateway
+        self.astral_uv_installed = self.__is_astral_uv_installed()
 
 
     def get_processor_details(self, classname, version):
@@ -301,6 +304,11 @@ class ExtensionManager:
         if len(dependency_references) > 0:
             python_cmd = os.getenv("PYTHON_CMD")
             args = [python_cmd, '-m', 'pip', 'install', '--no-cache-dir', '--target', target_dir] + dependency_references
+
+            if self.astral_uv_installed:
+                uv_command = shutil.which("uv")
+                args = [uv_command, 'pip', 'install', '--no-cache', '--target', target_dir] + dependency_references
+
             logger.info(f"Installing dependencies {dependency_references} for {class_name} to {target_dir} using command {args}")
             result = subprocess.run(args)
 
@@ -316,12 +324,14 @@ class ExtensionManager:
             file.write("True")
 
 
+    def __is_astral_uv_installed(self):
+        uv_command = shutil.which("uv")
+        return uv_command is not None
+
     def __load_extension_module(self, file, local_dependencies):
         # If there are any local dependencies (i.e., other python files in the same directory), load those modules first
         if local_dependencies:
-            to_load = [dep for dep in local_dependencies]
-            if file in to_load:
-                to_load.remove(file)
+            to_load = [dep for dep in local_dependencies if dep != file and not self.__is_processor_module(dep)]
 
             # There is almost certainly a better way to do this. But we need to load all modules that are 'local dependencies'. I.e., all
             # modules in the same directory/package. But Python does not appear to give us a simple way to do this. We could have a situation in which
@@ -376,6 +386,10 @@ class ExtensionManager:
                     return member
 
         return None
+
+
+    def __is_processor_module(self, module_file):
+        return len(ProcessorInspection.get_processor_class_nodes(module_file)) > 0
 
 
     def __is_processor_class(self, potential_processor_class):

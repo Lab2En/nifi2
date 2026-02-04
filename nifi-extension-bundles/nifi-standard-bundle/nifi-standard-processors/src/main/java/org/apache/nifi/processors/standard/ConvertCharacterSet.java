@@ -31,16 +31,12 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.StreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
@@ -94,14 +90,16 @@ public class ConvertCharacterSet extends AbstractProcessor {
             .required(true)
             .build();
 
-    private final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             INPUT_CHARSET,
             OUTPUT_CHARSET
     );
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success").description("").build();
 
-    private final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS);
+    private final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     public static final int MAX_BUFFER_SIZE = 512 * 1024;
 
@@ -112,7 +110,7 @@ public class ConvertCharacterSet extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -140,25 +138,22 @@ public class ConvertCharacterSet extends AbstractProcessor {
 
         try {
             final StopWatch stopWatch = new StopWatch(true);
-            flowFile = session.write(flowFile, new StreamCallback() {
-                @Override
-                public void process(final InputStream rawIn, final OutputStream rawOut) throws IOException {
-                    try (final BufferedReader reader = new BufferedReader(new InputStreamReader(rawIn, decoder), MAX_BUFFER_SIZE);
-                            final BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(rawOut, encoder), MAX_BUFFER_SIZE)) {
-                        int charsRead;
-                        while ((charsRead = reader.read(charBuffer)) != -1) {
-                            charBuffer.flip();
-                            writer.write(charBuffer.array(), 0, charsRead);
-                        }
-
-                        writer.flush();
+            flowFile = session.write(flowFile, (rawIn, rawOut) -> {
+                try (final BufferedReader reader = new BufferedReader(new InputStreamReader(rawIn, decoder), MAX_BUFFER_SIZE);
+                        final BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(rawOut, encoder), MAX_BUFFER_SIZE)) {
+                    int charsRead;
+                    while ((charsRead = reader.read(charBuffer)) != -1) {
+                        charBuffer.flip();
+                        writer.write(charBuffer.array(), 0, charsRead);
                     }
+
+                    writer.flush();
                 }
             });
 
             session.getProvenanceReporter().modifyContent(flowFile, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
             logger.info("successfully converted characters from {} to {} for {}",
-                    new Object[]{inputCharset, outputCharset, flowFile});
+                    inputCharset, outputCharset, flowFile);
             session.transfer(flowFile, REL_SUCCESS);
         } catch (final Exception e) {
             throw new ProcessException(e);

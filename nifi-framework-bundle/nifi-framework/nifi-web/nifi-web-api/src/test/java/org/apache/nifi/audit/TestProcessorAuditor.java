@@ -22,9 +22,6 @@ import org.apache.nifi.action.Operation;
 import org.apache.nifi.action.details.ActionDetails;
 import org.apache.nifi.action.details.FlowChangeConfigureDetails;
 import org.apache.nifi.admin.service.AuditService;
-import org.apache.nifi.authorization.user.NiFiUser;
-import org.apache.nifi.authorization.user.NiFiUserDetails;
-import org.apache.nifi.authorization.user.StandardNiFiUser;
 import org.apache.nifi.bundle.Bundle;
 import org.apache.nifi.bundle.BundleCoordinate;
 import org.apache.nifi.bundle.BundleDetails;
@@ -80,7 +77,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-
 @ExtendWith({SpringExtension.class, MockitoExtension.class})
 @ContextConfiguration(classes = {TestProcessorAuditor.AuditorConfiguration.class})
 class TestProcessorAuditor {
@@ -99,7 +95,7 @@ class TestProcessorAuditor {
 
     @Autowired
     private AuditService auditService;
-    @Mock
+    @Mock(strictness = Mock.Strictness.LENIENT)
     private Authentication authentication;
     @Mock
     private Processor processor;
@@ -117,8 +113,6 @@ class TestProcessorAuditor {
     private StateManagerProvider mockStateManagerProvider;
     @Mock
     private StateManager mockStateManager;
-    @Mock
-    private NiFiUserDetails userDetail;
 
     @Captor
     private ArgumentCaptor<List<Action>> actionsArgumentCaptor;
@@ -129,9 +123,8 @@ class TestProcessorAuditor {
         reset(auditService);
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
-        final NiFiUser user = new StandardNiFiUser.Builder().identity(USER_IDENTITY).build();
-        userDetail = new NiFiUserDetails(user);
-        when(authentication.getPrincipal()).thenReturn(userDetail);
+        when(authentication.getName()).thenReturn(USER_IDENTITY);
+        when(authentication.getCredentials()).thenReturn(Object.class.getSimpleName());
 
         when(flowController.getFlowManager()).thenReturn(flowManager);
 
@@ -163,7 +156,7 @@ class TestProcessorAuditor {
         when(extensionManager.getBundles(anyString())).thenReturn(Collections.singletonList(bundle));
 
 
-        when(mockStateManagerProvider.getStateManager(PN_ID)).thenReturn(mockStateManager);
+        when(mockStateManagerProvider.getStateManager(anyString(), any())).thenReturn(mockStateManager);
 
         final ProcessorNode processor = processorDao.createProcessor(GROUP_ID, processorDto);
 

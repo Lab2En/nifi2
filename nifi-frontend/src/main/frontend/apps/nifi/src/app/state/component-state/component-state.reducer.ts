@@ -20,15 +20,20 @@ import { createReducer, on } from '@ngrx/store';
 import {
     getComponentStateAndOpenDialog,
     loadComponentStateSuccess,
+    clearComponentStateFailure,
     reloadComponentStateSuccess,
-    resetComponentState
+    resetComponentState,
+    clearComponentState,
+    clearComponentStateEntry
 } from './component-state.actions';
 
 export const initialState: ComponentStateState = {
     componentName: null,
-    componentUri: null,
+    componentType: null,
+    componentId: null,
     componentState: null,
     canClear: null,
+    clearing: false,
     status: 'pending'
 };
 
@@ -37,14 +42,25 @@ export const componentStateReducer = createReducer(
     on(getComponentStateAndOpenDialog, (state, { request }) => ({
         ...state,
         componentName: request.componentName,
-        componentUri: request.componentUri,
+        componentType: request.componentType,
+        componentId: request.componentId,
         canClear: request.canClear,
         status: 'loading' as const
     })),
     on(loadComponentStateSuccess, reloadComponentStateSuccess, (state, { response }) => ({
         ...state,
+        clearing: false,
         status: 'success' as const,
         componentState: response.componentState
+    })),
+    on(clearComponentState, clearComponentStateEntry, (state) => ({
+        ...state,
+        clearing: true
+    })),
+    on(clearComponentStateFailure, (state) => ({
+        ...state,
+        clearing: false,
+        status: 'error' as const
     })),
     on(resetComponentState, () => ({
         ...initialState

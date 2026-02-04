@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Output } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Output, inject } from '@angular/core';
+
 import {
     MAT_DIALOG_DATA,
     MatDialogActions,
@@ -26,38 +26,36 @@ import {
 } from '@angular/material/dialog';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MatButton } from '@angular/material/button';
-import { NifiSpinnerDirective } from '../../../../../ui/common/spinner/nifi-spinner.directive';
 import { ChangeColorRequest } from '../../../state/flow';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
-import { ComponentType } from 'libs/shared/src';
 import { CanvasUtils } from '../../../service/canvas-utils.service';
-import { NiFiCommon, ComponentTypeNamePipe, ComponentContext, CloseOnEscapeDialog } from '@nifi/shared';
+import { ComponentType, NiFiCommon, CloseOnEscapeDialog } from '@nifi/shared';
 import { MatCheckbox } from '@angular/material/checkbox';
 
 @Component({
     selector: 'change-component-dialog',
-    standalone: true,
     imports: [
-        CommonModule,
         MatDialogTitle,
         ReactiveFormsModule,
         MatDialogContent,
         MatButton,
         MatDialogActions,
         MatDialogClose,
-        NifiSpinnerDirective,
         MatFormField,
         MatLabel,
         MatInput,
-        ComponentContext,
-        ComponentTypeNamePipe,
         MatCheckbox
     ],
     templateUrl: './change-color-dialog.component.html',
     styleUrl: './change-color-dialog.component.scss'
 })
 export class ChangeColorDialog extends CloseOnEscapeDialog {
+    private data = inject(MAT_DIALOG_DATA);
+    private canvasUtils = inject(CanvasUtils);
+    private nifiCommon = inject(NiFiCommon);
+    private formBuilder = inject(FormBuilder);
+
     color: string | null = null;
     noColor: boolean = true;
     contrastColor: string | null = null;
@@ -68,13 +66,11 @@ export class ChangeColorDialog extends CloseOnEscapeDialog {
 
     @Output() changeColor = new EventEmitter<ChangeColorRequest[]>();
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) private data: ChangeColorRequest[],
-        private canvasUtils: CanvasUtils,
-        private nifiCommon: NiFiCommon,
-        private formBuilder: FormBuilder
-    ) {
+    constructor() {
         super();
+        const data = this.data;
+        const formBuilder = this.formBuilder;
+
         this._data = data;
         let isDefaultColor = true;
 

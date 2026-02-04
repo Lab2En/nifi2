@@ -16,16 +16,11 @@
  */
 package org.apache.nifi.processors.image;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
+import com.drew.imaging.ImageMetadataReader;
+import com.drew.imaging.ImageProcessingException;
+import com.drew.metadata.Directory;
+import com.drew.metadata.Metadata;
+import com.drew.metadata.Tag;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
@@ -39,17 +34,14 @@ import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 
-import com.drew.imaging.ImageMetadataReader;
-import com.drew.imaging.ImageProcessingException;
-import com.drew.metadata.Directory;
-import com.drew.metadata.Metadata;
-import com.drew.metadata.Tag;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 @InputRequirement(Requirement.INPUT_REQUIRED)
@@ -82,30 +74,23 @@ public class ExtractImageMetadata extends AbstractProcessor {
         .description("Any FlowFile that fails to have image metadata extracted will be routed to failure")
         .build();
 
-    private Set<Relationship> relationships;
-    private List<PropertyDescriptor> properties;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            MAX_NUMBER_OF_ATTRIBUTES
+    );
 
-    @Override
-    protected void init(final ProcessorInitializationContext context) {
-
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(MAX_NUMBER_OF_ATTRIBUTES);
-        this.properties = Collections.unmodifiableList(properties);
-
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(SUCCESS);
-        relationships.add(FAILURE);
-        this.relationships = Collections.unmodifiableSet(relationships);
-    }
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
     @Override
     public Set<Relationship> getRelationships() {
-        return this.relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return this.properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -120,15 +105,12 @@ public class ExtractImageMetadata extends AbstractProcessor {
         final Integer max = context.getProperty(MAX_NUMBER_OF_ATTRIBUTES).asInteger();
 
         try {
-            session.read(flowfile, new InputStreamCallback() {
-                @Override
-                public void process(InputStream in) throws IOException {
-                    try {
-                        Metadata imageMetadata = ImageMetadataReader.readMetadata(in);
-                        value.set(imageMetadata);
-                    } catch (ImageProcessingException ex) {
-                        throw new ProcessException(ex);
-                    }
+            session.read(flowfile, in -> {
+                try {
+                    Metadata imageMetadata = ImageMetadataReader.readMetadata(in);
+                    value.set(imageMetadata);
+                } catch (ImageProcessingException ex) {
+                    throw new ProcessException(ex);
                 }
             });
 

@@ -16,22 +16,6 @@
  */
 package org.apache.nifi.processors.standard;
 
-import static java.lang.System.currentTimeMillis;
-import static java.util.Collections.singletonMap;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Pattern;
 import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.components.state.StateManager;
 import org.apache.nifi.components.state.StateMap;
@@ -41,6 +25,23 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
+
+import static java.lang.System.currentTimeMillis;
+import static java.util.Collections.singletonMap;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestMonitorActivity {
 
@@ -666,7 +667,7 @@ public class TestMonitorActivity {
         runner.enqueue("Incoming data");
 
         // Set future timestamp in state
-        final HashMap<String, String> existingState = new HashMap<>();
+        final Map<String, String> existingState = new HashMap<>();
         final long existingTimestamp = currentTimeMillis() - 1_000;
         existingState.put(MonitorActivity.STATE_KEY_COMMON_FLOW_ACTIVITY_INFO,
                 String.valueOf(existingTimestamp));
@@ -700,7 +701,7 @@ public class TestMonitorActivity {
         runner.enqueue("Incoming data");
 
         // Set future timestamp in state
-        final HashMap<String, String> existingState = new HashMap<>();
+        final Map<String, String> existingState = new HashMap<>();
         final long existingTimestamp = currentTimeMillis() + 10_000;
         existingState.put(MonitorActivity.STATE_KEY_COMMON_FLOW_ACTIVITY_INFO,
                 String.valueOf(existingTimestamp));
@@ -732,7 +733,7 @@ public class TestMonitorActivity {
         runner.setProperty(MonitorActivity.THRESHOLD, "1 ms");
         runner.setProperty(MonitorActivity.COPY_ATTRIBUTES, "true");
 
-        final HashMap<String, String> attributes = new HashMap<>();
+        final Map<String, String> attributes = new HashMap<>();
         attributes.put("key1", "value1");
         attributes.put("key2", "value2");
         runner.enqueue("Incoming data", attributes);
@@ -854,7 +855,7 @@ public class TestMonitorActivity {
         runner.clearTransferState();
 
         // Activity restored
-        final HashMap<String, String> attributes = new HashMap<>();
+        final Map<String, String> attributes = new HashMap<>();
         attributes.put("key1", "value1");
         attributes.put("key2", "value2");
         runner.enqueue("Incoming data", attributes);
@@ -892,7 +893,7 @@ public class TestMonitorActivity {
         runner.clearTransferState();
 
         // Activity restored
-        final HashMap<String, String> attributes = new HashMap<>();
+        final Map<String, String> attributes = new HashMap<>();
         attributes.put("key1", "value1");
         attributes.put("key2", "value2");
         runner.enqueue("Incoming data", attributes);
@@ -927,7 +928,7 @@ public class TestMonitorActivity {
         runner.clearTransferState();
 
         // Activity restored
-        final HashMap<String, String> attributes = new HashMap<>();
+        final Map<String, String> attributes = new HashMap<>();
         attributes.put("key1", "value1");
         attributes.put("key2", "value2");
         runner.enqueue("Incoming data", attributes);
@@ -966,7 +967,7 @@ public class TestMonitorActivity {
         runner.clearTransferState();
 
         // Activity restored
-        final HashMap<String, String> attributes = new HashMap<>();
+        final Map<String, String> attributes = new HashMap<>();
         attributes.put("key1", "value1");
         attributes.put("key2", "value2");
         runner.enqueue("Incoming data", attributes);
@@ -1001,7 +1002,7 @@ public class TestMonitorActivity {
         runner.clearTransferState();
 
         // Activity restored, even if this node doesn't have activity, other node updated the cluster state.
-        final HashMap<String, String> clusterState = new HashMap<>();
+        final Map<String, String> clusterState = new HashMap<>();
         clusterState.put(MonitorActivity.STATE_KEY_COMMON_FLOW_ACTIVITY_INFO, String.valueOf(currentTimeMillis()));
         clusterState.put("key1", "value1");
         clusterState.put("key2", "value2");
@@ -1041,7 +1042,7 @@ public class TestMonitorActivity {
         runner.clearTransferState();
 
         // Activity restored, even if this node doesn't have activity, other node updated the cluster state.
-        final HashMap<String, String> clusterState = new HashMap<>();
+        final Map<String, String> clusterState = new HashMap<>();
         clusterState.put(MonitorActivity.STATE_KEY_COMMON_FLOW_ACTIVITY_INFO, String.valueOf(currentTimeMillis()));
         clusterState.put("key1", "value1");
         clusterState.put("key2", "value2");
@@ -1077,7 +1078,7 @@ public class TestMonitorActivity {
         runner.clearTransferState();
 
         // Activity restored, even if this node doesn't have activity, other node updated the cluster state.
-        final HashMap<String, String> clusterState = new HashMap<>();
+        final Map<String, String> clusterState = new HashMap<>();
         clusterState.put(MonitorActivity.STATE_KEY_COMMON_FLOW_ACTIVITY_INFO, String.valueOf(currentTimeMillis()));
         clusterState.put("key1", "value1");
         clusterState.put("key2", "value2");

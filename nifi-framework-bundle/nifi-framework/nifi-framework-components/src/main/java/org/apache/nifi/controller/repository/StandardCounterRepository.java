@@ -16,6 +16,9 @@
  */
 package org.apache.nifi.controller.repository;
 
+import org.apache.nifi.controller.Counter;
+import org.apache.nifi.controller.StandardCounter;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,9 +26,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-
-import org.apache.nifi.controller.Counter;
-import org.apache.nifi.controller.StandardCounter;
 
 public class StandardCounterRepository implements CounterRepository {
 
@@ -105,5 +105,17 @@ public class StandardCounterRepository implements CounterRepository {
             }
         }
         return null;
+    }
+
+    @Override
+    public List<Counter> resetAllCounters() {
+        final List<Counter> resetCounters = new ArrayList<>();
+        for (final ConcurrentMap<String, Counter> counters : processorCounters.values()) {
+            for (final Counter counter : counters.values()) {
+                counter.reset();
+                resetCounters.add(StandardCounter.unmodifiableCounter(counter));
+            }
+        }
+        return resetCounters;
     }
 }

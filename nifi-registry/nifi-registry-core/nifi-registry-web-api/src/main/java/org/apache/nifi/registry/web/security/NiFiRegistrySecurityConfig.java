@@ -17,6 +17,7 @@
 package org.apache.nifi.registry.web.security;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.apache.nifi.registry.security.authorization.Authorizer;
 import org.apache.nifi.registry.security.authorization.resource.ResourceType;
 import org.apache.nifi.registry.security.identity.IdentityMapper;
@@ -50,15 +51,12 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
-
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CsrfException;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 import java.io.IOException;
-
-import static org.springframework.security.web.util.matcher.AntPathRequestMatcher.antMatcher;
 
 /**
  * Spring Security Filter Configuration
@@ -110,14 +108,14 @@ public class NiFiRegistrySecurityConfig {
                         .httpStrictTransportSecurity(hstsConfig -> hstsConfig.maxAgeInSeconds(31540000))
                         .frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin)
                 )
-                .authorizeRequests((authorize) -> authorize
+                .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(
-                                antMatcher("/access/token"),
-                                antMatcher("/access/token/identity-provider"),
-                                antMatcher("/access/token/kerberos"),
-                                antMatcher("/access/oidc/callback"),
-                                antMatcher("/access/oidc/exchange"),
-                                antMatcher("/access/oidc/request")
+                                PathPatternRequestMatcher.withDefaults().matcher("/access/token"),
+                                PathPatternRequestMatcher.withDefaults().matcher("/access/token/identity-provider"),
+                                PathPatternRequestMatcher.withDefaults().matcher("/access/token/kerberos"),
+                                PathPatternRequestMatcher.withDefaults().matcher("/access/oidc/callback"),
+                                PathPatternRequestMatcher.withDefaults().matcher("/access/oidc/exchange"),
+                                PathPatternRequestMatcher.withDefaults().matcher("/access/oidc/request")
                         )
                         .permitAll()
                         .anyRequest().fullyAuthenticated()
@@ -135,7 +133,7 @@ public class NiFiRegistrySecurityConfig {
     }
 
     private IdentityFilter x509AuthenticationFilter() {
-        return new IdentityFilter(x509IdentityProvider);
+        return new IdentityFilter(x509IdentityProvider, authenticationManager());
     }
 
     private IdentityAuthenticationProvider x509AuthenticationProvider() {
@@ -143,7 +141,7 @@ public class NiFiRegistrySecurityConfig {
     }
 
     private IdentityFilter jwtAuthenticationFilter() {
-        return new IdentityFilter(jwtIdentityProvider);
+        return new IdentityFilter(jwtIdentityProvider, authenticationManager());
     }
 
     private IdentityAuthenticationProvider jwtAuthenticationProvider() {

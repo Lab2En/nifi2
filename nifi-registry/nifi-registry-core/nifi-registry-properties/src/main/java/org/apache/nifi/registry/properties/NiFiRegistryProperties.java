@@ -17,6 +17,7 @@
 package org.apache.nifi.registry.properties;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.properties.ApplicationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -117,6 +118,7 @@ public class NiFiRegistryProperties extends ApplicationProperties {
     public static final String SECURITY_USER_OIDC_PREFERRED_JWSALGORITHM = "nifi.registry.security.user.oidc.preferred.jwsalgorithm";
     public static final String SECURITY_USER_OIDC_ADDITIONAL_SCOPES = "nifi.registry.security.user.oidc.additional.scopes";
     public static final String SECURITY_USER_OIDC_CLAIM_IDENTIFYING_USER = "nifi.registry.security.user.oidc.claim.identifying.user";
+    public static final String SECURITY_USER_OIDC_CLAIM_GROUPS = "nifi.registry.security.user.oidc.claim.groups";
 
     // Revision Management Properties
     public static final String REVISIONS_ENABLED = "nifi.registry.revisions.enabled";
@@ -369,7 +371,7 @@ public class NiFiRegistryProperties extends ApplicationProperties {
 
     private File getPropertyAsFile(String key) {
         final String filePath = getProperty(key);
-        if (filePath != null && filePath.trim().length() > 0) {
+        if (filePath != null && !filePath.isBlank()) {
             return new File(filePath.trim());
         } else {
             return null;
@@ -481,6 +483,16 @@ public class NiFiRegistryProperties extends ApplicationProperties {
     public String getOidcClaimIdentifyingUser() {
         return getProperty(SECURITY_USER_OIDC_CLAIM_IDENTIFYING_USER, "email").trim();
     }
+    /**
+     * Returns the claim to be used to extract user groups from the OIDC payload.
+     * Claim must be requested by adding the scope for it.
+     * Default is 'groups'.
+     *
+     * @return The claim to be used to extract user groups.
+     */
+    public String getOidcClaimGroups() {
+        return getProperty(SECURITY_USER_OIDC_CLAIM_GROUPS, "groups").trim();
+    }
 
     /**
      * Returns the network interface list to use for HTTPS
@@ -493,7 +505,7 @@ public class NiFiRegistryProperties extends ApplicationProperties {
         // go through each property
         for (String propertyName : getPropertyKeys()) {
             // determine if the property is a network interface name
-            if (StringUtils.startsWith(propertyName, WEB_HTTPS_NETWORK_INTERFACE_PREFIX)) {
+            if (Strings.CS.startsWith(propertyName, WEB_HTTPS_NETWORK_INTERFACE_PREFIX)) {
                 // get the network interface property value
                 final String interfaceName = getProperty(propertyName);
                 if (StringUtils.isNotBlank(interfaceName)) {

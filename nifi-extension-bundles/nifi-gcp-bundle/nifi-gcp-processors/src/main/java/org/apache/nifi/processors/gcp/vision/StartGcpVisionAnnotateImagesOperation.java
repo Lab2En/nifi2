@@ -17,13 +17,8 @@
 
 package org.apache.nifi.processors.gcp.vision;
 
-import static org.apache.nifi.processors.gcp.util.GoogleUtils.GCP_CREDENTIALS_PROVIDER_SERVICE;
-
 import com.google.api.gax.longrunning.OperationFuture;
 import com.google.cloud.vision.v1.AsyncBatchAnnotateImagesRequest;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -31,7 +26,12 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
+
+import java.util.List;
+
+import static org.apache.nifi.processors.gcp.util.GoogleUtils.GCP_CREDENTIALS_PROVIDER_SERVICE;
 
 @Tags({"Google", "Cloud", "Machine Learning", "Vision"})
 @CapabilityDescription("Trigger a Vision operation on image input. It should be followed by GetGcpVisionAnnotateImagesOperationStatus processor in order to monitor operation status.")
@@ -41,39 +41,50 @@ import org.apache.nifi.processor.util.StandardValidators;
 })
 public class StartGcpVisionAnnotateImagesOperation extends AbstractStartGcpVisionOperation<AsyncBatchAnnotateImagesRequest.Builder> {
     static final PropertyDescriptor JSON_PAYLOAD = new PropertyDescriptor.Builder()
-            .name("json-payload")
-            .displayName("JSON Payload")
+            .name("JSON Payload")
             .description("JSON request for AWS Machine Learning services. The Processor will use FlowFile content for the request when this property is not specified.")
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .defaultValue("{\n" +
-                    "    \"requests\": [{\n" +
-                    "        \"image\": {\n" +
-                    "            \"source\": {\n" +
-                    "                \"imageUri\": \"gs://${gcs.bucket}/${filename}\"\n" +
-                    "            }\n" +
-                    "        },\n" +
-                    "        \"features\": [{\n" +
-                    "            \"type\": \"${vision-feature-type}\",\n" +
-                    "            \"maxResults\": 4\n" +
-                    "        }]\n" +
-                    "    }],\n" +
-                    "    \"outputConfig\": {\n" +
-                    "        \"gcsDestination\": {\n" +
-                    "            \"uri\": \"gs://${output-bucket}/${filename}/\"\n" +
-                    "        },\n" +
-                    "        \"batchSize\": 2\n" +
-                    "    }\n" +
-                    "}")
+            .defaultValue("""
+                    {
+                        "requests": [{
+                            "image": {
+                                "source": {
+                                    "imageUri": "gs://${gcs.bucket}/${filename}"
+                                }
+                            },
+                            "features": [{
+                                "type": "${vision-feature-type}",
+                                "maxResults": 4
+                            }]
+                        }],
+                        "outputConfig": {
+                            "gcsDestination": {
+                                "uri": "gs://${output-bucket}/${filename}/"
+                            },
+                            "batchSize": 2
+                        }
+                    }""")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
-    private static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(Arrays.asList(
-            JSON_PAYLOAD, GCP_CREDENTIALS_PROVIDER_SERVICE, OUTPUT_BUCKET, FEATURE_TYPE));
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            JSON_PAYLOAD,
+            GCP_CREDENTIALS_PROVIDER_SERVICE,
+            OUTPUT_BUCKET,
+            FEATURE_TYPE
+    );
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("json-payload", JSON_PAYLOAD.getName());
     }
 
     @Override

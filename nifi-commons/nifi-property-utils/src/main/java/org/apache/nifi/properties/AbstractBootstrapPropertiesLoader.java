@@ -60,7 +60,7 @@ public abstract class AbstractBootstrapPropertiesLoader {
      */
     public BootstrapProperties loadBootstrapProperties(final String bootstrapPath) throws IOException {
         final Path bootstrapFilePath = getBootstrapFile(bootstrapPath).toPath();
-       return loadBootstrapProperties(bootstrapFilePath, getApplicationPrefix());
+        return loadBootstrapProperties(bootstrapFilePath, getApplicationPrefix());
     }
 
     /**
@@ -128,7 +128,7 @@ public abstract class AbstractBootstrapPropertiesLoader {
 
         String systemPath = System.getProperty(systemPropertyName);
 
-        if (systemPath == null || systemPath.trim().isEmpty()) {
+        if (systemPath == null || systemPath.isBlank()) {
             systemPath = defaultRelativePath;
         }
 

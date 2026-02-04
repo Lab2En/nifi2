@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { concatLatestFrom } from '@ngrx/operators';
 import * as ParameterContextListingActions from './parameter-context-listing.actions';
@@ -39,46 +39,41 @@ import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
 import { Router } from '@angular/router';
 import { ParameterContextService } from '../../service/parameter-contexts.service';
-import { YesNoDialog } from '../../../../ui/common/yes-no-dialog/yes-no-dialog.component';
-import { EditParameterContext } from '../../ui/parameter-context-listing/edit-parameter-context/edit-parameter-context.component';
+import { Parameter, YesNoDialog } from '@nifi/shared';
 import {
+    selectParameterContextLoadedTimestamp,
     selectParameterContexts,
-    selectParameterContextStatus,
     selectSaving,
-    selectUpdateRequest
+    selectUpdateRequest,
+    selectUpdateRequestParameterContextId,
+    selectDeleteUpdateRequestInitiated
 } from './parameter-context-listing.selectors';
-import {
-    EditParameterRequest,
-    EditParameterResponse,
-    Parameter,
-    ParameterContextUpdateRequest
-} from '../../../../state/shared';
+import { EditParameterRequest, EditParameterResponse, ParameterContextUpdateRequest } from '../../../../state/shared';
 import { EditParameterDialog } from '../../../../ui/common/edit-parameter-dialog/edit-parameter-dialog.component';
 import { OkDialog } from '../../../../ui/common/ok-dialog/ok-dialog.component';
 import { ErrorHelper } from '../../../../service/error-helper.service';
 import { HttpErrorResponse } from '@angular/common/http';
-import { isDefinedAndNotNull, MEDIUM_DIALOG, SMALL_DIALOG, XL_DIALOG } from 'libs/shared/src';
+import { initialState } from './parameter-context-listing.reducer';
 import { BackNavigation } from '../../../../state/navigation';
-import { NiFiCommon, Storage } from '@nifi/shared';
+import { isDefinedAndNotNull, MEDIUM_DIALOG, SMALL_DIALOG, XL_DIALOG, NiFiCommon, Storage } from '@nifi/shared';
 import { ErrorContextKey } from '../../../../state/error';
+import { EditParameterContext } from '../../../../ui/common/parameter-context/edit-parameter-context/edit-parameter-context.component';
 
 @Injectable()
 export class ParameterContextListingEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<NiFiState>,
-        private storage: Storage,
-        private parameterContextService: ParameterContextService,
-        private dialog: MatDialog,
-        private router: Router,
-        private errorHelper: ErrorHelper
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<NiFiState>>(Store);
+    private storage = inject(Storage);
+    private parameterContextService = inject(ParameterContextService);
+    private dialog = inject(MatDialog);
+    private router = inject(Router);
+    private errorHelper = inject(ErrorHelper);
 
     loadParameterContexts$ = createEffect(() =>
         this.actions$.pipe(
             ofType(ParameterContextListingActions.loadParameterContexts),
-            concatLatestFrom(() => this.store.select(selectParameterContextStatus)),
-            switchMap(([, status]) =>
+            concatLatestFrom(() => this.store.select(selectParameterContextLoadedTimestamp)),
+            switchMap(([, loadedTimestamp]) =>
                 from(this.parameterContextService.getParameterContexts()).pipe(
                     map((response) =>
                         ParameterContextListingActions.loadParameterContextsSuccess({
@@ -89,8 +84,26 @@ export class ParameterContextListingEffects {
                         })
                     ),
                     catchError((errorResponse: HttpErrorResponse) =>
-                        of(this.errorHelper.handleLoadingError(status, errorResponse))
+                        of(
+                            ParameterContextListingActions.loadParameterContextsError({
+                                errorResponse,
+                                loadedTimestamp,
+                                status: loadedTimestamp !== initialState.loadedTimestamp ? 'success' : 'pending'
+                            })
+                        )
                     )
+                )
+            )
+        )
+    );
+
+    loadParameterContextsError$ = createEffect(() =>
+        this.actions$.pipe(
+            ofType(ParameterContextListingActions.loadParameterContextsError),
+            map((action) =>
+                this.errorHelper.handleLoadingError(
+                    action.loadedTimestamp !== initialState.loadedTimestamp,
+                    action.errorResponse
                 )
             )
         )
@@ -115,7 +128,7 @@ export class ParameterContextListingEffects {
                     dialogReference.componentInstance.createNewParameter = (
                         existingParameters: string[]
                     ): Observable<EditParameterResponse> => {
-                        const dialogRequest: EditParameterRequest = { existingParameters };
+                        const dialogRequest: EditParameterRequest = { existingParameters, isNewParameterContext: true };
                         const newParameterDialogReference = this.dialog.open(EditParameterDialog, {
                             ...MEDIUM_DIALOG,
                             data: dialogRequest
@@ -141,7 +154,8 @@ export class ParameterContextListingEffects {
                         const dialogRequest: EditParameterRequest = {
                             parameter: {
                                 ...parameter
-                            }
+                            },
+                            isNewParameterContext: true
                         };
                         const editParameterDialogReference = this.dialog.open(EditParameterDialog, {
                             ...MEDIUM_DIALOG,
@@ -260,7 +274,7 @@ export class ParameterContextListingEffects {
         { dispatch: false }
     );
 
-    navigateToEditService$ = createEffect(
+    navigateToEditParameterContext$ = createEffect(
         () =>
             this.actions$.pipe(
                 ofType(ParameterContextListingActions.navigateToEditParameterContext),
@@ -317,6 +331,7 @@ export class ParameterContextListingEffects {
                     });
 
                     editDialogReference.componentInstance.updateRequest = this.store.select(selectUpdateRequest);
+
                     editDialogReference.componentInstance.availableParameterContexts$ = this.store
                         .select(selectParameterContexts)
                         .pipe(
@@ -327,7 +342,10 @@ export class ParameterContextListingEffects {
                     editDialogReference.componentInstance.createNewParameter = (
                         existingParameters: string[]
                     ): Observable<EditParameterResponse> => {
-                        const dialogRequest: EditParameterRequest = { existingParameters };
+                        const dialogRequest: EditParameterRequest = {
+                            existingParameters,
+                            isNewParameterContext: false
+                        };
                         const newParameterDialogReference = this.dialog.open(EditParameterDialog, {
                             ...MEDIUM_DIALOG,
                             data: dialogRequest
@@ -339,7 +357,6 @@ export class ParameterContextListingEffects {
                             take(1),
                             map((dialogResponse: EditParameterResponse) => {
                                 newParameterDialogReference.close();
-
                                 return {
                                     ...dialogResponse
                                 };
@@ -353,7 +370,8 @@ export class ParameterContextListingEffects {
                         const dialogRequest: EditParameterRequest = {
                             parameter: {
                                 ...parameter
-                            }
+                            },
+                            isNewParameterContext: false
                         };
                         const editParameterDialogReference = this.dialog.open(EditParameterDialog, {
                             ...MEDIUM_DIALOG,
@@ -366,7 +384,6 @@ export class ParameterContextListingEffects {
                             take(1),
                             map((dialogResponse: EditParameterResponse) => {
                                 editParameterDialogReference.close();
-
                                 return {
                                     ...dialogResponse
                                 };
@@ -384,6 +401,14 @@ export class ParameterContextListingEffects {
                                         payload
                                     }
                                 })
+                            );
+                        });
+
+                    editDialogReference.componentInstance.cancelUpdateRequest
+                        .pipe(takeUntil(editDialogReference.afterClosed()))
+                        .subscribe(() => {
+                            this.store.dispatch(
+                                ParameterContextListingActions.stopPollingParameterContextUpdateRequest()
                             );
                         });
 
@@ -468,9 +493,17 @@ export class ParameterContextListingEffects {
     pollParameterContextUpdateRequest$ = createEffect(() =>
         this.actions$.pipe(
             ofType(ParameterContextListingActions.pollParameterContextUpdateRequest),
-            concatLatestFrom(() => this.store.select(selectUpdateRequest).pipe(isDefinedAndNotNull())),
-            switchMap(([, updateRequest]) =>
-                from(this.parameterContextService.pollParameterContextUpdate(updateRequest.request)).pipe(
+            concatLatestFrom(() => [
+                this.store.select(selectUpdateRequestParameterContextId).pipe(isDefinedAndNotNull()),
+                this.store.select(selectUpdateRequest).pipe(isDefinedAndNotNull())
+            ]),
+            switchMap(([, parameterContextId, updateRequest]) =>
+                from(
+                    this.parameterContextService.pollParameterContextUpdate(
+                        parameterContextId,
+                        updateRequest.request.requestId
+                    )
+                ).pipe(
                     map((response) =>
                         ParameterContextListingActions.pollParameterContextUpdateRequestSuccess({
                             response: {
@@ -508,6 +541,8 @@ export class ParameterContextListingEffects {
     stopPollingParameterContextUpdateRequest$ = createEffect(() =>
         this.actions$.pipe(
             ofType(ParameterContextListingActions.stopPollingParameterContextUpdateRequest),
+            concatLatestFrom(() => this.store.select(selectDeleteUpdateRequestInitiated)),
+            filter(([, deleteUpdateRequestInitiated]) => !deleteUpdateRequestInitiated),
             switchMap(() => of(ParameterContextListingActions.deleteParameterContextUpdateRequest()))
         )
     );
@@ -516,10 +551,13 @@ export class ParameterContextListingEffects {
         () =>
             this.actions$.pipe(
                 ofType(ParameterContextListingActions.deleteParameterContextUpdateRequest),
-                concatLatestFrom(() => this.store.select(selectUpdateRequest).pipe(isDefinedAndNotNull())),
-                tap(([, updateRequest]) => {
+                concatLatestFrom(() => [
+                    this.store.select(selectUpdateRequestParameterContextId).pipe(isDefinedAndNotNull()),
+                    this.store.select(selectUpdateRequest).pipe(isDefinedAndNotNull())
+                ]),
+                tap(([, parameterContextId, updateRequest]) => {
                     this.parameterContextService
-                        .deleteParameterContextUpdate(updateRequest.request)
+                        .deleteParameterContextUpdate(parameterContextId, updateRequest.request.requestId)
                         .subscribe((response) => {
                             this.store.dispatch(
                                 ParameterContextListingActions.deleteParameterContextUpdateRequestSuccess({
@@ -540,11 +578,14 @@ export class ParameterContextListingEffects {
                 ofType(ParameterContextListingActions.promptParameterContextDeletion),
                 map((action) => action.request),
                 tap((request) => {
+                    // @ts-ignore - component will be defined since the user has permissions to delete the context, but it is optional as defined by the type
+                    const name = request.parameterContext.component.name;
+
                     const dialogReference = this.dialog.open(YesNoDialog, {
                         ...SMALL_DIALOG,
                         data: {
                             title: 'Delete Parameter Context',
-                            message: `Delete parameter context ${request.parameterContext.component.name}?`
+                            message: `Delete parameter context ${name}?`
                         }
                     });
 

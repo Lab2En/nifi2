@@ -76,7 +76,7 @@ tokens {
 
 // functions that return Strings
 zeroArgString : (TO_UPPER | TO_LOWER | TRIM | TO_STRING | URL_ENCODE | URL_DECODE | BASE64_ENCODE | BASE64_DECODE | ESCAPE_JSON | ESCAPE_XML | ESCAPE_CSV | ESCAPE_HTML3 | ESCAPE_HTML4 | UNESCAPE_JSON | UNESCAPE_XML | UNESCAPE_CSV | UNESCAPE_HTML3 | UNESCAPE_HTML4 | EVALUATE_EL_STRING) LPAREN! RPAREN!;
-oneArgString : ((SUBSTRING_BEFORE | SUBSTRING_BEFORE_LAST | SUBSTRING_AFTER | SUBSTRING_AFTER_LAST | REPLACE_NULL | REPLACE_EMPTY |
+oneArgString : ((SUBSTRING_BEFORE | SUBSTRING_BEFORE_LAST | SUBSTRING_AFTER | SUBSTRING_AFTER_LAST | REPLACE_NULL | REPLACE_EMPTY | REPLACE_BY_PATTERN |
 				PREPEND | APPEND | STARTS_WITH | ENDS_WITH | CONTAINS | JOIN | JSON_PATH | JSON_PATH_DELETE | FROM_RADIX | UUID3 | UUID5 | HASH) LPAREN! anyArg RPAREN!) |
 			   (TO_RADIX LPAREN! anyArg (COMMA! anyArg)? RPAREN!);
 twoArgString : ((REPLACE | REPLACE_FIRST | REPLACE_ALL | IF_ELSE | JSON_PATH_SET | JSON_PATH_ADD) LPAREN! anyArg COMMA! anyArg RPAREN!) |
@@ -145,8 +145,17 @@ attributeRefOrFunctionCall	: (attributeRef | standaloneFunction | parameterRefer
 referenceOrFunction : DOLLAR LBRACE attributeRefOrFunctionCall (COLON functionCall)* RBRACE ->
                       	^(EXPRESSION attributeRefOrFunctionCall functionCall*);
 
-parameterReference : PARAMETER_REFERENCE_START singleAttrRef RBRACE ->
-    ^(PARAMETER_REFERENCE singleAttrRef);
+// Parameter reference rule
+// Supports two forms:
+//   1) Legacy: "#{" singleAttrRef "}" where the name is either ATTRIBUTE_NAME or STRING_LITERAL
+//   2) New: a single PARAMETER_REFERENCE token produced by the lexer that already contains the
+//      normalized inner name (surrounding #{ } removed and optional inner quotes stripped).
+// Both forms are rewritten to the same AST shape: ^(PARAMETER_REFERENCE <child-token-with-name>)
+// so downstream consumers (ExpressionCompiler) can read child(0).getText() for the parameter name.
+parameterReference
+    : PARAMETER_REFERENCE_START singleAttrRef RBRACE -> ^(PARAMETER_REFERENCE singleAttrRef)
+    | p=PARAMETER_REFERENCE -> ^(PARAMETER_REFERENCE $p)
+    ;
 
 expression : referenceOrFunction;
 

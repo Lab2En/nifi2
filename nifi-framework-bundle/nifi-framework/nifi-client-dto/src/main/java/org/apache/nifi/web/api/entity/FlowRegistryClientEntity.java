@@ -16,10 +16,9 @@
  */
 package org.apache.nifi.web.api.entity;
 
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.FlowRegistryClientDTO;
 import org.apache.nifi.web.api.dto.PermissionsDTO;
-
-import jakarta.xml.bind.annotation.XmlRootElement;
 
 /**
  * A serialized representation of this class can be placed in the entity body of a request or response to or from the API. This particular entity holds a reference to a FlowRegistryClientDTO.
@@ -30,10 +29,12 @@ public class FlowRegistryClientEntity extends ComponentEntity implements Permiss
     private FlowRegistryClientDTO registry;
     private PermissionsDTO operatePermissions;
 
+    @Override
     public FlowRegistryClientDTO getComponent() {
         return registry;
     }
 
+    @Override
     public void setComponent(FlowRegistryClientDTO component) {
         this.registry = component;
     }

@@ -16,27 +16,6 @@
  */
 package org.apache.nifi.processors.avro;
 
-import static org.apache.nifi.flowfile.attributes.FragmentAttributes.FRAGMENT_COUNT;
-import static org.apache.nifi.flowfile.attributes.FragmentAttributes.FRAGMENT_ID;
-import static org.apache.nifi.flowfile.attributes.FragmentAttributes.FRAGMENT_INDEX;
-import static org.apache.nifi.flowfile.attributes.FragmentAttributes.SEGMENT_ORIGINAL_FILENAME;
-import static org.apache.nifi.flowfile.attributes.FragmentAttributes.copyAttributesToOriginal;
-
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.IntStream;
 import org.apache.avro.file.CodecFactory;
 import org.apache.avro.file.DataFileConstants;
 import org.apache.avro.file.DataFileStream;
@@ -64,12 +43,29 @@ import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.InputStreamCallback;
-import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
+
+import static org.apache.nifi.flowfile.attributes.FragmentAttributes.FRAGMENT_COUNT;
+import static org.apache.nifi.flowfile.attributes.FragmentAttributes.FRAGMENT_ID;
+import static org.apache.nifi.flowfile.attributes.FragmentAttributes.FRAGMENT_INDEX;
+import static org.apache.nifi.flowfile.attributes.FragmentAttributes.SEGMENT_ORIGINAL_FILENAME;
+import static org.apache.nifi.flowfile.attributes.FragmentAttributes.copyAttributesToOriginal;
 
 @SideEffectFree
 @SupportsBatching
@@ -150,41 +146,32 @@ public class SplitAvro extends AbstractProcessor {
 
     // Metadata keys that are not transferred to split files when output strategy is datafile
     // Avro will write this key/values pairs on its own
-    static final Set<String> RESERVED_METADATA;
-    static {
-        Set<String> reservedMetadata = new HashSet<>();
-        reservedMetadata.add("avro.schema");
-        reservedMetadata.add("avro.codec");
-        RESERVED_METADATA = Collections.unmodifiableSet(reservedMetadata);
-    }
+    static final Set<String> RESERVED_METADATA = Set.of(
+            "avro.schema",
+            "avro.codec"
+    );
 
-    private List<PropertyDescriptor> properties;
-    private Set<Relationship> relationships;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            SPLIT_STRATEGY,
+            OUTPUT_SIZE,
+            OUTPUT_STRATEGY,
+            TRANSFER_METADATA
+    );
 
-    @Override
-    protected void init(final ProcessorInitializationContext context) {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(SPLIT_STRATEGY);
-        properties.add(OUTPUT_SIZE);
-        properties.add(OUTPUT_STRATEGY);
-        properties.add(TRANSFER_METADATA);
-        this.properties = Collections.unmodifiableList(properties);
-
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_ORIGINAL);
-        relationships.add(REL_SPLIT);
-        relationships.add(REL_FAILURE);
-        this.relationships = Collections.unmodifiableSet(relationships);
-    }
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_ORIGINAL,
+            REL_SPLIT,
+            REL_FAILURE
+    );
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -199,25 +186,18 @@ public class SplitAvro extends AbstractProcessor {
 
         SplitWriter splitWriter;
         final String outputStrategy = context.getProperty(OUTPUT_STRATEGY).getValue();
-        switch (outputStrategy) {
-            case DATAFILE_OUTPUT_VALUE:
-                splitWriter = new DatafileSplitWriter(transferMetadata);
-                break;
-            case BARE_RECORD_OUTPUT_VALUE:
-                splitWriter = new BareRecordSplitWriter();
-                break;
-            default:
-                throw new AssertionError();
-        }
+        splitWriter = switch (outputStrategy) {
+            case DATAFILE_OUTPUT_VALUE -> new DatafileSplitWriter(transferMetadata);
+            case BARE_RECORD_OUTPUT_VALUE -> new BareRecordSplitWriter();
+            default -> throw new AssertionError();
+        };
 
         Splitter splitter;
         final String splitStrategy = context.getProperty(SPLIT_STRATEGY).getValue();
-        switch (splitStrategy) {
-            case RECORD_SPLIT_VALUE:
-                splitter = new RecordSplitter(splitSize, transferMetadata);
-                break;
-            default:
-                throw new AssertionError();
+        if (splitStrategy.equals(RECORD_SPLIT_VALUE)) {
+            splitter = new RecordSplitter(splitSize, transferMetadata);
+        } else {
+            throw new AssertionError();
         }
 
         try {
@@ -251,7 +231,7 @@ public class SplitAvro extends AbstractProcessor {
     /**
      * Splits the incoming Avro datafile into batches of records by reading and de-serializing each record.
      */
-    static private class RecordSplitter implements Splitter {
+    private static class RecordSplitter implements Splitter {
 
         private final int splitSize;
         private final boolean transferMetadata;
@@ -266,55 +246,49 @@ public class SplitAvro extends AbstractProcessor {
             final List<FlowFile> childFlowFiles = new ArrayList<>();
             final AtomicReference<GenericRecord> recordHolder = new AtomicReference<>(null);
 
-            session.read(originalFlowFile, new InputStreamCallback() {
-                @Override
-                public void process(InputStream rawIn) throws IOException {
-                    try (final InputStream in = new BufferedInputStream(rawIn);
-                         final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<GenericRecord>())) {
+            session.read(originalFlowFile, rawIn -> {
+                try (final InputStream in = new BufferedInputStream(rawIn);
+                     final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<>())) {
 
-                        final AtomicReference<String> codec = new AtomicReference<>(reader.getMetaString(DataFileConstants.CODEC));
-                        if (codec.get() == null) {
-                            codec.set(DataFileConstants.NULL_CODEC);
-                        }
+                    final AtomicReference<String> codec = new AtomicReference<>(reader.getMetaString(DataFileConstants.CODEC));
+                    if (codec.get() == null) {
+                        codec.set(DataFileConstants.NULL_CODEC);
+                    }
 
-                        // while records are left, start a new split by spawning a FlowFile
-                        final AtomicReference<Boolean> hasNextHolder = new AtomicReference<Boolean>(reader.hasNext());
-                        while (hasNextHolder.get()) {
-                            FlowFile childFlowFile = session.create(originalFlowFile);
-                            childFlowFile = session.write(childFlowFile, new OutputStreamCallback() {
-                                @Override
-                                public void process(OutputStream rawOut) throws IOException {
-                                    try (final BufferedOutputStream out = new BufferedOutputStream(rawOut)) {
-                                        splitWriter.init(reader, codec.get(), out);
+                    // while records are left, start a new split by spawning a FlowFile
+                    final AtomicReference<Boolean> hasNextHolder = new AtomicReference<>(reader.hasNext());
+                    while (hasNextHolder.get()) {
+                        FlowFile childFlowFile = session.create(originalFlowFile);
+                        childFlowFile = session.write(childFlowFile, rawOut -> {
+                            try (final BufferedOutputStream out = new BufferedOutputStream(rawOut)) {
+                                splitWriter.init(reader, codec.get(), out);
 
-                                        // append to the current FlowFile until no more records, or splitSize is reached
-                                        int recordCount = 0;
-                                        while (hasNextHolder.get() && recordCount < splitSize) {
-                                            recordHolder.set(reader.next(recordHolder.get()));
-                                            splitWriter.write(recordHolder.get());
-                                            recordCount++;
-                                            hasNextHolder.set(reader.hasNext());
-                                        }
-
-                                        splitWriter.flush();
-                                    } finally {
-                                        splitWriter.close();
-                                    }
+                                // append to the current FlowFile until no more records, or splitSize is reached
+                                int recordCount = 0;
+                                while (hasNextHolder.get() && recordCount < splitSize) {
+                                    recordHolder.set(reader.next(recordHolder.get()));
+                                    splitWriter.write(recordHolder.get());
+                                    recordCount++;
+                                    hasNextHolder.set(reader.hasNext());
                                 }
-                            });
 
-                            // would prefer this to be part of the SplitWriter, but putting the metadata in FlowFile attributes
-                            // can't be done inside of an OutputStream callback which is where the splitWriter is used
-                            if (splitWriter instanceof BareRecordSplitWriter && transferMetadata) {
-                                final Map<String, String> metadata = new HashMap<>();
-                                for (String metaKey : reader.getMetaKeys()) {
-                                    metadata.put(metaKey, reader.getMetaString(metaKey));
-                                }
-                                childFlowFile = session.putAllAttributes(childFlowFile, metadata);
+                                splitWriter.flush();
+                            } finally {
+                                splitWriter.close();
                             }
+                        });
 
-                            childFlowFiles.add(childFlowFile);
+                        // would prefer this to be part of the SplitWriter, but putting the metadata in FlowFile attributes
+                        // can't be done inside of an OutputStream callback which is where the splitWriter is used
+                        if (splitWriter instanceof BareRecordSplitWriter && transferMetadata) {
+                            final Map<String, String> metadata = new HashMap<>();
+                            for (String metaKey : reader.getMetaKeys()) {
+                                metadata.put(metaKey, reader.getMetaString(metaKey));
+                            }
+                            childFlowFile = session.putAllAttributes(childFlowFile, metadata);
                         }
+
+                        childFlowFiles.add(childFlowFile);
                     }
                 }
             });
@@ -336,7 +310,7 @@ public class SplitAvro extends AbstractProcessor {
     /**
      * Writes a binary Avro Datafile to the OutputStream.
      */
-    static private class DatafileSplitWriter implements SplitWriter {
+    private static class DatafileSplitWriter implements SplitWriter {
 
         private final boolean transferMetadata;
         private DataFileWriter<GenericRecord> writer;
@@ -347,7 +321,7 @@ public class SplitAvro extends AbstractProcessor {
 
         @Override
         public void init(final DataFileStream<GenericRecord> reader, final String codec, final OutputStream out) throws IOException {
-            writer = new DataFileWriter<>(new GenericDatumWriter<GenericRecord>());
+            writer = new DataFileWriter<>(new GenericDatumWriter<>());
 
             if (transferMetadata) {
                 for (String metaKey : reader.getMetaKeys()) {
@@ -380,12 +354,12 @@ public class SplitAvro extends AbstractProcessor {
     /**
      * Writes bare Avro records to the OutputStream.
      */
-    static private class BareRecordSplitWriter implements SplitWriter {
+    private static class BareRecordSplitWriter implements SplitWriter {
         private Encoder encoder;
         private DatumWriter<GenericRecord> writer;
 
         @Override
-        public void init(final DataFileStream<GenericRecord> reader, final String codec, final OutputStream out) throws IOException {
+        public void init(final DataFileStream<GenericRecord> reader, final String codec, final OutputStream out) {
             writer = new GenericDatumWriter<>(reader.getSchema());
             encoder = EncoderFactory.get().binaryEncoder(out, null);
         }
@@ -401,7 +375,7 @@ public class SplitAvro extends AbstractProcessor {
         }
 
         @Override
-        public void close() throws IOException {
+        public void close() {
             // nothing to do
         }
     }

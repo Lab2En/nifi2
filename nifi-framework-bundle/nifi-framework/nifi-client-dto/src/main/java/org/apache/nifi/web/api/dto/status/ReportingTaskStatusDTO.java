@@ -18,7 +18,6 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 /**
@@ -33,7 +32,7 @@ public class ReportingTaskStatusDTO extends ComponentStatusDTO {
 
     @Schema(description = "The run status of this ReportingTask",
             accessMode = Schema.AccessMode.READ_ONLY,
-            allowableValues = "RUNNING, STOPPED, DISABLED")
+            allowableValues = {"RUNNING", "STOPPED", "DISABLED"})
     @Override
     public String getRunStatus() {
         return super.getRunStatus();

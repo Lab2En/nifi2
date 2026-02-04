@@ -30,19 +30,19 @@ import org.apache.nifi.dbcp.DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.lookup.LookupFailureException;
 import org.apache.nifi.lookup.RecordLookupService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.ResultSetRecordSet;
 import org.apache.nifi.util.Tuple;
+import org.apache.nifi.util.db.JdbcProperties;
 
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -63,27 +63,28 @@ public class DatabaseRecordLookupService extends AbstractDatabaseLookupService i
     private volatile Cache<Tuple<String, Object>, Record> cache;
 
     static final PropertyDescriptor LOOKUP_VALUE_COLUMNS = new PropertyDescriptor.Builder()
-            .name("dbrecord-lookup-value-columns")
-            .displayName("Lookup Value Columns")
+            .name("Lookup Value Columns")
             .description("A comma-delimited list of columns in the table that will be returned when the lookup key matches. Note that this may be case-sensitive depending on the database.")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        DBCP_SERVICE,
+        TABLE_NAME,
+        LOOKUP_KEY_COLUMN,
+        LOOKUP_VALUE_COLUMNS,
+        CACHE_SIZE,
+        CLEAR_CACHE_ON_ENABLED,
+        CACHE_EXPIRATION,
+        DEFAULT_PRECISION,
+        DEFAULT_SCALE
+    );
+
     @Override
     protected void init(final ControllerServiceInitializationContext context) {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(DBCP_SERVICE);
-        properties.add(TABLE_NAME);
-        properties.add(LOOKUP_KEY_COLUMN);
-        properties.add(LOOKUP_VALUE_COLUMNS);
-        properties.add(CACHE_SIZE);
-        properties.add(CLEAR_CACHE_ON_ENABLED);
-        properties.add(CACHE_EXPIRATION);
-        properties.add(DEFAULT_PRECISION);
-        properties.add(DEFAULT_SCALE);
-        this.properties = Collections.unmodifiableList(properties);
+        this.properties = PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -187,11 +188,19 @@ public class DatabaseRecordLookupService extends AbstractDatabaseLookupService i
     }
 
     private static boolean isNotBlank(final String value) {
-        return value != null && !value.trim().isEmpty();
+        return value != null && !value.isBlank();
     }
 
     @Override
     public Set<String> getRequiredKeys() {
         return REQUIRED_KEYS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("dbrecord-lookup-value-columns", LOOKUP_VALUE_COLUMNS.getName());
+        config.renameProperty(JdbcProperties.OLD_DEFAULT_PRECISION_PROPERTY_NAME, DEFAULT_PRECISION.getName());
+        config.renameProperty(JdbcProperties.OLD_DEFAULT_SCALE_PROPERTY_NAME, DEFAULT_SCALE.getName());
     }
 }

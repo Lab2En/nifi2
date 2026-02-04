@@ -16,9 +16,9 @@
  */
 package org.apache.nifi.controller.repository;
 
-import java.util.List;
-
 import org.apache.nifi.controller.Counter;
+
+import java.util.List;
 
 public interface CounterRepository {
 
@@ -31,4 +31,6 @@ public interface CounterRepository {
     List<Counter> getCounters(String counterContext);
 
     Counter resetCounter(String identifier);
+
+    List<Counter> resetAllCounters();
 }

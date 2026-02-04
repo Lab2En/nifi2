@@ -16,6 +16,13 @@
  */
 package org.apache.nifi.web.api;
 
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
 import org.apache.nifi.authorization.AuthorizableLookup;
 import org.apache.nifi.authorization.resource.ResourceType;
 import org.apache.nifi.remote.HttpRemoteSiteListener;
@@ -34,13 +41,6 @@ import org.apache.nifi.web.servlet.shared.ProxyHeader;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import jakarta.servlet.ServletContext;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.StreamingOutput;
-import jakarta.ws.rs.core.UriBuilder;
-import jakarta.ws.rs.core.UriInfo;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.net.URI;
@@ -48,7 +48,8 @@ import java.net.URISyntaxException;
 import java.net.URL;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -62,6 +63,7 @@ public class TestDataTransferResource {
     @BeforeAll
     public static void setup() throws Exception {
         final URL resource = TestDataTransferResource.class.getResource("/site-to-site/nifi.properties");
+        assertNotNull(resource);
         final String propertiesFile = resource.toURI().getPath();
         System.setProperty(NiFiProperties.PROPERTIES_FILE_PATH, propertiesFile);
     }
@@ -72,6 +74,8 @@ public class TestDataTransferResource {
         doReturn(new StringBuffer("http://nifi.example.com:8080")
                 .append("/nifi-api/data-transfer/output-ports/port-id/transactions/tx-id/flow-files"))
                 .when(req).getRequestURL();
+        final ServletContext servletContext = mock(ServletContext.class);
+        when(req.getServletContext()).thenReturn(servletContext);
         return req;
     }
 
@@ -174,10 +178,12 @@ public class TestDataTransferResource {
                 .getDeclaredField("httpServletRequest");
         httpServletRequestField.setAccessible(true);
         httpServletRequestField.set(resource, request);
+        final ServletContext servletContext = mock(ServletContext.class);
+        when(request.getServletContext()).thenReturn(servletContext);
 
         final InputStream inputStream = null;
 
-       final Response response = resource.createPortTransaction("input-ports", "port-id", req, context, uriInfo, inputStream);
+        final Response response = resource.createPortTransaction("input-ports", "port-id", req, context, uriInfo, inputStream);
 
         TransactionResultEntity resultEntity = (TransactionResultEntity) response.getEntity();
 
@@ -209,6 +215,8 @@ public class TestDataTransferResource {
                 .getDeclaredField("httpServletRequest");
         httpServletRequestField.setAccessible(true);
         httpServletRequestField.set(resource, request);
+        final ServletContext servletContext = mock(ServletContext.class);
+        when(request.getServletContext()).thenReturn(servletContext);
 
         final InputStream inputStream = null;
 
@@ -344,7 +352,7 @@ public class TestDataTransferResource {
         final Object entity = response.getEntity();
 
         assertEquals(202, response.getStatus());
-        assertTrue(entity instanceof StreamingOutput);
+        assertInstanceOf(StreamingOutput.class, entity);
     }
 
     @Test

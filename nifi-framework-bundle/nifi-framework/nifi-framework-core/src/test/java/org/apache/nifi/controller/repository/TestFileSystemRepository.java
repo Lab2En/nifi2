@@ -21,18 +21,18 @@ import org.apache.nifi.controller.repository.claim.ResourceClaim;
 import org.apache.nifi.controller.repository.claim.StandardContentClaim;
 import org.apache.nifi.controller.repository.claim.StandardResourceClaim;
 import org.apache.nifi.controller.repository.claim.StandardResourceClaimManager;
-import org.apache.nifi.controller.repository.util.DiskUtils;
 import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.NiFiProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,23 +68,27 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisabledOnOs(OS.WINDOWS)
 public class TestFileSystemRepository {
 
     public static final File helloWorldFile = new File("src/test/resources/hello.txt");
     private static final Logger logger = LoggerFactory.getLogger(TestFileSystemRepository.class);
 
+    @TempDir
+    private Path tempDir;
+
     private FileSystemRepository repository = null;
     private StandardResourceClaimManager claimManager = null;
-    private final File rootFile = new File("target/content_repository");
+    private Path originalNifiPropertiesFile;
+    private Path rootFile;
     private NiFiProperties nifiProperties;
 
     @BeforeEach
     public void setup() throws IOException {
-        nifiProperties = NiFiProperties.createBasicNiFiProperties(TestFileSystemRepository.class.getResource("/conf/nifi.properties").getFile());
-        if (rootFile.exists()) {
-            DiskUtils.deleteRecursively(rootFile);
-        }
+        originalNifiPropertiesFile = Paths.get("src/test/resources/conf/nifi.properties");
+        rootFile = tempDir.resolve("content_repository");
+        final String contentRepositoryDirectory = NiFiProperties.REPOSITORY_CONTENT_PREFIX.concat("default");
+        final Map<String, String> additionalProperties = Map.of(contentRepositoryDirectory, rootFile.toString());
+        nifiProperties = NiFiProperties.createBasicNiFiProperties(originalNifiPropertiesFile.toString(), additionalProperties);
         repository = new FileSystemRepository(nifiProperties);
         claimManager = new StandardResourceClaimManager();
         repository.initialize(new StandardContentRepositoryContext(claimManager, EventReporter.NO_OP));
@@ -97,7 +101,8 @@ public class TestFileSystemRepository {
     }
 
     @Test
-    @Disabled("Intended for manual testing only, in order to judge changes to performance")
+    @EnabledIfSystemProperty(named = "nifi.test.performance", matches = "true",
+            disabledReason = "Intended for manual testing only, in order to judge changes to performance")
     public void testWritePerformance() throws IOException {
         final long bytesToWrite = 1_000_000_000L;
         final int contentSize = 100;
@@ -238,7 +243,7 @@ public class TestFileSystemRepository {
     @Test
     public void testUnreferencedFilesAreArchivedOnCleanup() throws IOException {
         final Map<String, Path> containerPaths = nifiProperties.getContentRepositoryPaths();
-        assertTrue(containerPaths.size() > 0);
+        assertFalse(containerPaths.isEmpty());
 
         for (final Map.Entry<String, Path> entry : containerPaths.entrySet()) {
             final String containerName = entry.getKey();
@@ -263,7 +268,7 @@ public class TestFileSystemRepository {
         repository.shutdown();
 
         final Map<String, Path> containerPaths = nifiProperties.getContentRepositoryPaths();
-        assertTrue(containerPaths.size() > 0);
+        assertFalse(containerPaths.isEmpty());
 
         for (final Path containerPath : containerPaths.values()) {
             final Path section1 = containerPath.resolve("1");
@@ -284,12 +289,14 @@ public class TestFileSystemRepository {
     }
 
 
+    @DisabledOnOs(value = OS.WINDOWS,
+            disabledReason = "java.io.FileNotFoundException when there is an attempt to access file <temporary directory>\\content_repository\\0\\archive\\0.bin")
     @Test
     public void testContentNotFoundExceptionThrownIfResourceClaimTooShort() throws IOException {
-        final File contentFile = new File("target/content_repository/0/0.bin");
-        try (final OutputStream fos = new FileOutputStream(contentFile)) {
-            fos.write("Hello World".getBytes(StandardCharsets.UTF_8));
-        }
+        final Path contentDirectory = rootFile.resolve("0");
+        Files.createDirectories(contentDirectory);
+        final Path contentFile = contentDirectory.resolve("0.bin");
+        Files.writeString(contentFile, "Hello World", StandardOpenOption.CREATE_NEW);
 
         final ResourceClaim resourceClaim = new StandardResourceClaim(claimManager, "default", "0", "0.bin", false);
         final StandardContentClaim existingContentClaim = new StandardContentClaim(resourceClaim, 0);
@@ -323,21 +330,22 @@ public class TestFileSystemRepository {
         assertThrows(ContentNotFoundException.class, () -> repository.read(missingContentClaim));
     }
 
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "java.io.File setReadable(false) does not work on Windows. See javadocs.")
     @Test
     public void testBogusFile() throws IOException {
         repository.shutdown();
-        System.setProperty(NiFiProperties.PROPERTIES_FILE_PATH, TestFileSystemRepository.class.getResource("/conf/nifi.properties").getFile());
+        System.setProperty(NiFiProperties.PROPERTIES_FILE_PATH, originalNifiPropertiesFile.toString());
 
-        File bogus = new File(rootFile, "bogus");
+        Path bogus = rootFile.resolve("bogus");
         try {
-            bogus.mkdir();
-            bogus.setReadable(false);
+            Files.createDirectories(bogus);
+            bogus.toFile().setReadable(false);
 
             repository = new FileSystemRepository(nifiProperties);
             repository.initialize(new StandardContentRepositoryContext(new StandardResourceClaimManager(), EventReporter.NO_OP));
         } finally {
-            bogus.setReadable(true);
-            assertTrue(bogus.delete());
+            bogus.toFile().setReadable(true);
+            Files.delete(bogus);
         }
     }
 
@@ -349,6 +357,8 @@ public class TestFileSystemRepository {
         assertEquals(1, repository.getClaimantCount(claim));
     }
 
+    @DisabledOnOs(value = OS.WINDOWS,
+            disabledReason = "JUnit 5 tempDir cannot be deleted since there is a file in the content repository which cannot be deleted.")
     @Test
     public void testReadClaimThenWriteThenReadMore() throws IOException {
         final ContentClaim claim = repository.create(false);
@@ -401,7 +411,7 @@ public class TestFileSystemRepository {
         // should not be equal because claim1 may still be in use
         assertNotSame(claim1.getResourceClaim(), claim2.getResourceClaim());
 
-        try (final OutputStream out = repository.write(claim1)) {
+        try (final OutputStream ignored = repository.write(claim1)) {
         }
 
         final ContentClaim claim3 = repository.create(false);
@@ -411,7 +421,7 @@ public class TestFileSystemRepository {
     @Test
     public void testResourceClaimNotReusedAfterRestart() throws IOException, InterruptedException {
         final ContentClaim claim1 = repository.create(false);
-        try (final OutputStream out = repository.write(claim1)) {
+        try (final OutputStream ignored = repository.write(claim1)) {
         }
 
         repository.shutdown();
@@ -434,7 +444,7 @@ public class TestFileSystemRepository {
 
         final ContentClaim claim2 = repository.create(false);
         assertEquals(claim1.getResourceClaim(), claim2.getResourceClaim());
-        try (final OutputStream out = repository.write(claim2)) {
+        try (final OutputStream ignored = repository.write(claim2)) {
 
         }
 
@@ -597,16 +607,16 @@ public class TestFileSystemRepository {
     }
 
     @Test
-    public void testSizeWithNoContent() throws IOException {
+    public void testSizeWithNoContent() {
         final ContentClaim claim =
-         new StandardContentClaim(new StandardResourceClaim(claimManager,
-                 "container1", "section 1", "1", false), 0L);
+            new StandardContentClaim(new StandardResourceClaim(claimManager,
+                    "container1", "section 1", "1", false), 0L);
 
         assertThrows(ContentNotFoundException.class, () -> repository.size(claim));
     }
 
     @Test
-    public void testReadWithNoContent() throws IOException {
+    public void testReadWithNoContent() {
         final ContentClaim claim = new StandardContentClaim(new StandardResourceClaim(claimManager, "container1", "section 1", "1", false), 0L);
 
         assertThrows(ContentNotFoundException.class,
@@ -631,6 +641,8 @@ public class TestFileSystemRepository {
         }
     }
 
+    @DisabledOnOs(value = OS.WINDOWS,
+            disabledReason = "java.nio.file.Files.deleteIfExists fails on Windows if the file is open and in use by the same Java Virtual Machine process or another external process")
     @Test
     public void testReadWithContentArchived() throws IOException {
         final ContentClaim claim = repository.create(true);
@@ -652,10 +664,8 @@ public class TestFileSystemRepository {
         }
     }
 
-    private boolean isWindowsEnvironment() {
-        return System.getProperty("os.name").toLowerCase().startsWith("windows");
-    }
-
+    @DisabledOnOs(value = OS.WINDOWS,
+            disabledReason = "java.nio.file.Files.deleteIfExists fails on Windows if the file is open and in use by the same Java Virtual Machine process or another external process")
     @Test
     public void testReadWithNoContentArchived() throws IOException {
         final ContentClaim claim = repository.create(true);
@@ -709,14 +719,14 @@ public class TestFileSystemRepository {
     public void testMarkDestructableDoesNotArchiveIfStreamOpenAndWrittenTo() throws IOException, InterruptedException {
         FileSystemRepository repository = null;
         try {
-            final List<Path> archivedPaths = Collections.synchronizedList(new ArrayList<Path>());
+            final List<Path> archivedPaths = Collections.synchronizedList(new ArrayList<>());
 
             // We are creating our own 'local' repository in this test so shut down the one created in the setup() method
             shutdown();
 
             repository = new FileSystemRepository(nifiProperties) {
                 @Override
-                protected boolean archive(Path curPath) throws IOException {
+                protected boolean archive(Path curPath) {
                     archivedPaths.add(curPath);
                     return true;
                 }
@@ -760,14 +770,14 @@ public class TestFileSystemRepository {
     public void testWriteCannotProvideNullOutput() throws IOException {
         FileSystemRepository repository = null;
         try {
-            final List<Path> archivedPathsWithOpenStream = Collections.synchronizedList(new ArrayList<Path>());
+            final List<Path> archivedPathsWithOpenStream = Collections.synchronizedList(new ArrayList<>());
 
             // We are creating our own 'local' repository in this test so shut down the one created in the setup() method
             shutdown();
 
             repository = new FileSystemRepository(nifiProperties) {
                 @Override
-                protected boolean archive(Path curPath) throws IOException {
+                protected boolean archive(Path curPath) {
                     if (getOpenStreamCount() > 0) {
                         archivedPathsWithOpenStream.add(curPath);
                     }
@@ -845,7 +855,7 @@ public class TestFileSystemRepository {
 
             repository = new FileSystemRepository(nifiProperties) {
                 @Override
-                protected boolean archive(Path curPath) throws IOException {
+                protected boolean archive(Path curPath) {
                     if (getOpenStreamCount() > 0) {
                         archivedPathsWithOpenStream.add(curPath);
                     }

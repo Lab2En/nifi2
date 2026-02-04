@@ -16,16 +16,11 @@
  */
 package org.apache.nifi.web.api;
 
-import java.net.URI;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
@@ -33,6 +28,7 @@ import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HttpMethod;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -55,6 +51,8 @@ import org.apache.nifi.web.api.dto.PositionDTO;
 import org.apache.nifi.web.api.dto.RemoteProcessGroupDTO;
 import org.apache.nifi.web.api.dto.RemoteProcessGroupPortDTO;
 import org.apache.nifi.web.api.dto.RevisionDTO;
+import org.apache.nifi.web.api.entity.ClearBulletinsRequestEntity;
+import org.apache.nifi.web.api.entity.ClearBulletinsResultEntity;
 import org.apache.nifi.web.api.entity.ComponentStateEntity;
 import org.apache.nifi.web.api.entity.RemotePortRunStatusEntity;
 import org.apache.nifi.web.api.entity.RemoteProcessGroupEntity;
@@ -64,6 +62,11 @@ import org.apache.nifi.web.api.request.ClientIdParameter;
 import org.apache.nifi.web.api.request.LongParameter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
+
+import java.net.URI;
+import java.time.Instant;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * RESTful endpoint for managing a Remote group.
@@ -112,18 +115,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Gets a remote process group",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /remote-process-groups/{uuid}")
             }
     )
     public Response getRemoteProcessGroup(
@@ -164,19 +165,17 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Deletes a remote process group",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}"),
-                    @SecurityRequirement(name = "Write - Parent Process Group - /process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}"),
+                    @SecurityRequirement(name = "Write - Parent Process Group - /process-groups/{uuid}")
             }
     )
     public Response removeRemoteProcessGroup(
@@ -231,6 +230,77 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     }
 
     /**
+     * Clears bulletins for a remote process group.
+     *
+     * @param id The id of the remote process group
+     * @param clearBulletinsRequestEntity The clear bulletin request
+     * @return a clearBulletinsResultEntity
+     */
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("{id}/bulletins/clear-requests")
+    @Operation(
+            summary = "Clears bulletins for a remote process group",
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ClearBulletinsResultEntity.class))),
+                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
+                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
+                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
+                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
+            }
+    )
+    public Response clearBulletins(
+            @Parameter(
+                    description = "The remote process group id.",
+                    required = true
+            )
+            @PathParam("id") final String id,
+            @Parameter(
+                    description = "The clear bulletin request.",
+                    required = true
+            ) final ClearBulletinsRequestEntity clearBulletinsRequestEntity) {
+
+        if (clearBulletinsRequestEntity == null) {
+            throw new IllegalArgumentException("Clear bulletin request must be specified.");
+        }
+
+        // Validate the request
+        if (clearBulletinsRequestEntity.getFromTimestamp() == null) {
+            throw new IllegalArgumentException("From timestamp must be specified in the clear bulletin request.");
+        }
+
+        if (isReplicateRequest()) {
+            return replicate(HttpMethod.POST, clearBulletinsRequestEntity);
+        }
+
+        final RemoteProcessGroupEntity requestRemoteProcessGroupEntity = new RemoteProcessGroupEntity();
+        requestRemoteProcessGroupEntity.setId(id);
+
+        return withWriteLock(
+                serviceFacade,
+                requestRemoteProcessGroupEntity,
+                lookup -> {
+                    final Authorizable remoteProcessGroup = lookup.getRemoteProcessGroup(id);
+                    remoteProcessGroup.authorize(authorizer, RequestAction.WRITE, NiFiUserUtils.getNiFiUser());
+                },
+                () -> { },
+                (remoteProcessGroupEntity) -> {
+                    final Instant fromTimestamp = clearBulletinsRequestEntity.getFromTimestamp();
+
+                    // Clear bulletins for the remote process group
+                    final ClearBulletinsResultEntity entity = serviceFacade.clearBulletinsForComponent(remoteProcessGroupEntity.getId(), fromTimestamp);
+
+                    return generateOkResponse(entity).build();
+                }
+        );
+    }
+
+    /**
      * Updates the specified remote process group input port.
      *
      * @param id The id of the remote process group to update.
@@ -245,18 +315,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Operation(
             summary = "Updates a remote port",
             description = NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
             }
     )
     public Response updateRemoteProcessGroupInputPort(
@@ -346,18 +414,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Operation(
             summary = "Updates a remote port",
             description = NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
             }
     )
     public Response updateRemoteProcessGroupOutputPort(
@@ -448,18 +514,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Operation(
             summary = "Updates run status of a remote port",
             description = NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
             }
     )
     public Response updateRemoteProcessGroupInputPortRunStatus(
@@ -545,18 +609,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Operation(
             summary = "Updates run status of a remote port",
             description = NON_GUARANTEED_ENDPOINT,
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupPortEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
             }
     )
     public Response updateRemoteProcessGroupOutputPortRunStatus(
@@ -633,18 +695,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Updates a remote process group",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
             }
     )
     public Response updateRemoteProcessGroup(
@@ -754,18 +814,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Path("{id}/run-status")
     @Operation(
             summary = "Updates run status of a remote process group",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
             }
     )
     public Response updateRemoteProcessGroupRunStatus(
@@ -829,18 +887,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Path("process-group/{id}/run-status")
     @Operation(
             summary = "Updates run status of all remote process groups in a process group (recursively)",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = RemoteProcessGroupEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid} or /operation/remote-process-groups/{uuid}")
             }
     )
     public Response updateRemoteProcessGroupRunStatuses(
@@ -894,15 +950,11 @@ public class RemoteProcessGroupResource extends ApplicationResource {
                 },
                 () -> serviceFacade.verifyUpdateRemoteProcessGroups(processGroupId, shouldTransmit(requestRemotePortRunStatusEntity)),
                 (_revisions, remotePortRunStatusEntity) -> {
-                    Set<RemoteProcessGroupEntity> remoteProcessGroupEntities = _revisions.stream()
-                            .map(revision -> {
-                                final RemoteProcessGroupEntity entity = serviceFacade.updateRemoteProcessGroup(revision, createDTOWithDesiredRunStatus(revision.getComponentId(),
-                                        remotePortRunStatusEntity));
-                                populateRemainingRemoteProcessGroupEntityContent(entity);
-
-                                return entity;
-                            })
-                            .collect(Collectors.toSet());
+                    _revisions.forEach(revision -> {
+                        final RemoteProcessGroupEntity entity =
+                                serviceFacade.updateRemoteProcessGroup(revision, createDTOWithDesiredRunStatus(revision.getComponentId(), remotePortRunStatusEntity));
+                        populateRemainingRemoteProcessGroupEntityContent(entity);
+                    });
 
                     RemoteProcessGroupsEntity remoteProcessGroupsEntity = new RemoteProcessGroupsEntity();
 
@@ -926,18 +978,16 @@ public class RemoteProcessGroupResource extends ApplicationResource {
     @Path("/{id}/state")
     @Operation(
             summary = "Gets the state for a RemoteProcessGroup",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /remote-process-groups/{uuid}")
             }
     )
     public Response getState(

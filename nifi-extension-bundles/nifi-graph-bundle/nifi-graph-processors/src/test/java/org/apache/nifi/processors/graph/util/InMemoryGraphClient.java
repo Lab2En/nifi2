@@ -26,13 +26,13 @@ import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.janusgraph.core.JanusGraph;
 import org.janusgraph.core.JanusGraphFactory;
 
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
 
 public class InMemoryGraphClient extends AbstractControllerService implements GraphClientService {
     private Graph graph;
@@ -61,7 +61,7 @@ public class InMemoryGraphClient extends AbstractControllerService implements Gr
             throw new ProcessException("Generated test exception");
         }
         ScriptEngine engine = new ScriptEngineManager().getEngineByName("groovy");
-        parameters.entrySet().stream().forEach( it -> {
+        parameters.entrySet().stream().forEach(it -> {
             engine.put(it.getKey(), it.getValue());
         });
         if (graph == null) {
@@ -94,7 +94,7 @@ public class InMemoryGraphClient extends AbstractControllerService implements Gr
                             Map.Entry<String, Object> tempResult = (Map.Entry<String, Object>) resultSet.next();
                             Map<String, Object> tempRetObject = new HashMap<>();
                             tempRetObject.put(tempResult.getKey(), tempResult.getValue());
-                            SimpleEntry returnObject = new SimpleEntry<String, Object>(tempResult.getKey(), tempRetObject);
+                            SimpleEntry<String, Object> returnObject = new SimpleEntry<>(tempResult.getKey(), tempRetObject);
                             Map<String, Object> resultReturnMap = new HashMap<>();
                             resultReturnMap.put(innerResultSet.getKey(), returnObject);
                             if (getLogger().isDebugEnabled()) {

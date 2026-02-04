@@ -17,8 +17,8 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
+
 import java.util.Objects;
 
 /**
@@ -31,7 +31,7 @@ public class StatusDescriptorDTO {
         COUNT,
         DURATION,
         DATA_SIZE
-    };
+    }
 
     private String field;
     private String label;

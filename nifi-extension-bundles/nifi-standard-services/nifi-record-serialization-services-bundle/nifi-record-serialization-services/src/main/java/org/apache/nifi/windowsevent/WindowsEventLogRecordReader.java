@@ -36,13 +36,6 @@ import org.apache.nifi.xml.processing.ProcessingException;
 import org.apache.nifi.xml.processing.stream.StandardXMLEventReaderProvider;
 import org.apache.nifi.xml.processing.stream.XMLEventReaderProvider;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.events.Attribute;
-import javax.xml.stream.events.Characters;
-import javax.xml.stream.events.StartElement;
-import javax.xml.stream.events.XMLEvent;
-import javax.xml.transform.stream.StreamSource;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -53,6 +46,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.events.Attribute;
+import javax.xml.stream.events.Characters;
+import javax.xml.stream.events.StartElement;
+import javax.xml.stream.events.XMLEvent;
+import javax.xml.transform.stream.StreamSource;
 
 public class WindowsEventLogRecordReader implements RecordReader {
 
@@ -480,7 +480,7 @@ public class WindowsEventLogRecordReader implements RecordReader {
             }
         }
 
-        if (recordValues.size() > 0) {
+        if (!recordValues.isEmpty()) {
             return new MapRecord(schema, recordValues);
         } else {
             return null;
@@ -488,24 +488,11 @@ public class WindowsEventLogRecordReader implements RecordReader {
     }
 
     private Object parseStringForType(String data, String fieldName, DataType dataType) {
-        switch (dataType.getFieldType()) {
-            case BOOLEAN:
-            case BYTE:
-            case CHAR:
-            case DECIMAL:
-            case DOUBLE:
-            case FLOAT:
-            case INT:
-            case LONG:
-            case SHORT:
-            case STRING:
-            case DATE:
-            case TIME:
-            case TIMESTAMP: {
-                return DataTypeUtils.convertType(data, dataType, Optional.ofNullable(dateFormat), Optional.ofNullable(timeFormat), Optional.ofNullable(timestampFormat), fieldName);
-            }
-        }
-        return null;
+        return switch (dataType.getFieldType()) {
+            case BOOLEAN, BYTE, CHAR, DECIMAL, DOUBLE, FLOAT, INT, LONG, SHORT, STRING, DATE, TIME, TIMESTAMP ->
+                DataTypeUtils.convertType(data, dataType, Optional.ofNullable(dateFormat), Optional.ofNullable(timeFormat), Optional.ofNullable(timestampFormat), fieldName);
+            default -> null;
+        };
     }
 
     private Object parseFieldForType(StartElement startElement, String fieldName, DataType dataType, Map<String, Object> recordValues,

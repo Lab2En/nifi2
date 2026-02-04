@@ -45,6 +45,8 @@ import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
@@ -54,6 +56,7 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.conflict.resolution.ConflictResolutionStrategy;
 import org.apache.nifi.processors.gcp.ProxyAwareTransportFactory;
+import org.apache.nifi.processors.gcp.util.GoogleUtils;
 import org.apache.nifi.proxy.ProxyConfiguration;
 import org.json.JSONObject;
 
@@ -63,9 +66,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,12 +76,13 @@ import java.util.concurrent.TimeUnit;
 import static java.lang.String.format;
 import static java.lang.String.valueOf;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static java.util.stream.Collectors.joining;
 import static org.apache.nifi.processor.util.StandardValidators.DATA_SIZE_VALIDATOR;
 import static org.apache.nifi.processors.conflict.resolution.ConflictResolutionStrategy.FAIL;
 import static org.apache.nifi.processors.conflict.resolution.ConflictResolutionStrategy.IGNORE;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.CREATED_TIME;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.CREATED_TIME_DESC;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.ERROR_CODE;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.ERROR_CODE_DESC;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.ERROR_MESSAGE;
@@ -90,7 +92,11 @@ import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.FILENAM
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.ID;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.ID_DESC;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.MIME_TYPE_DESC;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.MODIFIED_TIME;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.MODIFIED_TIME_DESC;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.SIZE;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.SIZE_AVAILABLE;
+import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.SIZE_AVAILABLE_DESC;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.SIZE_DESC;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.TIMESTAMP;
 import static org.apache.nifi.processors.gcp.drive.GoogleDriveAttributes.TIMESTAMP_DESC;
@@ -106,7 +112,10 @@ import static org.apache.nifi.processors.gcp.util.GoogleUtils.GCP_CREDENTIALS_PR
         @WritesAttribute(attribute = "filename", description = FILENAME_DESC),
         @WritesAttribute(attribute = "mime.type", description = MIME_TYPE_DESC),
         @WritesAttribute(attribute = SIZE, description = SIZE_DESC),
+        @WritesAttribute(attribute = SIZE_AVAILABLE, description = SIZE_AVAILABLE_DESC),
         @WritesAttribute(attribute = TIMESTAMP, description = TIMESTAMP_DESC),
+        @WritesAttribute(attribute = CREATED_TIME, description = CREATED_TIME_DESC),
+        @WritesAttribute(attribute = MODIFIED_TIME, description = MODIFIED_TIME_DESC),
         @WritesAttribute(attribute = ERROR_CODE, description = ERROR_CODE_DESC),
         @WritesAttribute(attribute = ERROR_MESSAGE, description = ERROR_MESSAGE_DESC)})
 public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrait {
@@ -114,8 +123,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
     public static final int MAX_ALLOWED_CHUNK_SIZE_IN_BYTES = 1024 * 1024 * 1024;
 
     public static final PropertyDescriptor FOLDER_ID = new PropertyDescriptor.Builder()
-            .name("folder-id")
-            .displayName("Folder ID")
+            .name("Folder ID")
             .description("The ID of the shared folder." +
                     " Please see Additional Details to set up access to Google Drive and obtain Folder ID.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -124,8 +132,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
             .build();
 
     public static final PropertyDescriptor FILE_NAME = new PropertyDescriptor.Builder()
-            .name("file-name")
-            .displayName("Filename")
+            .name("Filename")
             .description("The name of the file to upload to the specified Google Drive folder.")
             .required(true)
             .defaultValue("${filename}")
@@ -134,8 +141,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
             .build();
 
     public static final PropertyDescriptor CONFLICT_RESOLUTION = new PropertyDescriptor.Builder()
-            .name("conflict-resolution-strategy")
-            .displayName("Conflict Resolution Strategy")
+            .name("Conflict Resolution Strategy")
             .description("Indicates what should happen when a file with the same name already exists in the specified Google Drive folder.")
             .required(true)
             .defaultValue(FAIL.getValue())
@@ -143,8 +149,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
             .build();
 
     public static final PropertyDescriptor CHUNKED_UPLOAD_SIZE = new PropertyDescriptor.Builder()
-            .name("chunked-upload-size")
-            .displayName("Chunked Upload Size")
+            .name("Chunked Upload Size")
             .description("Defines the size of a chunk. Used when a FlowFile's size exceeds 'Chunked Upload Threshold' and content is uploaded in smaller chunks. "
                     + "Minimum allowed chunk size is 256 KB, maximum allowed chunk size is 1 GB.")
             .addValidator(createChunkSizeValidator())
@@ -153,23 +158,24 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
             .build();
 
     public static final PropertyDescriptor CHUNKED_UPLOAD_THRESHOLD = new PropertyDescriptor.Builder()
-            .name("chunked-upload-threshold")
-            .displayName("Chunked Upload Threshold")
+            .name("Chunked Upload Threshold")
             .description("The maximum size of the content which is uploaded at once. FlowFiles larger than this threshold are uploaded in chunks.")
             .defaultValue("100 MB")
             .addValidator(DATA_SIZE_VALIDATOR)
             .required(false)
             .build();
 
-    public static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(asList(
+    public static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             GCP_CREDENTIALS_PROVIDER_SERVICE,
             FOLDER_ID,
             FILE_NAME,
             CONFLICT_RESOLUTION,
             CHUNKED_UPLOAD_THRESHOLD,
             CHUNKED_UPLOAD_SIZE,
-            ProxyConfiguration.createProxyConfigPropertyDescriptor(ProxyAwareTransportFactory.PROXY_SPECS)
-    ));
+            ProxyConfiguration.createProxyConfigPropertyDescriptor(ProxyAwareTransportFactory.PROXY_SPECS),
+            CONNECT_TIMEOUT,
+            READ_TIMEOUT
+    );
 
     public static final Relationship REL_SUCCESS =
             new Relationship.Builder()
@@ -183,10 +189,10 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
                     .description("Files that could not be written to Google Drive for some reason are transferred to this relationship.")
                     .build();
 
-    public static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(asList(
+    public static final Set<Relationship> RELATIONSHIPS = Set.of(
             REL_SUCCESS,
             REL_FAILURE
-    )));
+    );
 
     public static final String MULTIPART_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true";
 
@@ -199,7 +205,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -282,7 +288,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
             }
 
             if (uploadedFile != null) {
-                final Map<String, String> attributes = createAttributeMap(uploadedFile);
+                final Map<String, String> attributes = createGoogleDriveFileInfoBuilder(uploadedFile).build().toAttributeMap();
                 final String url = DRIVE_URL + uploadedFile.getId();
                 flowFile = session.putAllAttributes(flowFile, attributes);
                 final long transferMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
@@ -314,6 +320,19 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
         driveService = createDriveService(context, httpTransport, DriveScopes.DRIVE, DriveScopes.DRIVE_METADATA);
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(OLD_CONNECT_TIMEOUT_PROPERTY_NAME, CONNECT_TIMEOUT.getName());
+        config.renameProperty(OLD_READ_TIMEOUT_PROPERTY_NAME, READ_TIMEOUT.getName());
+        config.renameProperty("folder-id", FOLDER_ID.getName());
+        config.renameProperty("file-name", FILE_NAME.getName());
+        config.renameProperty("conflict-resolution-strategy", CONFLICT_RESOLUTION.getName());
+        config.renameProperty("chunked-upload-size", CHUNKED_UPLOAD_SIZE.getName());
+        config.renameProperty("chunked-upload-threshold", CHUNKED_UPLOAD_THRESHOLD.getName());
+        config.renameProperty(GoogleUtils.OLD_GCP_CREDENTIALS_PROVIDER_SERVICE_PROPERTY_NAME, GCP_CREDENTIALS_PROVIDER_SERVICE.getName());
+        ProxyServiceMigration.renameProxyConfigurationServiceProperty(config);
+    }
+
     private FlowFile addAttributes(File file, FlowFile flowFile, ProcessSession session) {
         final Map<String, String> attributes = new HashMap<>();
         attributes.put(ID, file.getId());
@@ -326,12 +345,12 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
             return driveService.files()
                     .create(fileMetadata, mediaContent)
                     .setSupportsAllDrives(true)
-                    .setFields("id, name, createdTime, mimeType, size");
+                    .setFields("id, name, createdTime, modifiedTime, mimeType, size");
         } else {
             return driveService.files()
                     .update(fileMetadata.getId(), new File(), mediaContent)
                     .setSupportsAllDrives(true)
-                    .setFields("id, name, createdTime, mimeType, size");
+                    .setFields("id, name, createdTime, modifiedTime, mimeType, size");
         }
     }
 
@@ -369,7 +388,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
     }
 
     private Optional<File> checkFileExistence(String fileName, String parentId) throws IOException {
-        final FileList result = driveService.files()
+        final FileList result = driveService.files() //NOPMD
                 .list()
                 .setSupportsAllDrives(true)
                 .setIncludeItemsFromAllDrives(true)
@@ -404,7 +423,7 @@ public class PutGoogleDrive extends AbstractProcessor implements GoogleDriveTrai
 
             final long dataSizeBytes = DataUnit.parseDataSize(input, DataUnit.B).longValue();
 
-            if (dataSizeBytes % MIN_ALLOWED_CHUNK_SIZE_IN_BYTES != 0 ) {
+            if (dataSizeBytes % MIN_ALLOWED_CHUNK_SIZE_IN_BYTES != 0) {
                 return new ValidationResult.Builder()
                         .subject(subject)
                         .input(input)

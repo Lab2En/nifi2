@@ -44,7 +44,6 @@ import org.apache.nifi.processors.cipher.age.AgeKeyIndicator;
 import org.apache.nifi.processors.cipher.age.AgeKeyReader;
 import org.apache.nifi.processors.cipher.age.AgeKeyValidator;
 import org.apache.nifi.processors.cipher.age.AgePrivateKeyReader;
-import org.apache.nifi.processors.cipher.age.AgeProviderResolver;
 import org.apache.nifi.processors.cipher.age.KeySource;
 import org.apache.nifi.processors.cipher.io.ChannelStreamCallback;
 import org.apache.nifi.stream.io.StreamUtils;
@@ -55,7 +54,6 @@ import java.io.PushbackInputStream;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.Provider;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -87,7 +85,6 @@ public class DecryptContentAge extends AbstractProcessor implements VerifiablePr
 
     static final PropertyDescriptor PRIVATE_KEY_SOURCE = new PropertyDescriptor.Builder()
             .name("Private Key Source")
-            .displayName("Private Key Source")
             .description("Source of information determines the loading strategy for X25519 Private Key Identities")
             .required(true)
             .defaultValue(KeySource.PROPERTIES)
@@ -96,7 +93,6 @@ public class DecryptContentAge extends AbstractProcessor implements VerifiablePr
 
     static final PropertyDescriptor PRIVATE_KEY_IDENTITIES = new PropertyDescriptor.Builder()
             .name("Private Key Identities")
-            .displayName("Private Key Identities")
             .description("One or more X25519 Private Key Identities, separated with newlines, encoded according to the age specification, starting with AGE-SECRET-KEY-1")
             .required(true)
             .sensitive(true)
@@ -107,7 +103,6 @@ public class DecryptContentAge extends AbstractProcessor implements VerifiablePr
 
     static final PropertyDescriptor PRIVATE_KEY_IDENTITY_RESOURCES = new PropertyDescriptor.Builder()
             .name("Private Key Identity Resources")
-            .displayName("Private Key Identity Resources")
             .description("One or more files or URLs containing X25519 Private Key Identities, separated with newlines, encoded according to the age specification, starting with AGE-SECRET-KEY-1")
             .required(true)
             .addValidator(new AgeKeyValidator(AgeKeyIndicator.PRIVATE_KEY))
@@ -115,17 +110,18 @@ public class DecryptContentAge extends AbstractProcessor implements VerifiablePr
             .dependsOn(PRIVATE_KEY_SOURCE, KeySource.RESOURCES)
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(SUCCESS, FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             PRIVATE_KEY_SOURCE,
             PRIVATE_KEY_IDENTITIES,
             PRIVATE_KEY_IDENTITY_RESOURCES
     );
 
     private static final AgeKeyReader<RecipientStanzaReader> PRIVATE_KEY_READER = new AgePrivateKeyReader();
-
-    private static final Provider CIPHER_PROVIDER = AgeProviderResolver.getCipherProvider();
 
     /** 64 Kilobyte buffer plus 16 bytes for authentication tag aligns with age-encryption payload chunk sizing */
     private static final int BUFFER_CAPACITY = 65552;
@@ -160,7 +156,7 @@ public class DecryptContentAge extends AbstractProcessor implements VerifiablePr
      */
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     /**
@@ -276,9 +272,9 @@ public class DecryptContentAge extends AbstractProcessor implements VerifiablePr
 
         private DecryptingChannelFactory getDecryptingChannelFactory(final byte[] versionIndicator) {
             if (Arrays.equals(BINARY_VERSION_INDICATOR, versionIndicator)) {
-                return new StandardDecryptingChannelFactory(CIPHER_PROVIDER);
+                return new StandardDecryptingChannelFactory();
             } else {
-                return new ArmoredDecryptingChannelFactory(CIPHER_PROVIDER);
+                return new ArmoredDecryptingChannelFactory();
             }
         }
     }

@@ -22,10 +22,10 @@ import org.apache.nifi.controller.ReportingTaskNode;
 import org.apache.nifi.controller.scheduling.LifecycleState;
 import org.apache.nifi.controller.scheduling.SchedulingAgent;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.logging.StandardLoggingContext;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.nar.NarCloseable;
 import org.apache.nifi.processor.SimpleProcessLogger;
-import org.apache.nifi.logging.StandardLoggingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,19 +60,16 @@ public class StatelessSchedulingAgent implements SchedulingAgent {
     @Override
     public void schedule(final ReportingTaskNode taskNode, final LifecycleState scheduleState) {
         final long schedulingMillis = taskNode.getSchedulingPeriod(TimeUnit.MILLISECONDS);
-        final Thread thread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (true) {
-                    try {
-                        Thread.sleep(schedulingMillis);
-                    } catch (final InterruptedException e) {
-                        logger.info("Interrupted while waiting to trigger {}. Will no longer trigger Reporting Task to run", taskNode);
-                        return;
-                    }
-
-                    triggerReportingTask(taskNode, scheduleState);
+        final Thread thread = new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(schedulingMillis);
+                } catch (final InterruptedException e) {
+                    logger.info("Interrupted while waiting to trigger {}. Will no longer trigger Reporting Task to run", taskNode);
+                    return;
                 }
+
+                triggerReportingTask(taskNode, scheduleState);
             }
         });
 
@@ -82,7 +79,7 @@ public class StatelessSchedulingAgent implements SchedulingAgent {
     }
 
     private void triggerReportingTask(final ReportingTaskNode taskNode, final LifecycleState scheduleState) {
-        try (final NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, taskNode.getReportingTask().getClass(), taskNode.getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, taskNode.getReportingTask().getClass(), taskNode.getIdentifier())) {
             logger.debug("Triggering {} to run", taskNode);
             scheduleState.incrementActiveThreadCount(null);
 
@@ -93,7 +90,7 @@ public class StatelessSchedulingAgent implements SchedulingAgent {
             }
 
         } catch (final Throwable t) {
-            final ComponentLog componentLog = new SimpleProcessLogger(taskNode.getIdentifier(), taskNode.getReportingTask(), new StandardLoggingContext(null));
+            final ComponentLog componentLog = new SimpleProcessLogger(taskNode.getIdentifier(), taskNode.getReportingTask(), new StandardLoggingContext());
             componentLog.error("Error running task {}", taskNode.getReportingTask(), t);
             if (componentLog.isDebugEnabled()) {
                 componentLog.error("", t);

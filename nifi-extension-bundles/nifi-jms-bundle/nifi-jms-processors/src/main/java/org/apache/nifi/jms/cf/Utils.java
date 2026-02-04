@@ -20,15 +20,9 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.List;
 
-/**
- *
- */
 public final class Utils {
-
-    private static final Logger logger = LoggerFactory.getLogger(Utils.class);
 
     /**
      * Creates new instance of the class specified by 'className' by first
@@ -77,7 +71,7 @@ public final class Utils {
      */
     public static Method[] findMethods(String name, Class<?> targetClass) {
         Class<?> searchType = targetClass;
-        ArrayList<Method> fittingMethods = new ArrayList<>();
+        List<Method> fittingMethods = new ArrayList<>();
         while (searchType != null) {
             Method[] methods = (searchType.isInterface() ? searchType.getMethods() : searchType.getDeclaredMethods());
             for (Method method : methods) {

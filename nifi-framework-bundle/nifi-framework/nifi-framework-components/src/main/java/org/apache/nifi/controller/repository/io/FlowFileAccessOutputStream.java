@@ -16,12 +16,12 @@
  */
 package org.apache.nifi.controller.repository.io;
 
+import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.processor.exception.FlowFileAccessException;
+
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-
-import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.processor.exception.FlowFileAccessException;
 
 /**
  * <p>
@@ -45,12 +45,12 @@ public class FlowFileAccessOutputStream extends FilterOutputStream {
     public void close() throws IOException {
         try {
             out.flush();
-        } catch (final IOException ioe) {
+        } catch (final IOException ignored) {
         }
 
         try {
             out.close();
-        } catch (final IOException ioe) {
+        } catch (final IOException ignored) {
         }
     }
 

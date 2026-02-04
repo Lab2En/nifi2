@@ -16,11 +16,6 @@
  */
 package org.apache.nifi.csv;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.QuoteMode;
 import org.apache.nifi.logging.ComponentLog;
@@ -33,13 +28,19 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class ITApacheCSVRecordReader {
 
-    private final CSVFormat format = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setTrim(true).setQuote('"').build();
+    private final CSVFormat format = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setTrim(true).setQuote('"').get();
 
     private List<RecordField> getDefaultFields() {
         return createStringFields(new String[]{"id", "name", "balance", "address", "city", "state", "zipCode", "country"});
@@ -76,14 +77,14 @@ public class ITApacheCSVRecordReader {
 
     @Test
     public void testExceptionThrownOnParseProblem() {
-        CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setQuoteMode(QuoteMode.ALL).setTrim(true).setDelimiter(',').build();
+        CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setQuoteMode(QuoteMode.ALL).setTrim(true).setDelimiter(',').get();
         final int NUM_LINES = 25;
         StringBuilder sb = new StringBuilder("\"id\",\"name\",\"balance\"");
         for (int i = 0; i < NUM_LINES; i++) {
             sb.append(String.format("\"%s\",\"John Doe\",\"4750.89D\"\n", i));
         }
         // cause a parse problem
-        sb.append(String.format("\"%s\"dieParser,\"John Doe\",\"4750.89D\"\n", NUM_LINES ));
+        sb.append(String.format("\"%s\"dieParser,\"John Doe\",\"4750.89D\"\n", NUM_LINES));
         sb.append(String.format("\"%s\",\"John Doe\",\"4750.89D\"\n", NUM_LINES + 1));
         final RecordSchema schema = new SimpleRecordSchema(createStringFields(new String[] {"id", "name", "balance"}));
 

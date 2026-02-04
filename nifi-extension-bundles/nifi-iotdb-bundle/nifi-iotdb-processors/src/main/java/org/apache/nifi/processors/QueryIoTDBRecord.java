@@ -17,9 +17,6 @@
 package org.apache.nifi.processors;
 
 import org.apache.iotdb.isession.SessionDataSet;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.read.common.Field;
-import org.apache.iotdb.tsfile.read.common.RowRecord;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -35,21 +32,24 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
+import org.apache.nifi.serialization.SimpleRecordSchema;
 import org.apache.nifi.serialization.record.DataType;
-import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.MapRecord;
+import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
-import org.apache.nifi.serialization.record.RecordField;
-import org.apache.nifi.serialization.SimpleRecordSchema;
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.read.common.Field;
+import org.apache.tsfile.read.common.RowRecord;
 
 import java.io.OutputStream;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @SupportsBatching
 @Tags({"IoT", "Timeseries"})
@@ -63,7 +63,6 @@ public class QueryIoTDBRecord extends AbstractIoTDB {
 
     public static final PropertyDescriptor QUERY = new PropertyDescriptor.Builder()
             .name("Query")
-            .displayName("Query")
             .description("IoTDB query to be executed")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -72,7 +71,6 @@ public class QueryIoTDBRecord extends AbstractIoTDB {
 
     public static final PropertyDescriptor FETCH_SIZE = new PropertyDescriptor.Builder()
             .name("Fetch Size")
-            .displayName("Fetch Size")
             .description("Maximum number of results to return in a single chunk. Configuring 1 or more enables result set chunking")
             .defaultValue(String.valueOf(10_000))
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -82,7 +80,6 @@ public class QueryIoTDBRecord extends AbstractIoTDB {
 
     public static final PropertyDescriptor RECORD_WRITER_FACTORY = new PropertyDescriptor.Builder()
             .name("Record Writer")
-            .displayName("Record Writer")
             .description("Service for writing IoTDB query results as records")
             .identifiesControllerService(RecordSetWriterFactory.class)
             .required(true)

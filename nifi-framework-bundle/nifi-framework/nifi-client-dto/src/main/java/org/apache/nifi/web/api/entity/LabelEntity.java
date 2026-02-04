@@ -17,10 +17,9 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.DimensionsDTO;
 import org.apache.nifi.web.api.dto.LabelDTO;
-
-import jakarta.xml.bind.annotation.XmlRootElement;
 
 /**
  * A serialized representation of this class can be placed in the entity body of a request or response to or from the API. This particular entity holds a reference to a LabelDTO.
@@ -37,10 +36,12 @@ public class LabelEntity extends ComponentEntity implements Permissible<LabelDTO
      *
      * @return The LabelDTO object
      */
+    @Override
     public LabelDTO getComponent() {
         return component;
     }
 
+    @Override
     public void setComponent(LabelDTO component) {
         this.component = component;
     }

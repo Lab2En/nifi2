@@ -29,6 +29,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.json.OutputGrouping;
 import org.apache.nifi.json.WriteJsonResult;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -50,14 +51,15 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.API_VERSION;
+import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.OLD_API_VERSION_PROPERTY_NAME;
+import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.OLD_READ_TIMEOUT_PROPERTY_NAME;
+import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.OLD_SALESFORCE_INSTANCE_URL_PROPERTY_NAME;
+import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.OLD_TOKEN_PROVIDER_PROPERTY_NAME;
 import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.READ_TIMEOUT;
 import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.SALESFORCE_INSTANCE_URL;
 import static org.apache.nifi.processors.salesforce.util.CommonSalesforceProperties.TOKEN_PROVIDER;
@@ -76,8 +78,7 @@ public class PutSalesforceObject extends AbstractProcessor {
     private static final String ATTR_ERROR_MESSAGE = "error.message";
 
     protected static final PropertyDescriptor RECORD_READER_FACTORY = new PropertyDescriptor.Builder()
-            .name("record-reader")
-            .displayName("Record Reader")
+            .name("Record Reader")
             .description(
                     "Specifies the Controller Service to use for parsing incoming data and determining the data's schema")
             .identifiesControllerService(RecordReaderFactory.class)
@@ -94,25 +95,25 @@ public class PutSalesforceObject extends AbstractProcessor {
             .description("For FlowFiles created as a result of an execution error.")
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             SALESFORCE_INSTANCE_URL,
             API_VERSION,
             READ_TIMEOUT,
             TOKEN_PROVIDER,
             RECORD_READER_FACTORY
-    ));
+    );
 
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
             REL_SUCCESS,
             REL_FAILURE
-    )));
+    );
 
     private volatile SalesforceRestClient salesforceRestClient;
     private volatile int maxRecordCount;
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -158,6 +159,15 @@ public class PutSalesforceObject extends AbstractProcessor {
         }
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("record-reader", RECORD_READER_FACTORY.getName());
+        config.renameProperty(OLD_SALESFORCE_INSTANCE_URL_PROPERTY_NAME, SALESFORCE_INSTANCE_URL.getName());
+        config.renameProperty(OLD_API_VERSION_PROPERTY_NAME, API_VERSION.getName());
+        config.renameProperty(OLD_READ_TIMEOUT_PROPERTY_NAME, READ_TIMEOUT.getName());
+        config.renameProperty(OLD_TOKEN_PROVIDER_PROPERTY_NAME, TOKEN_PROVIDER.getName());
+    }
+
     private void processRecords(FlowFile flowFile, String objectType, ProcessContext context, ProcessSession session) throws IOException, MalformedRecordException, SchemaNotFoundException {
         RecordReaderFactory readerFactory = context.getProperty(RECORD_READER_FACTORY).asControllerService(RecordReaderFactory.class);
         int count = 0;
@@ -191,8 +201,8 @@ public class PutSalesforceObject extends AbstractProcessor {
     }
 
     private SalesforceConfiguration createSalesforceConfiguration(ProcessContext context) {
-        String salesforceVersion = context.getProperty(API_VERSION).getValue();
-        String instanceUrl = context.getProperty(SALESFORCE_INSTANCE_URL).getValue();
+        String salesforceVersion = context.getProperty(API_VERSION).evaluateAttributeExpressions().getValue();
+        String instanceUrl = context.getProperty(SALESFORCE_INSTANCE_URL).evaluateAttributeExpressions().getValue();
         OAuth2AccessTokenProvider accessTokenProvider =
                 context.getProperty(TOKEN_PROVIDER).asControllerService(OAuth2AccessTokenProvider.class);
         return SalesforceConfiguration.create(instanceUrl, salesforceVersion,

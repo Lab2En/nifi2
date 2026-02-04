@@ -27,10 +27,10 @@ import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.lookup.LookupFailureException;
 import org.apache.nifi.lookup.StringLookupService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -42,29 +42,32 @@ import java.util.Set;
 @Tags({"lookup", "enrich", "value", "key", "elasticsearch"})
 public class ElasticSearchStringLookupService extends AbstractControllerService implements StringLookupService {
     public static final PropertyDescriptor CLIENT_SERVICE = new PropertyDescriptor.Builder()
-            .name("el-rest-client-service")
-            .displayName("Client Service")
+            .name("Client Service")
             .description("An ElasticSearch client service to use for running queries.")
             .identifiesControllerService(ElasticSearchClientService.class)
             .required(true)
             .build();
     public static final PropertyDescriptor INDEX = new PropertyDescriptor.Builder()
-            .name("el-lookup-index")
-            .displayName("Index")
+            .name("Index")
             .description("The name of the index to read from")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor TYPE = new PropertyDescriptor.Builder()
-            .name("el-lookup-type")
-            .displayName("Type")
+            .name("Type")
             .description("The type of this document (used by Elasticsearch for indexing and searching)")
             .required(false)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
-    private static final List<PropertyDescriptor> DESCRIPTORS = Arrays.asList(CLIENT_SERVICE, INDEX, TYPE);
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CLIENT_SERVICE,
+            INDEX,
+            TYPE
+    );
+
     private static final ObjectMapper mapper = new ObjectMapper();
     public static final String ID = "es_document_id";
     private ElasticSearchClientService esClient;
@@ -73,7 +76,7 @@ public class ElasticSearchStringLookupService extends AbstractControllerService 
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -96,6 +99,13 @@ public class ElasticSearchStringLookupService extends AbstractControllerService 
         } catch (final IOException | ElasticsearchException e) {
             throw new LookupFailureException(e);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("el-rest-client-service", CLIENT_SERVICE.getName());
+        config.renameProperty("el-lookup-index", INDEX.getName());
+        config.renameProperty("el-lookup-type", TYPE.getName());
     }
 
     @Override

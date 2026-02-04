@@ -57,12 +57,6 @@ import org.springframework.ldap.filter.AndFilter;
 import org.springframework.ldap.filter.EqualsFilter;
 import org.springframework.ldap.filter.HardcodedFilter;
 
-import javax.naming.Context;
-import javax.naming.NamingEnumeration;
-import javax.naming.NamingException;
-import javax.naming.directory.Attribute;
-import javax.naming.directory.SearchControls;
-import javax.net.ssl.SSLContext;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -75,6 +69,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.naming.Context;
+import javax.naming.NamingEnumeration;
+import javax.naming.NamingException;
+import javax.naming.directory.Attribute;
+import javax.naming.directory.SearchControls;
+import javax.net.ssl.SSLContext;
 
 /**
  * Abstract LDAP based implementation of a login identity provider.
@@ -146,7 +146,7 @@ public class LdapUserGroupProvider implements UserGroupProvider {
     @Override
     public void initialize(final UserGroupProviderInitializationContext initializationContext) throws AuthorizerCreationException {
         final String namingPattern = String.format("%s (%s) - background sync thread", getClass().getSimpleName(), initializationContext.getIdentifier());
-        final ThreadFactory threadFactory = new BasicThreadFactory.Builder()
+        final ThreadFactory threadFactory = BasicThreadFactory.builder()
                 .daemon(true)
                 .namingPattern(namingPattern)
                 .build();
@@ -691,7 +691,7 @@ public class LdapUserGroupProvider implements UserGroupProvider {
         }
     }
 
-    private boolean hasMorePages(final DirContextProcessor processor ) {
+    private boolean hasMorePages(final DirContextProcessor processor) {
         return processor instanceof PagedResultsDirContextProcessor && ((PagedResultsDirContextProcessor) processor).hasMore();
     }
 

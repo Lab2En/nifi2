@@ -17,9 +17,9 @@
 
 package org.apache.nifi.wali;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.wali.DummyRecord;
@@ -309,7 +309,7 @@ public class TestSequentialAccessWriteAheadLog {
 
 
     @Test
-    @Disabled("For manual performance testing")
+    @EnabledIfSystemProperty(named = "nifi.test.performance", matches = "true", disabledReason = "For manual performance testing")
     public void testUpdatePerformance() throws IOException, InterruptedException {
         final Path path = Paths.get("target/sequential-access-repo");
         deleteRecursively(path.toFile());
@@ -332,19 +332,16 @@ public class TestSequentialAccessWriteAheadLog {
 
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < numThreads; i++) {
-                final Thread t = new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        final List<DummyRecord> batch = new ArrayList<>();
-                        for (int i = 0; i < updateCountPerThread / batchSize; i++) {
-                            batch.clear();
-                            for (int j = 0; j < batchSize; j++) {
-                                final DummyRecord record = new DummyRecord(String.valueOf(i), UpdateType.CREATE);
-                                batch.add(record);
-                            }
-
-                            assertThrows(Throwable.class, () -> repo.update(batch, false));
+                final Thread t = new Thread(() -> {
+                    final List<DummyRecord> batch = new ArrayList<>();
+                    for (int i1 = 0; i1 < updateCountPerThread / batchSize; i1++) {
+                        batch.clear();
+                        for (int j1 = 0; j1 < batchSize; j1++) {
+                            final DummyRecord record = new DummyRecord(String.valueOf(i1), UpdateType.CREATE);
+                            batch.add(record);
                         }
+
+                        assertThrows(Throwable.class, () -> repo.update(batch, false));
                     }
                 });
 

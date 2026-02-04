@@ -23,18 +23,15 @@ import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageException;
 import com.google.cloud.storage.StorageOptions;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processors.gcp.AbstractGCPProcessor;
 import org.apache.nifi.processors.gcp.util.MockReadChannel;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
+import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,6 +40,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.apache.nifi.processors.gcp.storage.StorageAttributes.ACL_OWNER_ATTR;
 import static org.apache.nifi.processors.gcp.storage.StorageAttributes.ACL_READER_ATTR;
@@ -82,8 +87,8 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 public class FetchGCSObjectTest extends AbstractGCSTest {
-    private final static String KEY = "test-key";
-    private final static Long GENERATION = 5L;
+    private static final String KEY = "test-key";
+    private static final Long GENERATION = 5L;
     private static final String CONTENT = "test-content";
 
     private static final Long SIZE = 100L;
@@ -117,11 +122,13 @@ public class FetchGCSObjectTest extends AbstractGCSTest {
     Storage storage;
     private AutoCloseable mockCloseable;
 
+    @Override
     @BeforeEach
     public void setup() throws Exception {
         mockCloseable = MockitoAnnotations.openMocks(this);
     }
 
+    @Override
     @AfterEach
     public void cleanup() throws Exception {
         final AutoCloseable closeable = mockCloseable;
@@ -200,7 +207,7 @@ public class FetchGCSObjectTest extends AbstractGCSTest {
 
         runner.assertAllFlowFilesTransferred(FetchGCSObject.REL_SUCCESS);
         runner.assertTransferCount(FetchGCSObject.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).getFirst();
 
         flowFile.assertContentEquals(CONTENT);
         flowFile.assertAttributeEquals(BUCKET_ATTR, BUCKET);
@@ -254,7 +261,7 @@ public class FetchGCSObjectTest extends AbstractGCSTest {
 
         runner.assertAllFlowFilesTransferred(FetchGCSObject.REL_SUCCESS);
         runner.assertTransferCount(FetchGCSObject.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(OWNER_ATTR, OWNER_USER_EMAIL);
         flowFile.assertAttributeEquals(OWNER_TYPE_ATTR, "user");
     }
@@ -287,7 +294,7 @@ public class FetchGCSObjectTest extends AbstractGCSTest {
 
         runner.assertAllFlowFilesTransferred(FetchGCSObject.REL_SUCCESS);
         runner.assertTransferCount(FetchGCSObject.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(OWNER_ATTR, OWNER_GROUP_EMAIL);
         flowFile.assertAttributeEquals(OWNER_TYPE_ATTR, "group");
     }
@@ -322,7 +329,7 @@ public class FetchGCSObjectTest extends AbstractGCSTest {
 
         runner.assertAllFlowFilesTransferred(FetchGCSObject.REL_SUCCESS);
         runner.assertTransferCount(FetchGCSObject.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(FetchGCSObject.REL_SUCCESS).getFirst();
 
         flowFile.assertAttributeEquals(OWNER_ATTR, OWNER_DOMAIN);
         flowFile.assertAttributeEquals(OWNER_TYPE_ATTR, "domain");
@@ -529,5 +536,34 @@ public class FetchGCSObjectTest extends AbstractGCSTest {
 
         runner.assertAllFlowFilesTransferred(FetchGCSObject.REL_FAILURE);
         runner.assertTransferCount(FetchGCSObject.REL_FAILURE, 1);
+    }
+
+    @Test
+    void testMigrateProperties() {
+        TestRunner testRunner = TestRunners.newTestRunner(FetchGCSObject.class);
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("gcs-bucket", FetchGCSObject.BUCKET.getName()),
+                Map.entry("gcs-key", FetchGCSObject.KEY.getName()),
+                Map.entry("gcs-generation", FetchGCSObject.GENERATION.getName()),
+                Map.entry("gcs-server-side-encryption-key", FetchGCSObject.ENCRYPTION_KEY.getName()),
+                Map.entry("gcs-object-range-start", FetchGCSObject.RANGE_START.getName()),
+                Map.entry("gcs-object-range-length", FetchGCSObject.RANGE_LENGTH.getName()),
+                Map.entry("storage-api-url", AbstractGCSProcessor.STORAGE_API_URL.getName()),
+                Map.entry("gcp-project-id", AbstractGCPProcessor.PROJECT_ID.getName()),
+                Map.entry("gcp-retry-count", AbstractGCPProcessor.RETRY_COUNT.getName()),
+                Map.entry(ProxyServiceMigration.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyServiceMigration.PROXY_CONFIGURATION_SERVICE)
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = testRunner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
+
+        final Set<String> expectedRemoved = Set.of(
+                "gcp-proxy-host",
+                "gcp-proxy-port",
+                "gcp-proxy-user-name",
+                "gcp-proxy-user-password"
+        );
+
+        assertEquals(expectedRemoved, propertyMigrationResult.getPropertiesRemoved());
     }
 }

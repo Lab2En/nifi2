@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class GetMongoIT extends AbstractMongoIT {
@@ -181,7 +182,7 @@ public class GetMongoIT extends AbstractMongoIT {
         ObjectMapper mapper = new ObjectMapper();
         Map<String, Object> parsed = mapper.readValue(raw, Map.class);
 
-        assertTrue(parsed.get("date_field").getClass() == String.class);
+        assertSame(parsed.get("date_field").getClass(), String.class);
     }
 
     @Test
@@ -360,7 +361,7 @@ public class GetMongoIT extends AbstractMongoIT {
      */
     @Test
     public void testReadQueryFromBodyWithEL() {
-        Map attributes = new HashMap();
+        Map<String, String> attributes = new HashMap<>();
         attributes.put("field", "c");
         attributes.put("value", "4");
         String query = "{ \"${field}\": { \"$gte\": ${value}}}";
@@ -553,9 +554,7 @@ public class GetMongoIT extends AbstractMongoIT {
         //Test a bad flowfile attribute
         runner.setIncomingConnection(true);
         runner.setProperty(GetMongo.QUERY, "${badfromff}");
-        runner.enqueue("<<?>>", new HashMap<String, String>() {{
-            put("badfromff", "{\"prop\":}");
-        }});
+        runner.enqueue("<<?>>", Map.of("badfromff", "{\"prop\":}"));
         runner.run();
         runner.assertTransferCount(GetMongo.REL_FAILURE, 1);
         runner.assertTransferCount(GetMongo.REL_SUCCESS, 0);
@@ -566,9 +565,7 @@ public class GetMongoIT extends AbstractMongoIT {
         //Test for regression on a good query from a flowfile attribute
         runner.setIncomingConnection(true);
         runner.setProperty(GetMongo.QUERY, "${badfromff}");
-        runner.enqueue("<<?>>", new HashMap<String, String>() {{
-            put("badfromff", "{}");
-        }});
+        runner.enqueue("<<?>>", Map.of("badfromff", "{}"));
         runner.run();
         runner.assertTransferCount(GetMongo.REL_FAILURE, 0);
         runner.assertTransferCount(GetMongo.REL_SUCCESS, 3);

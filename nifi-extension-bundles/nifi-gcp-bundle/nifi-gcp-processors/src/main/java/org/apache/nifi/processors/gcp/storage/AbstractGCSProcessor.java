@@ -17,18 +17,17 @@
 package org.apache.nifi.processors.gcp.storage;
 
 import com.google.api.gax.retrying.RetrySettings;
-import com.google.api.gax.rpc.FixedHeaderProvider;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.BaseServiceException;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
-import com.google.common.collect.ImmutableMap;
 import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.VerifiableProcessor;
@@ -43,6 +42,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static org.apache.nifi.processors.gcp.storage.StorageAttributes.BUCKET_DESC;
 
 /**
  * Base class for creating processors which connect to Google Cloud Storage.
@@ -59,17 +60,27 @@ public abstract class AbstractGCSProcessor extends AbstractGCPProcessor<Storage,
                     .description("FlowFiles are routed to this relationship if the Google Cloud Storage operation fails.")
                     .build();
 
-    public static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_FAILURE);
+    public static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
     @Override
     public Set<Relationship> getRelationships() {
         return RELATIONSHIPS;
     }
 
+    public static final PropertyDescriptor BUCKET = new PropertyDescriptor.Builder()
+            .name("Bucket")
+            .description(BUCKET_DESC)
+            .required(true)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+            .addValidator(StandardValidators.NON_EMPTY_EL_VALIDATOR)
+            .build();
+
     // https://cloud.google.com/storage/docs/request-endpoints#storage-set-client-endpoint-java
-    public static final PropertyDescriptor STORAGE_API_URL = new PropertyDescriptor
-            .Builder().name("storage-api-url")
-            .displayName("Storage API URL")
+    public static final PropertyDescriptor STORAGE_API_URL = new PropertyDescriptor.Builder()
+            .name("Storage API URL")
             .description("Overrides the default storage URL. Configuring an alternative Storage API URL also overrides the "
                     + "HTTP Host header on requests as described in the Google documentation for Private Service Connections.")
             .addValidator(StandardValidators.URL_VALIDATOR)
@@ -111,6 +122,12 @@ public abstract class AbstractGCSProcessor extends AbstractGCPProcessor<Storage,
     }
 
     @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("storage-api-url", STORAGE_API_URL.getName());
+    }
+
+    @Override
     protected final Collection<ValidationResult> customValidate(ValidationContext validationContext) {
         final Collection<ValidationResult> results = super.customValidate(validationContext);
         ProxyConfiguration.validateProxySpec(validationContext, results, ProxyAwareTransportFactory.PROXY_SPECS);
@@ -130,7 +147,7 @@ public abstract class AbstractGCSProcessor extends AbstractGCPProcessor<Storage,
     protected abstract List<String> getRequiredPermissions();
 
     protected String getBucketName(final ProcessContext context, final Map<String, String> attributes) {
-        return context.getProperty("gcs-bucket").evaluateAttributeExpressions(attributes).getValue();
+        return context.getProperty(BUCKET).evaluateAttributeExpressions(attributes).getValue();
     }
 
     @Override
@@ -151,8 +168,6 @@ public abstract class AbstractGCSProcessor extends AbstractGCPProcessor<Storage,
 
         if (storageApiUrl != null && !storageApiUrl.isEmpty()) {
             storageOptionsBuilder.setHost(storageApiUrl);
-            // https://codelabs.developers.google.com/cloudnet-psc#12
-            storageOptionsBuilder.setHeaderProvider(FixedHeaderProvider.create(ImmutableMap.of("Host", "www.googleapis.com")));
         }
 
         return  storageOptionsBuilder.setTransportOptions(getTransportOptions(context)).build();

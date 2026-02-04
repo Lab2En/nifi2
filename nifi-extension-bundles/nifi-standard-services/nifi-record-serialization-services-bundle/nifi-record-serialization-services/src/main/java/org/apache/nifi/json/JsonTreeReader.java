@@ -28,6 +28,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.schema.access.SchemaAccessStrategy;
@@ -56,6 +57,7 @@ import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_NAME_PROPER
 import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_REFERENCE_READER_PROPERTY;
 import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_TEXT_PROPERTY;
 import static org.apache.nifi.schema.inference.SchemaInferenceUtil.INFER_SCHEMA;
+import static org.apache.nifi.schema.inference.SchemaInferenceUtil.OBSOLETE_SCHEMA_CACHE;
 import static org.apache.nifi.schema.inference.SchemaInferenceUtil.SCHEMA_CACHE;
 
 @Tags({"json", "tree", "record", "reader", "parser"})
@@ -74,12 +76,10 @@ public class JsonTreeReader extends SchemaRegistryService implements RecordReade
     protected volatile String startingFieldName;
     protected volatile StartingFieldStrategy startingFieldStrategy;
     protected volatile SchemaApplicationStrategy schemaApplicationStrategy;
-    protected volatile StreamReadConstraints streamReadConstraints;
-    private volatile boolean allowComments;
+    protected volatile TokenParserFactory tokenParserFactory;
 
     public static final PropertyDescriptor STARTING_FIELD_STRATEGY = new PropertyDescriptor.Builder()
-            .name("starting-field-strategy")
-            .displayName("Starting Field Strategy")
+            .name("Starting Field Strategy")
             .description("Start processing from the root node or from a specified nested node.")
             .required(true)
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -89,8 +89,7 @@ public class JsonTreeReader extends SchemaRegistryService implements RecordReade
 
 
     public static final PropertyDescriptor STARTING_FIELD_NAME = new PropertyDescriptor.Builder()
-            .name("starting-field-name")
-            .displayName("Starting Field Name")
+            .name("Starting Field Name")
             .description("Skips forward to the given nested JSON field (array or object) to begin processing.")
             .required(false)
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -98,8 +97,7 @@ public class JsonTreeReader extends SchemaRegistryService implements RecordReade
             .build();
 
     public static final PropertyDescriptor SCHEMA_APPLICATION_STRATEGY = new PropertyDescriptor.Builder()
-            .name("schema-application-strategy")
-            .displayName("Schema Application Strategy")
+            .name("Schema Application Strategy")
             .description("Specifies whether the schema is defined for the whole JSON or for the selected part starting from \"Starting Field Name\".")
             .required(true)
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -135,8 +133,20 @@ public class JsonTreeReader extends SchemaRegistryService implements RecordReade
         this.startingFieldStrategy = StartingFieldStrategy.valueOf(context.getProperty(STARTING_FIELD_STRATEGY).getValue());
         this.startingFieldName = context.getProperty(STARTING_FIELD_NAME).getValue();
         this.schemaApplicationStrategy = SchemaApplicationStrategy.valueOf(context.getProperty(SCHEMA_APPLICATION_STRATEGY).getValue());
-        this.streamReadConstraints = buildStreamReadConstraints(context);
-        this.allowComments = isAllowCommentsEnabled(context);
+        this.tokenParserFactory = createTokenParserFactory(context);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("starting-field-strategy", STARTING_FIELD_STRATEGY.getName());
+        config.renameProperty("starting-field-name", STARTING_FIELD_NAME.getName());
+        config.renameProperty("schema-application-strategy", SCHEMA_APPLICATION_STRATEGY.getName());
+        config.renameProperty(OBSOLETE_SCHEMA_CACHE, SCHEMA_CACHE.getName());
+    }
+
+    protected TokenParserFactory createTokenParserFactory(final ConfigurationContext context) {
+        return new JsonParserFactory(buildStreamReadConstraints(context), isAllowCommentsEnabled(context));
     }
 
     /**
@@ -179,7 +189,7 @@ public class JsonTreeReader extends SchemaRegistryService implements RecordReade
     }
 
     protected RecordSourceFactory<JsonNode> createJsonRecordSourceFactory() {
-        return (variables, in) -> new JsonRecordSource(in, startingFieldStrategy, startingFieldName, streamReadConstraints);
+        return (variables, in) -> new JsonRecordSource(in, startingFieldStrategy, startingFieldName, tokenParserFactory);
     }
 
     @Override
@@ -187,6 +197,7 @@ public class JsonTreeReader extends SchemaRegistryService implements RecordReade
         return INFER_SCHEMA;
     }
 
+    @Override
     public RecordReader createRecordReader(final Map<String, String> variables, final InputStream in, final long inputLength, final ComponentLog logger)
             throws IOException, MalformedRecordException, SchemaNotFoundException {
         final RecordSchema schema = getSchema(variables, in, null);
@@ -195,6 +206,6 @@ public class JsonTreeReader extends SchemaRegistryService implements RecordReade
 
     protected JsonTreeRowRecordReader createJsonTreeRowRecordReader(final InputStream in, final ComponentLog logger, final RecordSchema schema) throws IOException, MalformedRecordException {
         return new JsonTreeRowRecordReader(in, logger, schema, dateFormat, timeFormat, timestampFormat, startingFieldStrategy, startingFieldName,
-                schemaApplicationStrategy, null, allowComments, streamReadConstraints, new JsonParserFactory());
+                schemaApplicationStrategy, null, tokenParserFactory);
     }
 }

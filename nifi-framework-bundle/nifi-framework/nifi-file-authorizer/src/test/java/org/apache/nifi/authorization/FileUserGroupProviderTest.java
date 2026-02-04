@@ -16,18 +16,15 @@
  */
 package org.apache.nifi.authorization;
 
-import org.apache.nifi.parameter.ParameterLookup;
 import org.apache.nifi.attribute.expression.language.StandardPropertyValue;
 import org.apache.nifi.authorization.exception.AuthorizerCreationException;
 import org.apache.nifi.components.PropertyValue;
+import org.apache.nifi.parameter.ParameterLookup;
 import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.util.file.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -35,7 +32,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,7 +39,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -90,7 +85,21 @@ public class FileUserGroupProviderTest {
             "  </users>" +
             "</tenants>";
 
-    private NiFiProperties properties;
+    private static final String FINGERPRINT = """
+            <?xml version="1.0" ?>
+            <tenants>
+            <user identifier="user-1" identity="user-1"></user>
+            <user identifier="user-2" identity="user-2"></user>
+            <group identifier="group-1" name="group-1">
+            <groupUser identifier="user-1"></groupUser>
+            </group>
+            <group identifier="group-2" name="group-2">
+            <groupUser identifier="user-2">
+            </groupUser>
+            </group>
+            </tenants>
+            """.replaceAll("[\\r\\n]", "");
+
     private FileUserGroupProvider userGroupProvider;
     private File primaryTenants;
     private File restoreTenants;
@@ -107,8 +116,8 @@ public class FileUserGroupProviderTest {
         restoreTenants = new File("target/restore/users.xml");
         FileUtils.ensureDirectoryExistAndCanAccess(restoreTenants.getParentFile());
 
-        properties = mock(NiFiProperties.class);
-        when(properties.getRestoreDirectory()).thenReturn(restoreTenants.getParentFile());
+        NiFiProperties properties1 = mock(NiFiProperties.class);
+        when(properties1.getRestoreDirectory()).thenReturn(restoreTenants.getParentFile());
 
         configurationContext = mock(AuthorizerConfigurationContext.class);
         when(configurationContext.getProperty(eq(FileUserGroupProvider.PROP_TENANTS_FILE))).thenReturn(new StandardPropertyValue(primaryTenants.getPath(), null, ParameterLookup.EMPTY));
@@ -131,27 +140,40 @@ public class FileUserGroupProviderTest {
                 }
             }
 
+            int j = 1;
+            while (true) {
+                final String key = FileUserGroupProvider.PROP_INITIAL_GROUP_IDENTITY_PREFIX + j++;
+                final PropertyValue value = configurationContext.getProperty(key);
+                if (value == null) {
+                    break;
+                } else {
+                    properties.put(key, value.getValue());
+                }
+            }
+
             return properties;
         });
 
         userGroupProvider = new FileUserGroupProvider();
-        userGroupProvider.setNiFiProperties(properties);
+        userGroupProvider.setNiFiProperties(properties1);
         userGroupProvider.initialize(null);
     }
 
     @AfterEach
-    public void cleanup() throws Exception {
+    public void cleanup() {
         deleteFile(primaryTenants);
         deleteFile(restoreTenants);
     }
 
     @Test
-    public void testOnConfiguredWhenInitialUsersNotProvided() throws Exception {
+    public void testOnConfiguredWhenInitialUsersAndInitialGroupsNotProvided() throws Exception {
         writeFile(primaryTenants, EMPTY_TENANTS_CONCISE);
         userGroupProvider.onConfigured(configurationContext);
 
         final Set<User> users = userGroupProvider.getUsers();
         assertEquals(0, users.size());
+        final Set<Group> groups = userGroupProvider.getGroups();
+        assertEquals(0, groups.size());
     }
 
     @Test
@@ -179,6 +201,26 @@ public class FileUserGroupProviderTest {
     }
 
     @Test
+    public void testOnConfiguredWhenInitialGroupsProvided() throws Exception {
+        final String adminGroupIdentity = "admin-group";
+        final String otherGroupIdentity = "other-group";
+
+        when(configurationContext.getProperty(eq(FileUserGroupProvider.PROP_INITIAL_GROUP_IDENTITY_PREFIX + "1")))
+                .thenReturn(new StandardPropertyValue(adminGroupIdentity, null, ParameterLookup.EMPTY));
+        when(configurationContext.getProperty(eq(FileUserGroupProvider.PROP_INITIAL_GROUP_IDENTITY_PREFIX + "2")))
+                .thenReturn(new StandardPropertyValue(otherGroupIdentity, null, ParameterLookup.EMPTY));
+
+        writeFile(primaryTenants, EMPTY_TENANTS_CONCISE);
+        userGroupProvider.onConfigured(configurationContext);
+
+        final Set<Group> groups = userGroupProvider.getGroups();
+        assertEquals(2, groups.size());
+
+        assertTrue(groups.contains(new Group.Builder().identifierGenerateFromSeed(adminGroupIdentity).name(adminGroupIdentity).build()));
+        assertTrue(groups.contains(new Group.Builder().identifierGenerateFromSeed(otherGroupIdentity).name(otherGroupIdentity).build()));
+    }
+
+    @Test
     public void testOnConfiguredWhenTenantsExistAndInitialUsersProvided() throws Exception {
         final String adminIdentity = "admin-user";
         final String nodeIdentity1 = "node-identity-1";
@@ -200,6 +242,24 @@ public class FileUserGroupProviderTest {
 
         assertTrue(users.contains(new User.Builder().identifier("user-1").identity("user-1").build()));
         assertTrue(users.contains(new User.Builder().identifier("user-2").identity("user-2").build()));
+    }
+
+    @Test
+    public void testOnConfiguredWhenTenantsExistAndInitialGroupsProvided() throws Exception {
+        final String adminGroupIdentity = "admin-group";
+        final String otherGroupIdentity = "other-group";
+
+        // despite setting initial groups, they will not be loaded as the tenants file is non-empty
+        when(configurationContext.getProperty(eq(FileUserGroupProvider.PROP_INITIAL_GROUP_IDENTITY_PREFIX + "1")))
+                .thenReturn(new StandardPropertyValue(adminGroupIdentity, null, ParameterLookup.EMPTY));
+        when(configurationContext.getProperty(eq(FileUserGroupProvider.PROP_INITIAL_GROUP_IDENTITY_PREFIX + "2")))
+                .thenReturn(new StandardPropertyValue(otherGroupIdentity, null, ParameterLookup.EMPTY));
+
+        writeFile(primaryTenants, SIMPLE_TENANTS_BY_USER);
+        userGroupProvider.onConfigured(configurationContext);
+
+        final Set<Group> groups = userGroupProvider.getGroups();
+        assertEquals(0, groups.size());
     }
 
     @Test
@@ -607,31 +667,39 @@ public class FileUserGroupProviderTest {
         assertEquals(2, userGroupProvider.getGroups().size());
     }
 
-    private static void writeFile(final File file, final String content) throws Exception {
+    @Test
+    public void testGetFingerprint() throws IOException {
+        writeFile(primaryTenants, TENANTS);
+        userGroupProvider.onConfigured(configurationContext);
+        assertEquals(2, userGroupProvider.getGroups().size());
+
+        final String fingerprint = userGroupProvider.getFingerprint();
+        assertEquals(FINGERPRINT, fingerprint);
+    }
+
+    @Test
+    public void testInheritFingerprint() throws IOException {
+        writeFile(primaryTenants, EMPTY_TENANTS);
+        userGroupProvider.onConfigured(configurationContext);
+
+        userGroupProvider.inheritFingerprint(FINGERPRINT);
+
+        assertEquals(2, userGroupProvider.getUsers().size());
+        assertEquals(2, userGroupProvider.getGroups().size());
+    }
+
+    private static void writeFile(final File file, final String content) throws IOException {
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         try (final FileOutputStream fos = new FileOutputStream(file)) {
             fos.write(bytes);
         }
     }
 
-    private static boolean deleteFile(final File file) {
+    private static void deleteFile(final File file) {
         if (file.isDirectory()) {
             FileUtils.deleteFilesInDir(file, null, null, true, true);
         }
-        return FileUtils.deleteFile(file, null, 10);
-    }
-
-    private NiFiProperties getNiFiProperties(final Properties properties) {
-        final NiFiProperties nifiProperties = Mockito.mock(NiFiProperties.class);
-        when(nifiProperties.getPropertyKeys()).thenReturn(properties.stringPropertyNames());
-
-        when(nifiProperties.getProperty(anyString())).then(new Answer<String>() {
-            @Override
-            public String answer(InvocationOnMock invocationOnMock) throws Throwable {
-                return properties.getProperty((String) invocationOnMock.getArguments()[0]);
-            }
-        });
-        return nifiProperties;
+        FileUtils.deleteFile(file, null, 10);
     }
 
 }

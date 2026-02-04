@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { concatLatestFrom } from '@ngrx/operators';
 import * as ProvenanceEventListingActions from './provenance-event-listing.actions';
@@ -41,25 +41,22 @@ import { CancelDialog } from '../../../../ui/common/cancel-dialog/cancel-dialog.
 import * as ErrorActions from '../../../../state/error/error.actions';
 import { ErrorHelper } from '../../../../service/error-helper.service';
 import { HttpErrorResponse } from '@angular/common/http';
-import { isDefinedAndNotNull, NiFiCommon } from 'libs/shared/src';
+import { isDefinedAndNotNull, NiFiCommon, LARGE_DIALOG, MEDIUM_DIALOG } from '@nifi/shared';
 import { selectClusterSummary } from '../../../../state/cluster-summary/cluster-summary.selectors';
 import { ClusterService } from '../../../../service/cluster.service';
-import { LARGE_DIALOG, MEDIUM_DIALOG } from 'libs/shared/src';
 import { Attribute } from '../../../../state/shared';
 import { ErrorContextKey } from '../../../../state/error';
 
 @Injectable()
 export class ProvenanceEventListingEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<NiFiState>,
-        private provenanceService: ProvenanceService,
-        private errorHelper: ErrorHelper,
-        private clusterService: ClusterService,
-        private nifiCommon: NiFiCommon,
-        private dialog: MatDialog,
-        private router: Router
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<NiFiState>>(Store);
+    private provenanceService = inject(ProvenanceService);
+    private errorHelper = inject(ErrorHelper);
+    private clusterService = inject(ClusterService);
+    private nifiCommon = inject(NiFiCommon);
+    private dialog = inject(MatDialog);
+    private router = inject(Router);
 
     loadProvenanceOptions$ = createEffect(() =>
         this.actions$.pipe(
@@ -100,7 +97,7 @@ export class ProvenanceEventListingEffects {
                     disableClose: true
                 });
 
-                dialogReference.componentInstance.cancel.pipe(take(1)).subscribe(() => {
+                dialogReference.componentInstance.exit.pipe(take(1)).subscribe(() => {
                     this.store.dispatch(ProvenanceEventListingActions.stopPollingProvenanceQuery());
                 });
 

@@ -20,14 +20,22 @@ import com.azure.core.http.rest.Response;
 import com.azure.storage.file.datalake.DataLakeFileClient;
 import com.azure.storage.file.datalake.models.DataLakeRequestConditions;
 import com.azure.storage.file.datalake.models.DataLakeStorageException;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processors.azure.storage.utils.AzureStorageUtils;
 import org.apache.nifi.util.MockComponentLog;
+import org.apache.nifi.util.PropertyMigrationResult;
+import org.apache.nifi.util.TestRunner;
+import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.Test;
+
+import java.util.Map;
 
 import static org.apache.nifi.processors.azure.storage.PutAzureDataLakeStorage.FAIL_RESOLUTION;
 import static org.apache.nifi.processors.azure.storage.PutAzureDataLakeStorage.IGNORE_RESOLUTION;
 import static org.apache.nifi.processors.azure.storage.PutAzureDataLakeStorage.REPLACE_RESOLUTION;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -63,5 +71,23 @@ public class TestPutAzureDataLakeStorage {
         assertThrows(ProcessException.class, () -> processor.renameFile(fileClient, "", FILE_NAME, REPLACE_RESOLUTION));
         assertThrows(ProcessException.class, () -> processor.renameFile(fileClient, "", FILE_NAME, IGNORE_RESOLUTION));
         verify(fileClient, times(3)).delete();
+    }
+
+    @Test
+    void testMigration() {
+        TestRunner runner = TestRunners.newTestRunner(PutAzureDataLakeStorage.class);
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry(AzureStorageUtils.OLD_ADLS_CREDENTIALS_SERVICE_DESCRIPTOR_NAME, AzureStorageUtils.ADLS_CREDENTIALS_SERVICE.getName()),
+                Map.entry(AzureStorageUtils.OLD_FILESYSTEM_DESCRIPTOR_NAME, AzureStorageUtils.FILESYSTEM.getName()),
+                Map.entry(AzureStorageUtils.OLD_DIRECTORY_DESCRIPTOR_NAME, AzureStorageUtils.DIRECTORY.getName()),
+                Map.entry(AzureStorageUtils.OLD_FILE_DESCRIPTOR_NAME, AzureStorageUtils.FILE.getName()),
+                Map.entry("conflict-resolution-strategy", PutAzureDataLakeStorage.CONFLICT_RESOLUTION.getName()),
+                Map.entry("writing-strategy", PutAzureDataLakeStorage.WRITING_STRATEGY.getName()),
+                Map.entry("base-temporary-path", PutAzureDataLakeStorage.BASE_TEMPORARY_PATH.getName()),
+                Map.entry(ProxyServiceMigration.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyServiceMigration.PROXY_CONFIGURATION_SERVICE)
+        );
+
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
     }
 }

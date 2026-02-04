@@ -15,11 +15,10 @@
  * limitations under the License.
  */
 
-import { Component, DestroyRef, inject, Inject, Input, OnInit } from '@angular/core';
+import { Component, DestroyRef, inject, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ErrorBanner } from '../../../../../ui/common/error-banner/error-banner.component';
 import { MatButtonModule } from '@angular/material/button';
 import { NifiSpinnerDirective } from '../../../../../ui/common/spinner/nifi-spinner.directive';
 import {
@@ -34,14 +33,13 @@ import {
     ParameterStatusEntity
 } from '../../../state/parameter-providers';
 import { debounceTime, Observable, Subject } from 'rxjs';
-import { TextTip, NiFiCommon, NifiTooltipDirective, PipesModule } from '@nifi/shared';
+import { TextTip, NiFiCommon, NifiTooltipDirective, AffectedComponentEntity, SortPipe, JoinPipe } from '@nifi/shared';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { ParameterGroupsTable } from './parameter-groups-table/parameter-groups-table.component';
 import { MatCheckboxChange, MatCheckboxModule } from '@angular/material/checkbox';
 import { MatInputModule } from '@angular/material/input';
 import { ParameterReferences } from '../../../../../ui/common/parameter-references/parameter-references.component';
-import { AffectedComponentEntity } from '../../../../../state/shared';
 import * as ParameterProviderActions from '../../../state/parameter-providers/parameter-providers.actions';
 import { Store } from '@ngrx/store';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -52,12 +50,10 @@ import { ContextErrorBanner } from '../../../../../ui/common/context-error-banne
 
 @Component({
     selector: 'fetch-parameter-provider-parameters',
-    standalone: true,
     imports: [
         CommonModule,
         MatDialogModule,
         ReactiveFormsModule,
-        ErrorBanner,
         MatButtonModule,
         NifiSpinnerDirective,
         NifiTooltipDirective,
@@ -67,13 +63,20 @@ import { ContextErrorBanner } from '../../../../../ui/common/context-error-banne
         MatCheckboxModule,
         MatInputModule,
         ParameterReferences,
-        PipesModule,
+        SortPipe,
+        JoinPipe,
         ContextErrorBanner
     ],
     templateUrl: './fetch-parameter-provider-parameters.component.html',
     styleUrls: ['./fetch-parameter-provider-parameters.component.scss']
 })
 export class FetchParameterProviderParameters extends CloseOnEscapeDialog implements OnInit {
+    private formBuilder = inject(FormBuilder);
+    private clusterConnectionService = inject(ClusterConnectionService);
+    private nifiCommon = inject(NiFiCommon);
+    private store = inject<Store<ParameterProvidersState>>(Store);
+    request = inject<FetchParameterProviderDialogRequest>(MAT_DIALOG_DATA);
+
     fetchParametersForm: FormGroup;
     parameterProvider: ParameterProviderEntity;
     selectedParameterGroup: ParameterGroupConfiguration | null = null;
@@ -106,14 +109,10 @@ export class FetchParameterProviderParameters extends CloseOnEscapeDialog implem
 
     private destroyRef: DestroyRef = inject(DestroyRef);
 
-    constructor(
-        private formBuilder: FormBuilder,
-        private clusterConnectionService: ClusterConnectionService,
-        private nifiCommon: NiFiCommon,
-        private store: Store<ParameterProvidersState>,
-        @Inject(MAT_DIALOG_DATA) public request: FetchParameterProviderDialogRequest
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         this.parameterProvider = request.parameterProvider;
 
         this.fetchParametersForm = this.formBuilder.group({});
@@ -564,7 +563,7 @@ export class FetchParameterProviderParameters extends CloseOnEscapeDialog implem
         // if a fetched parameter is new, removed, missing but referenced, or has a changed value... consider the form dirty.
         const isDirty = anyParametersChangedInProvider || this.fetchParametersForm.dirty;
 
-        return isDirty && !this.fetchParametersForm.invalid;
+        return isDirty && !this.fetchParametersForm.invalid && !this.fetchParametersForm.pending;
     }
 
     private getFormData(): ParameterProviderParameterApplicationEntity {

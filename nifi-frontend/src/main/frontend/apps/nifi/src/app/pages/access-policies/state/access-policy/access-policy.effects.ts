@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { concatLatestFrom } from '@ngrx/operators';
 import { NiFiState } from '../../../../state';
@@ -28,8 +28,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { AccessPolicyService } from '../../service/access-policy.service';
 import { AccessPolicyEntity, ComponentResourceAction, PolicyStatus, ResourceAction } from '../shared';
 import { selectAccessPolicy, selectResourceAction, selectSaving } from './access-policy.selectors';
-import { YesNoDialog } from '../../../../ui/common/yes-no-dialog/yes-no-dialog.component';
-import { isDefinedAndNotNull, MEDIUM_DIALOG, SMALL_DIALOG } from 'libs/shared/src';
+import { isDefinedAndNotNull, MEDIUM_DIALOG, SMALL_DIALOG, YesNoDialog } from '@nifi/shared';
 import { TenantEntity } from '../../../../state/shared';
 import { AddTenantToPolicyDialog } from '../../ui/common/add-tenant-to-policy-dialog/add-tenant-to-policy-dialog.component';
 import { AddTenantsToPolicyRequest } from './index';
@@ -42,14 +41,12 @@ import { ErrorContextKey } from '../../../../state/error';
 
 @Injectable()
 export class AccessPolicyEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<NiFiState>,
-        private router: Router,
-        private accessPoliciesService: AccessPolicyService,
-        private dialog: MatDialog,
-        private errorHelper: ErrorHelper
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<NiFiState>>(Store);
+    private router = inject(Router);
+    private accessPoliciesService = inject(AccessPolicyService);
+    private dialog = inject(MatDialog);
+    private errorHelper = inject(ErrorHelper);
 
     setAccessPolicy$ = createEffect(() =>
         this.actions$.pipe(

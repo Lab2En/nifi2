@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.cdc.mysql.event.io;
 
-
 import org.apache.nifi.cdc.event.io.EventWriterConfiguration;
 import org.apache.nifi.cdc.mysql.event.CommitTransactionEventInfo;
 import org.apache.nifi.processor.ProcessSession;
@@ -40,6 +39,7 @@ public class CommitTransactionEventWriter extends AbstractBinlogEventWriter<Comm
         return sequenceId;
     }
 
+    @Override
     protected void writeJson(CommitTransactionEventInfo event) throws IOException {
         super.writeJson(event);
         if (event.getDatabaseName() != null) {

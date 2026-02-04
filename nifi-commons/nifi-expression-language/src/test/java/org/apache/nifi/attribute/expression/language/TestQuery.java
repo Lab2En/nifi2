@@ -58,6 +58,7 @@ import static java.lang.Double.POSITIVE_INFINITY;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -247,8 +248,8 @@ public class TestQuery {
         assertEquals("$xyz", evaluateQueryForEscape("$$${abc}", attributes));
         assertEquals("$${abc}", evaluateQueryForEscape("$$$${abc}", attributes));
 
-        assertEquals( "Unescaped $$${5 because no closing brace", evaluateQueryForEscape("Unescaped $$${5 because no closing brace", attributes));
-        assertEquals( "Unescaped $ because no closing brace", evaluateQueryForEscape("Unescaped $$${'5'} because no closing brace", attributes));
+        assertEquals("Unescaped $$${5 because no closing brace", evaluateQueryForEscape("Unescaped $$${5 because no closing brace", attributes));
+        assertEquals("Unescaped $ because no closing brace", evaluateQueryForEscape("Unescaped $$${'5'} because no closing brace", attributes));
 
         assertEquals("I owe you $5", evaluateQueryForEscape("I owe you $5", attributes));
         assertEquals("You owe me $$5 too", evaluateQueryForEscape("You owe me $$5 too", attributes));
@@ -446,6 +447,14 @@ public class TestQuery {
         verifyEquals("${#{'test param'}:append(' - '):append(#{'test param'})}", attributes, stateValues, parameters, "unit - unit");
 
         verifyEquals("${#{\"test param\"}}", attributes, stateValues, parameters, "unit");
+
+        // Unquoted parameter reference with spaces should also work
+        verifyEquals("${#{test param}}", attributes, stateValues, parameters, "unit");
+
+        // Unquoted parameter used within a function argument
+        parameters.put("Date Format", "yyyy");
+        final String expectedYear = String.valueOf(java.time.LocalDate.now().getYear());
+        verifyEquals("${now():format(#{Date Format})}", attributes, stateValues, parameters, expectedYear);
     }
 
     @Test
@@ -477,11 +486,10 @@ public class TestQuery {
         phoneBookAttributes.stream()
                 .filter(currentAttribute -> !currentAttribute.equals(updatedAttribute))
                 .forEach(currentAttribute -> {
-                            String expected = Query.evaluateExpressions(currentAttribute, originalAttributes, null, null, ParameterLookup.EMPTY);
-                            verifyEquals(currentAttribute, attributes, expected);
-                        }
-                );
-        if (!ADDRESS_BOOK_JSON_PATH_EMPTY.equals(updatedAttribute) ) {
+                    String expected = Query.evaluateExpressions(currentAttribute, originalAttributes, null, null, ParameterLookup.EMPTY);
+                    verifyEquals(currentAttribute, attributes, expected);
+                });
+        if (!ADDRESS_BOOK_JSON_PATH_EMPTY.equals(updatedAttribute)) {
             verifyEquals(updatedAttribute, attributes, updatedValue);
         }
     }
@@ -491,7 +499,7 @@ public class TestQuery {
         String addressBook = getResourceAsString("/json/address-book.json");
         attributes.put("json", addressBook);
 
-        if ( !ADDRESS_BOOK_JSON_PATH_EMPTY.equals(targetAttribute) ) {
+        if (!ADDRESS_BOOK_JSON_PATH_EMPTY.equals(targetAttribute)) {
             verifyEquals(targetAttribute, attributes, originalValue);
         }
 
@@ -516,7 +524,7 @@ public class TestQuery {
 
     @Test
     public void testJsonPathDeleteMissingPath() throws IOException {
-       verifyJsonPathExpressions(
+        verifyJsonPathExpressions(
             ADDRESS_BOOK_JSON_PATH_EMPTY,
             "",
             "${json:jsonPathDelete('$.missing-path')}",
@@ -594,7 +602,7 @@ public class TestQuery {
                 "",
                 "${json:jsonPathAdd('$.missing-path', 'Jimmy')}",
                 "");
-       verifyEquals("${json:jsonPath('$.missing-path')}", attributes, "");
+        verifyEquals("${json:jsonPath('$.missing-path')}", attributes, "");
     }
 
     @Test
@@ -1008,6 +1016,29 @@ public class TestQuery {
         verifyEquals("${date:toNumber():toDate():format('yyyy')}", attributes, "2014");
         verifyEquals("${date:toDate():toNumber():format('yyyy')}", attributes, "2014");
         verifyEquals("${date:toDate():toNumber():toDate():toNumber():toDate():toNumber():format('yyyy')}", attributes, "2014");
+    }
+
+    @Test
+    public void testToDateAdjustedWithTimeZone() {
+        final String dateFormat = "yyyy-MM-dd";
+        final String created = "2025-06-01";
+        final String timeZoneId = "UTC";
+        final TimeZone timeZone = TimeZone.getTimeZone(timeZoneId);
+
+        // Build Calendar for java.util.Date to match expected result of toDate() function
+        final Calendar calendar = Calendar.getInstance();
+        calendar.clear();
+        calendar.set(Calendar.YEAR, 2025);
+        calendar.set(Calendar.MONTH, Calendar.JUNE);
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
+        calendar.setTimeZone(timeZone);
+
+        // Expected Date with System Default Time Zone and hours adjusted based on Time Zone specified
+        final Date expected = calendar.getTime();
+
+        final String expression = "${created:toDate('%s', '%s')}".formatted(dateFormat, timeZoneId);
+        final Map<String, String> attributes = Map.of("created", created);
+        verifyEquals(expression, attributes, expected);
     }
 
     @Test
@@ -2301,7 +2332,7 @@ public class TestQuery {
 
         attributes.put("string", "special ♣");
         verifyEquals("${string:escapeHtml4()}", attributes, "special &clubs;");
-      }
+    }
 
     @Test
     public void testUnescapeFunctions() {
@@ -2350,6 +2381,33 @@ public class TestQuery {
         verifyEquals("${str_attr:hash('SHA-256')}", attributes, "9b6a1a9167a5caf3f5948413faa89e0ec0de89e12bef55327442e60dcc0e8c9b");
         verifyEquals("${nbr_attr:toNumber():hash('MD5')}", attributes, "d3d9446802a44259755d38e6d163e820");
         verifyEquals("${nbr_attr:hash('MD5')}", attributes, "d3d9446802a44259755d38e6d163e820");
+    }
+
+    @Test
+    public void testReplaceByPattern() {
+        final Map<String, String> attributes = new HashMap<>();
+        attributes.put("str_attr", "myValue2");
+
+        verifyEquals("${str_attr:replaceByPattern('')}", attributes, "myValue2");
+        verifyEquals("${str_attr:replaceByPattern(${doesnotexist})}", attributes, "myValue2");
+
+        verifyEquals("${str_attr:replaceByPattern('.*:foo')}", attributes, "foo");
+        verifyEquals("${str_attr:replaceByPattern('myValue2:test,.*:foo')}", attributes, "test");
+        verifyEquals("${str_attr:replaceByPattern('myValue[3-4]:test,.*:foo')}", attributes, "foo");
+        verifyEquals("${str_attr:replaceByPattern('myValue[3-4]:test,abc:foo')}", attributes, "myValue2");
+        verifyEquals("${str_attr:replaceByPattern('myValue[3-4]:test, abc:foo, myValue[1-4]:xyz')}", attributes, "xyz");
+        verifyEquals("${str_attr:replaceByPattern('myValue1:test,myValue2:test,myValue3:test')}", attributes, "test");
+
+        verifyEquals("${str_attr:replaceByPattern(${literal('myValue[3-4]:test'):append(','):append(' .*:foo')})}", attributes, "foo");
+    }
+
+    @Test
+    public void testReplaceByPatternWithSameReplacement() {
+        final String expression = "${attr:replaceByPattern('a:ok,b:ok,c:ok')}";
+
+        verifyEquals(expression, Map.of("attr", "a"), "ok");
+        verifyEquals(expression, Map.of("attr", "b"), "ok");
+        verifyEquals(expression, Map.of("attr", "c"), "ok");
     }
 
     @Test
@@ -2560,19 +2618,21 @@ public class TestQuery {
         if (expectedResult instanceof Long) {
             if (ResultType.NUMBER.equals(result.getResultType())) {
                 final Number resultNumber = ((NumberQueryResult) result).getValue();
-                assertTrue(resultNumber instanceof Long);
+                assertInstanceOf(Long.class, resultNumber);
             } else {
                 assertEquals(ResultType.WHOLE_NUMBER, result.getResultType());
             }
         } else if (expectedResult instanceof Double) {
             if (ResultType.NUMBER.equals(result.getResultType())) {
                 final Number resultNumber = ((NumberQueryResult) result).getValue();
-                assertTrue(resultNumber instanceof Double);
+                assertInstanceOf(Double.class, resultNumber);
             } else {
                 assertEquals(ResultType.DECIMAL, result.getResultType());
             }
         } else if (expectedResult instanceof Boolean) {
             assertEquals(ResultType.BOOLEAN, result.getResultType());
+        } else if (expectedResult instanceof Date) {
+            assertEquals(ResultType.DATE, result.getResultType());
         } else {
             assertEquals(ResultType.STRING, result.getResultType());
         }

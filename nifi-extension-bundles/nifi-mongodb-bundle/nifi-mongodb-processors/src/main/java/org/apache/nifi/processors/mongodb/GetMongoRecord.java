@@ -31,6 +31,7 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.mongodb.MongoDBClientService;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -47,10 +48,6 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,15 +61,13 @@ import java.util.Set;
 })
 public class GetMongoRecord extends AbstractMongoQueryProcessor {
     public static final PropertyDescriptor WRITER_FACTORY = new PropertyDescriptor.Builder()
-        .name("get-mongo-record-writer-factory")
-        .displayName("Record Writer")
+        .name("Record Writer")
         .description("The record writer to use to write the result sets.")
         .identifiesControllerService(RecordSetWriterFactory.class)
         .required(true)
         .build();
     public static final PropertyDescriptor SCHEMA_NAME = new PropertyDescriptor.Builder()
-        .name("mongodb-schema-name")
-        .displayName("Schema Name")
+        .name("Schema Name")
         .description("The name of the schema in the configured schema registry to use for the query results.")
         .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
         .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -80,35 +75,29 @@ public class GetMongoRecord extends AbstractMongoQueryProcessor {
         .required(true)
         .build();
 
-    private static final List<PropertyDescriptor> DESCRIPTORS;
-    private static final Set<Relationship> RELATIONSHIPS;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CLIENT_SERVICE,
+            WRITER_FACTORY,
+            DATABASE_NAME,
+            COLLECTION_NAME,
+            SCHEMA_NAME,
+            QUERY_ATTRIBUTE,
+            QUERY,
+            PROJECTION,
+            SORT,
+            LIMIT,
+            BATCH_SIZE
+    );
 
-    static {
-        List<PropertyDescriptor> _temp = new ArrayList<>();
-        _temp.add(CLIENT_SERVICE);
-        _temp.add(WRITER_FACTORY);
-        _temp.add(DATABASE_NAME);
-        _temp.add(COLLECTION_NAME);
-        _temp.add(SCHEMA_NAME);
-        _temp.add(QUERY_ATTRIBUTE);
-        _temp.add(QUERY);
-        _temp.add(PROJECTION);
-        _temp.add(SORT);
-        _temp.add(LIMIT);
-        _temp.add(BATCH_SIZE);
-
-        DESCRIPTORS = Collections.unmodifiableList(_temp);
-
-        Set<Relationship> _rels = new HashSet<>();
-        _rels.add(REL_SUCCESS);
-        _rels.add(REL_FAILURE);
-        _rels.add(REL_ORIGINAL);
-        RELATIONSHIPS = Collections.unmodifiableSet(_rels);
-    }
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE,
+            REL_ORIGINAL
+    );
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -161,9 +150,7 @@ public class GetMongoRecord extends AbstractMongoQueryProcessor {
         try {
             final Map<String, String> attributes = getAttributes(context, input, query, mongoCollection);
             try (OutputStream out = session.write(output)) {
-                Map<String, String> attrs = inputPtr != null ? inputPtr.getAttributes() : new HashMap<String, String>() {{
-                    put("schema.name", schemaName);
-                }};
+                Map<String, String> attrs = inputPtr != null ? inputPtr.getAttributes() : Map.of("schema.name", schemaName);
                 RecordSchema schema = writerFactory.getSchema(attrs, null);
                 RecordSetWriter writer = writerFactory.createWriter(getLogger(), schema, out, attrs);
                 long count = 0L;
@@ -194,12 +181,18 @@ public class GetMongoRecord extends AbstractMongoQueryProcessor {
                 session.transfer(input, REL_ORIGINAL);
             }
         } catch (Exception ex) {
-            ex.printStackTrace();
             getLogger().error("Error writing record set from Mongo query.", ex);
             session.remove(output);
             if (input != null) {
                 session.transfer(input, REL_FAILURE);
             }
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("get-mongo-record-writer-factory", WRITER_FACTORY.getName());
+        config.renameProperty("mongodb-schema-name", SCHEMA_NAME.getName());
     }
 }

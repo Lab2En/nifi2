@@ -16,11 +16,11 @@
  */
 package org.apache.nifi.minifi.properties;
 
-import java.io.File;
-import java.util.Properties;
-
 import org.apache.nifi.util.NiFiBootstrapUtils;
 import org.apache.nifi.util.NiFiProperties;
+
+import java.io.File;
+import java.util.Properties;
 
 public class MiNiFiPropertiesLoader {
 
@@ -50,7 +50,7 @@ public class MiNiFiPropertiesLoader {
      * @see MiNiFiPropertiesLoader#load(File)
      */
     public NiFiProperties load(String path) {
-        if (path != null && !path.trim().isEmpty()) {
+        if (path != null && !path.isBlank()) {
             return load(new File(path));
         } else {
             return loadDefault();

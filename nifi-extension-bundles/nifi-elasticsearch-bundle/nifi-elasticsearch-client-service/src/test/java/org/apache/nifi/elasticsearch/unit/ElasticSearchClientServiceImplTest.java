@@ -20,9 +20,10 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.elasticsearch.AuthorizationScheme;
 import org.apache.nifi.elasticsearch.ElasticSearchClientService;
 import org.apache.nifi.elasticsearch.ElasticSearchClientServiceImpl;
-import org.apache.nifi.elasticsearch.TestControllerServiceProcessor;
+import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.ssl.SSLContextProvider;
+import org.apache.nifi.util.NoOpProcessor;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,10 +45,9 @@ class ElasticSearchClientServiceImplTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        runner = TestRunners.newTestRunner(TestControllerServiceProcessor.class);
+        runner = TestRunners.newTestRunner(NoOpProcessor.class);
         service = new ElasticSearchClientServiceImpl();
         runner.addControllerService("Client Service", service);
-        runner.setProperty(TestControllerServiceProcessor.CLIENT_SERVICE, "Client Service");
         runner.setProperty(service, ElasticSearchClientService.HTTP_HOSTS, HOST);
     }
 
@@ -72,14 +72,11 @@ class ElasticSearchClientServiceImplTest {
         runner.assertValid(service);
 
         runner.removeProperty(service, ElasticSearchClientService.PASSWORD);
-        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.USERNAME, ElasticSearchClientService.PASSWORD);
-
-        runner.removeProperty(service, ElasticSearchClientService.USERNAME);
-        runner.assertValid(service);
+        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.PASSWORD);
 
         runner.setProperty(service, ElasticSearchClientService.PASSWORD, "password");
         runner.removeProperty(service, ElasticSearchClientService.USERNAME);
-        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.PASSWORD, ElasticSearchClientService.USERNAME);
+        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.USERNAME);
     }
 
     @Test
@@ -90,14 +87,11 @@ class ElasticSearchClientServiceImplTest {
         runner.assertValid(service);
 
         runner.removeProperty(service, ElasticSearchClientService.API_KEY_ID);
-        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.API_KEY, ElasticSearchClientService.API_KEY_ID);
-
-        runner.removeProperty(service, ElasticSearchClientService.API_KEY);
-        runner.assertValid(service);
+        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.API_KEY_ID);
 
         runner.setProperty(service, ElasticSearchClientService.API_KEY_ID, "api-key-id");
         runner.removeProperty(service, ElasticSearchClientService.API_KEY);
-        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.API_KEY_ID, ElasticSearchClientService.API_KEY);
+        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.API_KEY);
     }
 
     @Test
@@ -114,9 +108,26 @@ class ElasticSearchClientServiceImplTest {
         assertPKIAuthorizationValidationErrorMessage();
     }
 
-    private void assertAuthorizationPropertyValidationErrorMessage(final PropertyDescriptor presentProperty, final PropertyDescriptor missingProperty) {
+    @Test
+    void testValidateJwtAuth() throws InitializationException {
+        runner.setProperty(service, ElasticSearchClientService.AUTHORIZATION_SCHEME, AuthorizationScheme.JWT);
+        runner.setProperty(service, ElasticSearchClientService.JWT_SHARED_SECRET, "jwt-shared-secret");
+        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.OAUTH2_ACCESS_TOKEN_PROVIDER);
+
+        final OAuth2AccessTokenProvider oAuth2AccessTokenProvider = mock(OAuth2AccessTokenProvider.class);
+        when(oAuth2AccessTokenProvider.getIdentifier()).thenReturn("oauth2-access-token-provider");
+        runner.addControllerService("oauth2-access-token-provider", oAuth2AccessTokenProvider);
+        runner.setProperty(service, ElasticSearchClientService.OAUTH2_ACCESS_TOKEN_PROVIDER, "oauth2-access-token-provider");
+        runner.assertValid(service);
+
+        runner.removeProperty(service, ElasticSearchClientService.JWT_SHARED_SECRET);
+        assertAuthorizationPropertyValidationErrorMessage(ElasticSearchClientService.JWT_SHARED_SECRET);
+    }
+
+    private void assertAuthorizationPropertyValidationErrorMessage(final PropertyDescriptor missingProperty) {
         final AssertionFailedError afe = assertThrows(AssertionFailedError.class, () -> runner.assertValid(service));
-        assertTrue(afe.getMessage().contains(String.format("if '%s' is then '%s' must be set.", presentProperty.getDisplayName(), missingProperty.getDisplayName())));
+        final String expectedMessage = String.format("%s is required", missingProperty.getDisplayName());
+        assertTrue(afe.getMessage().contains(expectedMessage), String.format("Validation error message \"%s\" does not contain \"%s\"", afe.getMessage(), expectedMessage));
     }
 
     private void assertPKIAuthorizationValidationErrorMessage() {

@@ -30,14 +30,17 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
-import javax.xml.stream.XMLOutputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
 
 public class StandardManagedAuthorizer implements ManagedAuthorizer {
 
@@ -95,17 +98,27 @@ public class StandardManagedAuthorizer implements ManagedAuthorizer {
 
         final UserAndGroups userAndGroups = userGroupProvider.getUserAndGroups(request.getIdentity());
 
-        final User user = userAndGroups.getUser();
-        if (user == null) {
-            return AuthorizationResult.denied(String.format("Unknown user with identity '%s'.", request.getIdentity()));
-        }
+        // combine groups from incoming request with groups from UserAndGroups because the request may contain groups from
+        // an external identity provider and the membership may not be maintained within any of the UserGroupProviders
+        final Set<Group> userGroups = new HashSet<>();
+        userGroups.addAll(userAndGroups.getGroups() == null ? Collections.emptySet() : userAndGroups.getGroups());
+        userGroups.addAll(getGroups(request.getGroups()));
 
-        final Set<Group> userGroups = userAndGroups.getGroups();
-        if (policy.getUsers().contains(user.getIdentifier()) || containsGroup(userGroups, policy)) {
+        if (containsUser(userAndGroups.getUser(), policy) || containsGroup(userGroups, policy)) {
             return AuthorizationResult.approved();
         }
 
         return AuthorizationResult.denied(request.getExplanationSupplier().get());
+    }
+
+    private Set<Group> getGroups(final Set<String> groupNames) {
+        if (groupNames == null || groupNames.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        return userGroupProvider.getGroups().stream()
+                .filter(group -> groupNames.contains(group.getName()))
+                .collect(Collectors.toSet());
     }
 
     /**
@@ -127,6 +140,20 @@ public class StandardManagedAuthorizer implements ManagedAuthorizer {
         }
 
         return false;
+    }
+
+    /**
+     * Determines if the policy contains the user's identifier.
+     *
+     * @param user the user
+     * @param policy the policy
+     * @return true if the user is non-null and the user's identifies is contained in the policy's users
+     */
+    private boolean containsUser(final User user, final AccessPolicy policy) {
+        if (user == null || policy.getUsers().isEmpty()) {
+            return false;
+        }
+        return policy.getUsers().contains(user.getIdentifier());
     }
 
     @Override
@@ -159,7 +186,7 @@ public class StandardManagedAuthorizer implements ManagedAuthorizer {
             if (writer != null) {
                 try {
                     writer.close();
-                } catch (XMLStreamException e) {
+                } catch (XMLStreamException ignored) {
                     // nothing to do here
                 }
             }
@@ -206,7 +233,7 @@ public class StandardManagedAuthorizer implements ManagedAuthorizer {
         }
     }
 
-    private final FingerprintHolder parseFingerprint(final String fingerprint) throws AuthorizationAccessException {
+    private FingerprintHolder parseFingerprint(final String fingerprint) throws AuthorizationAccessException {
         final byte[] fingerprintBytes = fingerprint.getBytes(StandardCharsets.UTF_8);
 
         try (final ByteArrayInputStream in = new ByteArrayInputStream(fingerprintBytes)) {

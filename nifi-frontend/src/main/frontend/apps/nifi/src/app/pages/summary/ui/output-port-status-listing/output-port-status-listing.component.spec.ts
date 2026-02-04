@@ -18,11 +18,13 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { OutputPortStatusListing } from './output-port-status-listing.component';
-import { PortStatusTable } from '../common/port-status-table/port-status-table.component';
-import { SummaryTableFilterModule } from '../common/summary-table-filter/summary-table-filter.module';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMockStore } from '@ngrx/store/testing';
-import { initialState } from '../../state/summary-listing/summary-listing.reducer';
+import { initialState as initialSummaryListingState } from '../../state/summary-listing/summary-listing.reducer';
+import { summaryListingFeatureKey } from '../../state/summary-listing';
+import { summaryFeatureKey } from '../../state';
+import { initialState as initialErrorState } from '../../../../state/error/error.reducer';
+import { errorFeatureKey } from '../../../../state/error';
 
 describe('OutputPortStatusListing', () => {
     let component: OutputPortStatusListing;
@@ -30,9 +32,17 @@ describe('OutputPortStatusListing', () => {
 
     beforeEach(() => {
         TestBed.configureTestingModule({
-            declarations: [OutputPortStatusListing],
-            imports: [PortStatusTable, SummaryTableFilterModule, NoopAnimationsModule],
-            providers: [provideMockStore({ initialState })]
+            imports: [OutputPortStatusListing, NoopAnimationsModule],
+            providers: [
+                provideMockStore({
+                    initialState: {
+                        [errorFeatureKey]: initialErrorState,
+                        [summaryFeatureKey]: {
+                            [summaryListingFeatureKey]: initialSummaryListingState
+                        }
+                    }
+                })
+            ]
         });
         fixture = TestBed.createComponent(OutputPortStatusListing);
         component = fixture.componentInstance;

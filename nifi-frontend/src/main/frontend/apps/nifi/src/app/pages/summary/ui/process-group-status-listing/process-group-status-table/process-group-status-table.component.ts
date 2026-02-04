@@ -15,12 +15,14 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
-import { SummaryTableFilterModule } from '../../common/summary-table-filter/summary-table-filter.module';
-import { SummaryTableFilterColumn } from '../../common/summary-table-filter/summary-table-filter.component';
+import {
+    SummaryTableFilter,
+    SummaryTableFilterColumn
+} from '../../common/summary-table-filter/summary-table-filter.component';
 import { NiFiCommon } from '@nifi/shared';
 import { RouterLink } from '@angular/router';
 import { MatPaginatorModule } from '@angular/material/paginator';
@@ -43,12 +45,11 @@ export type SupportedColumns =
 
 @Component({
     selector: 'process-group-status-table',
-    standalone: true,
     imports: [
         CommonModule,
         MatSortModule,
         MatTableModule,
-        SummaryTableFilterModule,
+        SummaryTableFilter,
         RouterLink,
         MatPaginatorModule,
         MatButtonModule,
@@ -60,6 +61,8 @@ export type SupportedColumns =
     styleUrls: ['./process-group-status-table.component.scss']
 })
 export class ProcessGroupStatusTable extends ComponentStatusTable<ProcessGroupStatusSnapshotEntity> {
+    private nifiCommon = inject(NiFiCommon);
+
     filterableColumns: SummaryTableFilterColumn[] = [{ key: 'name', label: 'name' }];
 
     displayedColumns: string[] = [
@@ -75,10 +78,6 @@ export class ProcessGroupStatusTable extends ComponentStatusTable<ProcessGroupSt
         'tasks',
         'actions'
     ];
-
-    constructor(private nifiCommon: NiFiCommon) {
-        super();
-    }
 
     @Input() rootProcessGroup!: ProcessGroupStatusSnapshot;
 
@@ -182,7 +181,9 @@ export class ProcessGroupStatusTable extends ComponentStatusTable<ProcessGroupSt
             this.rootProcessGroup.processingNanos
         );
 
-        return `${this.nifiCommon.formatDuration(pg.processGroupStatusSnapshot.processingNanos)} (${percentage}%)`;
+        // Convert nanoseconds to milliseconds for formatDuration (which expects millis)
+        const processingMillis = pg.processGroupStatusSnapshot.processingNanos / NiFiCommon.NANOS_PER_MILLI;
+        return `${this.nifiCommon.formatDuration(processingMillis)} (${percentage}%)`;
     }
 
     private calculatePercent(used: number, total: number): number {

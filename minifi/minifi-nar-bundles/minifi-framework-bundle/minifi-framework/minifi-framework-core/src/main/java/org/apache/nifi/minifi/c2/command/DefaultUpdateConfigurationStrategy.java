@@ -17,6 +17,37 @@
 
 package org.apache.nifi.minifi.c2.command;
 
+import org.apache.commons.io.FilenameUtils;
+import org.apache.nifi.c2.client.service.operation.UpdateConfigurationStrategy;
+import org.apache.nifi.components.ValidationResult;
+import org.apache.nifi.connectable.Connection;
+import org.apache.nifi.controller.FlowController;
+import org.apache.nifi.controller.ProcessorNode;
+import org.apache.nifi.controller.flow.VersionedDataflow;
+import org.apache.nifi.flow.VersionedConnection;
+import org.apache.nifi.flow.VersionedProcessGroup;
+import org.apache.nifi.groups.ProcessGroup;
+import org.apache.nifi.groups.RemoteProcessGroup;
+import org.apache.nifi.minifi.commons.service.FlowEnrichService;
+import org.apache.nifi.minifi.commons.service.FlowPropertyAssetReferenceResolver;
+import org.apache.nifi.minifi.commons.service.FlowPropertyEncryptor;
+import org.apache.nifi.minifi.commons.service.FlowSerDeService;
+import org.apache.nifi.minifi.validator.ValidationException;
+import org.apache.nifi.services.FlowService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptySet;
 import static java.util.UUID.randomUUID;
@@ -30,35 +61,6 @@ import static org.apache.nifi.minifi.commons.util.FlowUpdateUtils.revert;
 import static org.apache.nifi.minifi.commons.utils.RetryUtil.retry;
 import static org.apache.nifi.minifi.validator.FlowValidator.validate;
 
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.nifi.c2.client.service.operation.UpdateConfigurationStrategy;
-import org.apache.nifi.components.ValidationResult;
-import org.apache.nifi.connectable.Connection;
-import org.apache.nifi.controller.FlowController;
-import org.apache.nifi.controller.ProcessorNode;
-import org.apache.nifi.controller.flow.VersionedDataflow;
-import org.apache.nifi.flow.VersionedConnection;
-import org.apache.nifi.flow.VersionedProcessGroup;
-import org.apache.nifi.groups.ProcessGroup;
-import org.apache.nifi.groups.RemoteProcessGroup;
-import org.apache.nifi.minifi.commons.service.FlowEnrichService;
-import org.apache.nifi.minifi.commons.service.FlowPropertyEncryptor;
-import org.apache.nifi.minifi.commons.service.FlowSerDeService;
-import org.apache.nifi.minifi.validator.ValidationException;
-import org.apache.nifi.services.FlowService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 public class DefaultUpdateConfigurationStrategy implements UpdateConfigurationStrategy {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultUpdateConfigurationStrategy.class);
@@ -68,6 +70,7 @@ public class DefaultUpdateConfigurationStrategy implements UpdateConfigurationSt
 
     private final FlowController flowController;
     private final FlowService flowService;
+    private final FlowPropertyAssetReferenceResolver flowPropertyAssetReferenceResolver;
     private final FlowEnrichService flowEnrichService;
     private final FlowPropertyEncryptor flowPropertyEncryptor;
     private final FlowSerDeService flowSerDeService;
@@ -76,10 +79,17 @@ public class DefaultUpdateConfigurationStrategy implements UpdateConfigurationSt
     private final Path rawFlowConfigurationFile;
     private final Path backupRawFlowConfigurationFile;
 
-    public DefaultUpdateConfigurationStrategy(FlowController flowController, FlowService flowService, FlowEnrichService flowEnrichService,
-                                              FlowPropertyEncryptor flowPropertyEncryptor, FlowSerDeService flowSerDeService, String flowConfigurationFile) {
+    public DefaultUpdateConfigurationStrategy(
+            FlowController flowController,
+            FlowService flowService,
+            FlowPropertyAssetReferenceResolver flowPropertyAssetReferenceResolver,
+            FlowEnrichService flowEnrichService,
+            FlowPropertyEncryptor flowPropertyEncryptor,
+            FlowSerDeService flowSerDeService,
+            String flowConfigurationFile) {
         this.flowController = flowController;
         this.flowService = flowService;
+        this.flowPropertyAssetReferenceResolver = flowPropertyAssetReferenceResolver;
         this.flowEnrichService = flowEnrichService;
         this.flowPropertyEncryptor = flowPropertyEncryptor;
         this.flowSerDeService = flowSerDeService;
@@ -102,12 +112,13 @@ public class DefaultUpdateConfigurationStrategy implements UpdateConfigurationSt
                 .stream()
                 .map(Connection::getIdentifier)
                 .collect(Collectors.toSet());
-            VersionedDataflow rawDataFlow = flowSerDeService.deserialize(rawFlow);
+            VersionedDataflow dataFlow = flowSerDeService.deserialize(rawFlow);
 
-            VersionedDataflow propertyEncryptedRawDataFlow = flowPropertyEncryptor.encryptSensitiveProperties(rawDataFlow);
-            byte[] serializedPropertyEncryptedRawDataFlow = flowSerDeService.serialize(propertyEncryptedRawDataFlow);
-            VersionedDataflow enrichedFlowCandidate = flowEnrichService.enrichFlow(propertyEncryptedRawDataFlow);
-            byte[] serializedEnrichedFlowCandidate = flowSerDeService.serialize(enrichedFlowCandidate);
+            flowPropertyAssetReferenceResolver.resolveAssetReferenceProperties(dataFlow);
+            flowPropertyEncryptor.encryptSensitiveProperties(dataFlow);
+            byte[] serializedPropertyEncryptedRawDataFlow = flowSerDeService.serialize(dataFlow);
+            flowEnrichService.enrichFlow(dataFlow);
+            byte[] serializedEnrichedFlowCandidate = flowSerDeService.serialize(dataFlow);
 
             backup(flowConfigurationFile, backupFlowConfigurationFile);
             backup(rawFlowConfigurationFile, backupRawFlowConfigurationFile);
@@ -115,7 +126,7 @@ public class DefaultUpdateConfigurationStrategy implements UpdateConfigurationSt
             persist(serializedPropertyEncryptedRawDataFlow, rawFlowConfigurationFile, false);
             persist(serializedEnrichedFlowCandidate, flowConfigurationFile, true);
 
-            reloadFlow(findAllProposedConnectionIds(enrichedFlowCandidate.getRootGroup()));
+            reloadFlow(findAllProposedConnectionIds(dataFlow.getRootGroup()));
 
         } catch (IllegalStateException e) {
             LOGGER.error("Configuration update failed. Reverting and reloading previous flow", e);

@@ -16,9 +16,9 @@
  */
 package org.apache.nifi.controller.serialization;
 
-import java.io.OutputStream;
-
 import org.apache.nifi.controller.FlowController;
+
+import java.io.OutputStream;
 
 /**
  * Serializes the flow configuration of a controller instance to an output stream.
@@ -26,8 +26,8 @@ import org.apache.nifi.controller.FlowController;
  */
 public interface FlowSerializer<T> {
 
-    public static final String ENC_PREFIX = "enc{";
-    public static final String ENC_SUFFIX = "}";
+    String ENC_PREFIX = "enc{";
+    String ENC_SUFFIX = "}";
 
     /**
      * Transforms the flow configuration of a controller instance into something that can serialized

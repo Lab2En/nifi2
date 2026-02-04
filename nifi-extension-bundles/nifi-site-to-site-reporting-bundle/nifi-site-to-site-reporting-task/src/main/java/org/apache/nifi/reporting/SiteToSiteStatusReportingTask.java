@@ -17,28 +17,12 @@
 
 package org.apache.nifi.reporting;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
-
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonBuilderFactory;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonValue;
-
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonBuilderFactory;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.json.JsonValue;
 import org.apache.avro.Schema;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -55,6 +39,21 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.remote.Transaction;
 import org.apache.nifi.remote.TransferDirection;
 import org.apache.nifi.reporting.s2s.SiteToSiteUtils;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 @Tags({"status", "metrics", "history", "site", "site to site"})
 @CapabilityDescription("Publishes Status events using the Site To Site protocol.  "
@@ -122,7 +121,7 @@ public class SiteToSiteStatusReportingTask extends AbstractSiteToSiteReportingTa
         componentNameFilter = Pattern.compile(context.getProperty(COMPONENT_NAME_FILTER_REGEX).evaluateAttributeExpressions().getValue());
 
         // initialize the map
-        processGroupIDToPath = new HashMap<String, String>();
+        processGroupIDToPath = new HashMap<>();
 
         final ProcessGroupStatus procGroupStatus = context.getEventAccess().getControllerStatus();
         final String rootGroupName = procGroupStatus == null ? null : procGroupStatus.getName();
@@ -188,7 +187,7 @@ public class SiteToSiteStatusReportingTask extends AbstractSiteToSiteReportingTa
 
                 final long transferMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
                 getLogger().info("Successfully sent {} Status Records to destination in {} ms; Transaction ID = {}",
-                        new Object[]{jsonArray.size(), transferMillis, transactionId});
+                        jsonArray.size(), transferMillis, transactionId);
 
                 fromIndex = toIndex;
                 toIndex = Math.min(fromIndex + batchSize, jsonArray.size());

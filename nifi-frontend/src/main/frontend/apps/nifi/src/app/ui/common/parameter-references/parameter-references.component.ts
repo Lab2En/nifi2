@@ -15,27 +15,26 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { MatTreeModule } from '@angular/material/tree';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { MatDialogModule } from '@angular/material/dialog';
+import { BulletinsTipInput, ValidationErrorsTipInput } from '../../../state/shared';
 import {
     AffectedComponent,
     AffectedComponentEntity,
-    BulletinsTipInput,
-    ProcessGroupName,
-    ValidationErrorsTipInput
-} from '../../../state/shared';
-import { NiFiCommon, NifiTooltipDirective } from '@nifi/shared';
+    NiFiCommon,
+    NifiTooltipDirective,
+    ProcessGroupName
+} from '@nifi/shared';
 import { ValidationErrorsTip } from '../tooltips/validation-errors-tip/validation-errors-tip.component';
 import { BulletinsTip } from '../tooltips/bulletins-tip/bulletins-tip.component';
 
 @Component({
     selector: 'parameter-references',
-    standalone: true,
     templateUrl: './parameter-references.component.html',
     imports: [
         MatTreeModule,
@@ -50,6 +49,8 @@ import { BulletinsTip } from '../tooltips/bulletins-tip/bulletins-tip.component'
     styleUrls: ['./parameter-references.component.scss']
 })
 export class ParameterReferences {
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() disabledLinks: boolean = false;
     @Input() set parameterReferences(parameterReferences: AffectedComponentEntity[] | undefined) {
         // reset existing state
@@ -80,8 +81,6 @@ export class ParameterReferences {
     // parameter references lookup by process group id
     parameterReferenceMap: Map<string, AffectedComponentEntity[]> = new Map<string, AffectedComponentEntity[]>();
     processGroups: ProcessGroupName[] = [];
-
-    constructor(private nifiCommon: NiFiCommon) {}
 
     getUnauthorized(references: AffectedComponentEntity[]) {
         return references.filter((reference) => !reference.permissions.canRead);
@@ -146,6 +145,10 @@ export class ParameterReferences {
         return {
             bulletins: entity.bulletins
         };
+    }
+
+    getBulletinSeverityClass(entity: AffectedComponentEntity): string {
+        return this.nifiCommon.getBulletinSeverityClass(entity.bulletins);
     }
 
     hasActiveThreads(reference: AffectedComponent): boolean {

@@ -27,6 +27,7 @@ import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.neo4j.driver.AuthTokens;
@@ -43,7 +44,6 @@ import org.neo4j.driver.summary.SummaryCounters;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,8 +60,7 @@ import static org.neo4j.driver.Config.TrustStrategy.trustCustomCertificateSigned
         "Neo4J should break driver compatibility between 4.X and a future release.")
 public class Neo4JCypherClientService extends AbstractControllerService implements GraphClientService {
     public static final PropertyDescriptor CONNECTION_URL = new PropertyDescriptor.Builder()
-            .name("neo4j-connection-url")
-            .displayName("Neo4j Connection URL")
+            .name("Neo4j Connection URL")
             .description("Neo4J endpoing to connect to.")
             .required(true)
             .defaultValue("bolt://localhost:7687")
@@ -70,8 +69,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
             .build();
 
     public static final PropertyDescriptor USERNAME = new PropertyDescriptor.Builder()
-            .name("neo4j-username")
-            .displayName("Username")
+            .name("Username")
             .description("Username for accessing Neo4J")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -79,8 +77,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
             .build();
 
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
-            .name("neo4j-password")
-            .displayName("Password")
+            .name("Password")
             .description("Password for Neo4J user. A dummy non-blank password is required even if it disabled on the server.")
             .required(true)
             .sensitive(true)
@@ -88,8 +85,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
             .build();
 
     public static final PropertyDescriptor CONNECTION_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("neo4j-max-connection-time-out")
-            .displayName("Neo4J Max Connection Time Out (seconds)")
+            .name("Connection Timeout")
             .description("The maximum time for establishing connection to the Neo4j")
             .defaultValue("5 seconds")
             .required(true)
@@ -99,8 +95,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
             .build();
 
     public static final PropertyDescriptor MAX_CONNECTION_POOL_SIZE = new PropertyDescriptor.Builder()
-            .name("neo4j-max-connection-pool-size")
-            .displayName("Neo4J Max Connection Pool Size")
+            .name("Connection Pool Size")
             .description("The maximum connection pool size for Neo4j.")
             .defaultValue("100")
             .required(true)
@@ -110,8 +105,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
             .build();
 
     public static final PropertyDescriptor MAX_CONNECTION_ACQUISITION_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("neo4j-max-connection-acquisition-timeout")
-            .displayName("Neo4J Max Connection Acquisition Timeout")
+            .name("Connection Acquisition Timeout")
             .description("The maximum connection acquisition timeout.")
             .defaultValue("60 second")
             .required(true)
@@ -121,8 +115,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
             .build();
 
     public static final PropertyDescriptor IDLE_TIME_BEFORE_CONNECTION_TEST = new PropertyDescriptor.Builder()
-            .name("neo4j-idle-time-before-test")
-            .displayName("Neo4J Idle Time Before Connection Test")
+            .name("Idle Time Before Connection Test")
             .description("The idle time before connection test.")
             .defaultValue("60 seconds")
             .required(true)
@@ -132,8 +125,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
             .build();
 
     public static final PropertyDescriptor MAX_CONNECTION_LIFETIME = new PropertyDescriptor.Builder()
-            .name("neo4j-max-connection-lifetime")
-            .displayName("Neo4J Max Connection Lifetime")
+            .name("Connection Lifetime")
             .description("The maximum connection lifetime")
             .defaultValue("3600 seconds")
             .required(true)
@@ -156,21 +148,17 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
     protected String password;
     protected String connectionUrl;
 
-    private static final List<PropertyDescriptor> DESCRIPTORS;
-    static {
-        List<PropertyDescriptor> _temp = new ArrayList<>();
-        _temp.add(CONNECTION_URL);
-        _temp.add(USERNAME);
-        _temp.add(PASSWORD);
-        _temp.add(CONNECTION_TIMEOUT);
-        _temp.add(MAX_CONNECTION_POOL_SIZE);
-        _temp.add(MAX_CONNECTION_ACQUISITION_TIMEOUT);
-        _temp.add(IDLE_TIME_BEFORE_CONNECTION_TEST);
-        _temp.add(MAX_CONNECTION_LIFETIME);
-        _temp.add(SSL_TRUST_STORE_FILE);
-
-        DESCRIPTORS = Collections.unmodifiableList(_temp);
-    }
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CONNECTION_URL,
+            USERNAME,
+            PASSWORD,
+            CONNECTION_TIMEOUT,
+            MAX_CONNECTION_POOL_SIZE,
+            MAX_CONNECTION_ACQUISITION_TIMEOUT,
+            IDLE_TIME_BEFORE_CONNECTION_TEST,
+            MAX_CONNECTION_LIFETIME,
+            SSL_TRUST_STORE_FILE
+    );
 
     @Override
     protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
@@ -191,7 +179,19 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("neo4j-connection-url", CONNECTION_URL.getName());
+        config.renameProperty("neo4j-username", USERNAME.getName());
+        config.renameProperty("neo4j-password", PASSWORD.getName());
+        config.renameProperty("neo4j-max-connection-time-out", CONNECTION_TIMEOUT.getName());
+        config.renameProperty("neo4j-max-connection-pool-size", MAX_CONNECTION_POOL_SIZE.getName());
+        config.renameProperty("neo4j-max-connection-acquisition-timeout", MAX_CONNECTION_ACQUISITION_TIMEOUT.getName());
+        config.renameProperty("neo4j-idle-time-before-test", IDLE_TIME_BEFORE_CONNECTION_TEST.getName());
+        config.renameProperty("neo4j-max-connection-lifetime", MAX_CONNECTION_LIFETIME.getName());
     }
 
     protected Driver getDriver(ConfigurationContext context) {
@@ -218,7 +218,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
                     .withTrustStrategy(trustCustomCertificateSignedBy(new File(trustFile)));
         }
 
-        return GraphDatabase.driver( connectionUrl, AuthTokens.basic( username, password),
+        return GraphDatabase.driver(connectionUrl, AuthTokens.basic(username, password),
                 configBuilder.build());
     }
 
@@ -244,7 +244,7 @@ public class Neo4JCypherClientService extends AbstractControllerService implemen
     @OnDisabled
     public void close() {
         getLogger().info("Closing driver");
-        if ( neo4JDriver != null ) {
+        if (neo4JDriver != null) {
             neo4JDriver.close();
             neo4JDriver = null;
         }

@@ -19,15 +19,13 @@ import { Component, forwardRef, Input } from '@angular/core';
 import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 
-import { TextTip, NifiTooltipDirective } from '@nifi/shared';
+import { TextTip, NifiTooltipDirective, SelectOption } from '@nifi/shared';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
-import { SelectOption } from 'libs/shared/src';
 
 @Component({
     selector: 'source-remote-process-group',
-    standalone: true,
     templateUrl: './source-remote-process-group.component.html',
     styleUrls: ['./source-remote-process-group.component.scss'],
     imports: [
@@ -102,10 +100,14 @@ export class SourceRemoteProcessGroup implements ControlValueAccessor {
         // mark the component as touched if not already
         if (!this.isTouched) {
             this.isTouched = true;
-            this.onTouched();
+            if (this.onTouched) {
+                this.onTouched();
+            }
         }
 
         // emit the changes
-        this.onChange(this.selectedOutputPort);
+        if (this.onChange) {
+            this.onChange(this.selectedOutputPort);
+        }
     }
 }

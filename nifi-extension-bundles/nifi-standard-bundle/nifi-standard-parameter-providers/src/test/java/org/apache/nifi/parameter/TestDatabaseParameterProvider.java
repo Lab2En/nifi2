@@ -1,4 +1,4 @@
-package org.apache.nifi.parameter; /*
+/*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -14,6 +14,7 @@ package org.apache.nifi.parameter; /*
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.nifi.parameter;
 
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.ConfigurationContext;
@@ -22,8 +23,8 @@ import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockConfigurationContext;
 import org.apache.nifi.util.MockParameterProviderInitializationContext;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -111,22 +112,12 @@ public class TestDatabaseParameterProvider {
     }
 
     private void runColumnStrategiesTest(final Map<PropertyDescriptor, String> properties) throws SQLException {
-        final List<Map<String, String>> rows = Arrays.asList(
-                new HashMap<String, String>() { {
-                    put("group", "Kafka"); put("name", "brokers"); put("value", "my-brokers"); put("unrelated_column", "unrelated_value");
-                } },
-                new HashMap<String, String>() { {
-                    put("group", "Kafka"); put("name", "topic"); put("value", "my-topic"); put("unrelated_column", "unrelated_value");
-                } },
-                new HashMap<String, String>() { {
-                    put("group", "Kafka"); put("name", "password"); put("value", "my-password"); put("unrelated_column", "unrelated_value");
-                } },
-                new HashMap<String, String>() { {
-                    put("group", "S3"); put("name", "bucket"); put("value", "my-bucket"); put("unrelated_column", "unrelated_value");
-                } },
-                new HashMap<String, String>() { {
-                    put("group", "S3"); put("name", "s3-password"); put("value", "my-s3-password"); put("unrelated_column", "unrelated_value");
-                } }
+        final List<Map<String, String>> rows = List.of(
+                Map.of("group", "Kafka", "name", "brokers", "value", "my-brokers", "unrelated_column", "unrelated_value"),
+                Map.of("group", "Kafka", "name", "topic", "value", "my-topic", "unrelated_column", "unrelated_value"),
+                Map.of("group", "Kafka", "name", "password", "value", "my-password", "unrelated_column", "unrelated_value"),
+                Map.of("group", "S3", "name", "bucket", "value", "my-bucket", "unrelated_column", "unrelated_value"),
+                Map.of("group", "S3", "name", "s3-password", "value", "my-s3-password", "unrelated_column", "unrelated_value")
         );
         mockTableResults(new MockTable(TABLE_NAME, rows));
 
@@ -158,36 +149,18 @@ public class TestDatabaseParameterProvider {
     }
 
     private void runNonColumnStrategyTest(final Map<PropertyDescriptor, String> properties) throws SQLException {
-        final List<Map<String, String>> kafkaRows = Arrays.asList(
-                new HashMap<String, String>() { {
-                    put("name", "nifi_brokers"); put("value", "my-brokers");
-                } },
-                new HashMap<String, String>() { {
-                    put("name", "nifi_topic"); put("value", "my-topic");
-                } },
-                new HashMap<String, String>() { {
-                    put("name", "unrelated_field"); put("value", "my-value");
-                } },
-                new HashMap<String, String>() { {
-                    put("name", "kafka_password"); put("value", "my-password");
-                } },
-                new HashMap<String, String>() { {
-                    put("name", "nifi_password"); put("value", "my-nifi-password");
-                } }
+        final List<Map<String, String>> kafkaRows = List.of(
+                Map.of("name", "nifi_brokers", "value", "my-brokers"),
+                Map.of("name", "nifi_topic", "value", "my-topic"),
+                Map.of("name", "unrelated_field", "value", "my-value"),
+                Map.of("name", "kafka_password", "value", "my-password"),
+                Map.of("name", "nifi_password", "value", "my-nifi-password")
         );
-        final List<Map<String, String>> s3Rows = Arrays.asList(
-                new HashMap<String, String>() { {
-                    put("name", "nifi_s3_bucket"); put("value", "my-bucket");
-                } },
-                new HashMap<String, String>() { {
-                    put("name", "s3_password"); put("value", "my-password");
-                } },
-                new HashMap<String, String>() { {
-                    put("name", "nifi_other_field"); put("value", "my-field");
-                } },
-                new HashMap<String, String>() { {
-                    put("name", "other_password"); put("value", "my-password");
-                } }
+        final List<Map<String, String>> s3Rows = List.of(
+                Map.of("name", "nifi_s3_bucket", "value", "my-bucket"),
+                Map.of("name", "s3_password", "value", "my-password"),
+                Map.of("name", "nifi_other_field", "value", "my-field"),
+                Map.of("name", "other_password", "value", "my-password")
         );
         mockTableResults(new MockTable("KAFKA", kafkaRows), new MockTable("S3", s3Rows));
 
@@ -216,22 +189,28 @@ public class TestDatabaseParameterProvider {
 
     @Test
     public void testNullNameColumn() throws SQLException {
-        mockTableResults(new MockTable(TABLE_NAME,
-                Arrays.asList(new HashMap<String, String>() { { put("name", null); } })));
+        final Map<String, String> mapWithNullValue = new HashMap<>();
+        mapWithNullValue.put("name", null);
+        mockTableResults(new MockTable(TABLE_NAME, List.of(mapWithNullValue)));
         runTestWithExpectedFailure(columnBasedProperties);
     }
 
     @Test
     public void testNullGroupNameColumn() throws SQLException {
-        mockTableResults(new MockTable(TABLE_NAME,
-                Arrays.asList(new HashMap<String, String>() { {  put("name", "param"); put("value", "value"); put("group", null); } })));
+        final Map<String, String> mapWithNullGroupNameColumn = new HashMap<>();
+        mapWithNullGroupNameColumn.put("name", "param");
+        mapWithNullGroupNameColumn.put("value", "value");
+        mapWithNullGroupNameColumn.put("group", null);
+        mockTableResults(new MockTable(TABLE_NAME, List.of(mapWithNullGroupNameColumn)));
         runTestWithExpectedFailure(columnBasedProperties);
     }
 
     @Test
     public void testNullValueColumn() throws SQLException {
-        mockTableResults(new MockTable(TABLE_NAME,
-                Arrays.asList(new HashMap<String, String>() { { put("name", "param"); put("value", null); } })));
+        final Map<String, String> mapWithNullValueColumn = new HashMap<>();
+        mapWithNullValueColumn.put("name", "param");
+        mapWithNullValueColumn.put("value", null);
+        mockTableResults(new MockTable(TABLE_NAME, List.of(mapWithNullValueColumn)));
         runTestWithExpectedFailure(columnBasedProperties);
     }
 
@@ -275,13 +254,11 @@ public class TestDatabaseParameterProvider {
     }
 
     private class ResultSetAnswer implements Answer<Boolean> {
-        private final List<java.util.Map<String, String>> rows;
 
-        private Iterator<java.util.Map<String, String>> rowIterator;
+        private final Iterator<java.util.Map<String, String>> rowIterator;
         private java.util.Map<String, String> currentRow;
 
         private ResultSetAnswer(final List<java.util.Map<String, String>> rows) {
-            this.rows = rows;
             this.rowIterator = rows.iterator();
         }
 

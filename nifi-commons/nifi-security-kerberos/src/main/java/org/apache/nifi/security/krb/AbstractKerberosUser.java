@@ -20,6 +20,13 @@ import org.apache.commons.lang3.Validate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.security.PrivilegedAction;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.security.auth.RefreshFailedException;
 import javax.security.auth.Subject;
 import javax.security.auth.callback.CallbackHandler;
@@ -29,13 +36,6 @@ import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.Configuration;
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
-import java.security.PrivilegedAction;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
-import java.time.Instant;
-import java.time.format.DateTimeFormatter;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Base class for implementations of KerberosUser.
@@ -164,7 +164,7 @@ public abstract class AbstractKerberosUser implements KerberosUser {
             throw new IllegalStateException("Must login before executing actions");
         }
 
-        return Subject.doAs(subject, action);
+        return Subject.callAs(subject, action::run);
     }
 
     /**
@@ -183,7 +183,7 @@ public abstract class AbstractKerberosUser implements KerberosUser {
             throw new IllegalStateException("Must login before executing actions");
         }
 
-        return Subject.doAs(subject, action);
+        return Subject.callAs(subject, action::run);
     }
 
     /**

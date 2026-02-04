@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { concatLatestFrom } from '@ngrx/operators';
 import * as ControllerServiceActions from './controller-service-state.actions';
@@ -28,19 +28,17 @@ import { MatDialog } from '@angular/material/dialog';
 import { ControllerServiceStateService } from '../../service/controller-service-state.service';
 import { ControllerServiceEntity, ControllerServiceReferencingComponentEntity } from '../shared';
 import { SetEnableRequest, SetEnableStep } from './index';
-import { isDefinedAndNotNull, MEDIUM_DIALOG } from 'libs/shared/src';
+import { isDefinedAndNotNull, MEDIUM_DIALOG } from '@nifi/shared';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ErrorHelper } from '../../service/error-helper.service';
 
 @Injectable()
 export class ControllerServiceStateEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<NiFiState>,
-        private dialog: MatDialog,
-        private controllerServiceStateService: ControllerServiceStateService,
-        private errorHelper: ErrorHelper
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<NiFiState>>(Store);
+    private dialog = inject(MatDialog);
+    private controllerServiceStateService = inject(ControllerServiceStateService);
+    private errorHelper = inject(ErrorHelper);
 
     submitEnableRequest$ = createEffect(() =>
         this.actions$.pipe(

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../state';
 import { loadExtensionTypesForSettings } from '../../../state/extension-types/extension-types.actions';
@@ -23,9 +23,12 @@ import { loadExtensionTypesForSettings } from '../../../state/extension-types/ex
 @Component({
     selector: 'settings',
     templateUrl: './settings.component.html',
-    styleUrls: ['./settings.component.scss']
+    styleUrls: ['./settings.component.scss'],
+    standalone: false
 })
 export class Settings implements OnInit {
+    private store = inject<Store<NiFiState>>(Store);
+
     tabLinks: any[] = [
         {
             label: 'General',
@@ -52,8 +55,6 @@ export class Settings implements OnInit {
             link: 'parameter-providers'
         }
     ];
-
-    constructor(private store: Store<NiFiState>) {}
 
     ngOnInit(): void {
         this.store.dispatch(loadExtensionTypesForSettings());

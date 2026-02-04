@@ -16,18 +16,18 @@
  */
 package org.apache.nifi.registry.client.impl;
 
+import jakarta.ws.rs.client.WebTarget;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.extension.manifest.ExtensionType;
+import org.apache.nifi.extension.manifest.ProvidedServiceAPI;
 import org.apache.nifi.registry.client.ExtensionClient;
 import org.apache.nifi.registry.client.NiFiRegistryException;
 import org.apache.nifi.registry.client.RequestConfig;
 import org.apache.nifi.registry.extension.bundle.BundleType;
-import org.apache.nifi.extension.ExtensionFilterParams;
-import org.apache.nifi.extension.ExtensionMetadataContainer;
-import org.apache.nifi.extension.TagCount;
-import org.apache.nifi.extension.manifest.ExtensionType;
-import org.apache.nifi.extension.manifest.ProvidedServiceAPI;
+import org.apache.nifi.registry.extension.component.ExtensionFilterParams;
+import org.apache.nifi.registry.extension.component.ExtensionMetadataContainer;
+import org.apache.nifi.registry.extension.component.TagCount;
 
-import jakarta.ws.rs.client.WebTarget;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -101,10 +101,10 @@ public class JerseyExtensionClient extends AbstractJerseyClient implements Exten
     @Override
     public List<TagCount> getTagCounts() throws IOException, NiFiRegistryException {
         return executeAction("Error retrieving tag counts", () -> {
-           final WebTarget target = extensionsTarget.path("tags");
+            final WebTarget target = extensionsTarget.path("tags");
 
-           final TagCount[] tagCounts = getRequestBuilder(target).get(TagCount[].class);
-           return tagCounts == null ? Collections.emptyList() : Arrays.asList(tagCounts);
+            final TagCount[] tagCounts = getRequestBuilder(target).get(TagCount[].class);
+            return tagCounts == null ? Collections.emptyList() : Arrays.asList(tagCounts);
         });
     }
 

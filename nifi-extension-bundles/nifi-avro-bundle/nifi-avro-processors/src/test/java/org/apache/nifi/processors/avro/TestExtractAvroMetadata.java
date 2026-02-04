@@ -19,6 +19,7 @@ package org.apache.nifi.processors.avro;
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
 import org.apache.avro.file.DataFileWriter;
+import org.apache.avro.generic.GenericArray;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class TestExtractAvroMetadata {
@@ -48,7 +50,7 @@ public class TestExtractAvroMetadata {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_FINGERPRINT_ATTR, "b2d1d8d3de2833ce");
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_TYPE_ATTR, Schema.Type.RECORD.getName());
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_NAME_ATTR, "User");
@@ -67,7 +69,7 @@ public class TestExtractAvroMetadata {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ExtractAvroMetadata.ITEM_COUNT_ATTR, "6000");
     }
 
@@ -82,7 +84,7 @@ public class TestExtractAvroMetadata {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_FINGERPRINT_ATTR, "b2d1d8d3de2833ce");
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_TYPE_ATTR, Schema.Type.RECORD.getName());
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_NAME_ATTR, "User");
@@ -100,7 +102,7 @@ public class TestExtractAvroMetadata {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_FINGERPRINT_ATTR, "3c6a7bee8994be20314dd28c6a3af4f2");
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_TYPE_ATTR, Schema.Type.RECORD.getName());
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_NAME_ATTR, "User");
@@ -119,7 +121,7 @@ public class TestExtractAvroMetadata {
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_FINGERPRINT_ATTR, "683f8f51ecd208038f4f0d39820ee9dd0ef3e32a3bee9371de0a2016d501b113");
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_TYPE_ATTR, Schema.Type.RECORD.getName());
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_NAME_ATTR, "User");
@@ -138,7 +140,7 @@ public class TestExtractAvroMetadata {
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeExists(ExtractAvroMetadata.SCHEMA_FINGERPRINT_ATTR);
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_TYPE_ATTR, Schema.Type.RECORD.getName());
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_NAME_ATTR, "User");
@@ -157,7 +159,7 @@ public class TestExtractAvroMetadata {
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeExists(ExtractAvroMetadata.SCHEMA_FINGERPRINT_ATTR);
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_TYPE_ATTR, Schema.Type.RECORD.getName());
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_NAME_ATTR, "User");
@@ -171,11 +173,11 @@ public class TestExtractAvroMetadata {
 
         final Schema schema = new Schema.Parser().parse(new File("src/test/resources/array.avsc"));
 
-        final GenericData.Array<String> data = new GenericData.Array<>(schema, Arrays.asList("one", "two", "three"));
-        final DatumWriter<GenericData.Array<String>> datumWriter = new GenericDatumWriter<>(schema);
+        final GenericArray<String> data = new GenericData.Array<>(schema, Arrays.asList("one", "two", "three"));
+        final DatumWriter<GenericArray<String>> datumWriter = new GenericDatumWriter<>(schema);
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final DataFileWriter<GenericData.Array<String>> dataFileWriter = new DataFileWriter<>(datumWriter);
+        final DataFileWriter<GenericArray<String>> dataFileWriter = new DataFileWriter<>(datumWriter);
         dataFileWriter.create(schema, out);
         dataFileWriter.append(data);
         dataFileWriter.append(data);
@@ -186,7 +188,7 @@ public class TestExtractAvroMetadata {
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeExists(ExtractAvroMetadata.SCHEMA_FINGERPRINT_ATTR);
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_TYPE_ATTR, Schema.Type.ARRAY.getName());
         flowFile.assertAttributeEquals(ExtractAvroMetadata.SCHEMA_NAME_ATTR, "array");
@@ -200,11 +202,11 @@ public class TestExtractAvroMetadata {
 
         final Schema schema = new Schema.Parser().parse(new File("src/test/resources/array.avsc"));
 
-        final GenericData.Array<String> data = new GenericData.Array<>(schema, Arrays.asList("one", "two", "three"));
-        final DatumWriter<GenericData.Array<String>> datumWriter = new GenericDatumWriter<>(schema);
+        final GenericArray<String> data = new GenericData.Array<>(schema, Arrays.asList("one", "two", "three"));
+        final DatumWriter<GenericArray<String>> datumWriter = new GenericDatumWriter<>(schema);
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final DataFileWriter<GenericData.Array<String>> dataFileWriter = new DataFileWriter<>(datumWriter);
+        final DataFileWriter<GenericArray<String>> dataFileWriter = new DataFileWriter<>(datumWriter);
         dataFileWriter.setCodec(CodecFactory.deflateCodec(1));
         dataFileWriter.create(schema, out);
         dataFileWriter.append(data);
@@ -215,7 +217,7 @@ public class TestExtractAvroMetadata {
 
         runner.assertAllFlowFilesTransferred(ExtractAvroMetadata.REL_SUCCESS, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ExtractAvroMetadata.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals("avro.codec", "deflate");
     }
 
@@ -224,7 +226,7 @@ public class TestExtractAvroMetadata {
         final TestRunner runner = TestRunners.newTestRunner(new ExtractAvroMetadata());
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.write("not avro".getBytes("UTF-8"));
+        out.write("not avro".getBytes(StandardCharsets.UTF_8));
         out.flush();
 
         runner.enqueue(out.toByteArray());

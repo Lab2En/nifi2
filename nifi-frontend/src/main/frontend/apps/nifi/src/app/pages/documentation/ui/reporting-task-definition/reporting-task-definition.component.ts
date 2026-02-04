@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy } from '@angular/core';
+import { Component, OnDestroy, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
@@ -33,15 +33,16 @@ import { selectReportingTaskDefinitionState } from '../../state/reporting-task-d
 
 @Component({
     selector: 'reporting-task-definition',
-    standalone: true,
     imports: [NgxSkeletonLoaderModule, ConfigurableExtensionDefinitionComponent],
     templateUrl: './reporting-task-definition.component.html',
     styleUrl: './reporting-task-definition.component.scss'
 })
 export class ReportingTaskDefinition implements OnDestroy {
+    private store = inject<Store<NiFiState>>(Store);
+
     reportingTaskDefinitionState: ReportingTaskDefinitionState | null = null;
 
-    constructor(private store: Store<NiFiState>) {
+    constructor() {
         this.store
             .select(selectDefinitionCoordinatesFromRouteForComponentType(ComponentType.ReportingTask))
             .pipe(

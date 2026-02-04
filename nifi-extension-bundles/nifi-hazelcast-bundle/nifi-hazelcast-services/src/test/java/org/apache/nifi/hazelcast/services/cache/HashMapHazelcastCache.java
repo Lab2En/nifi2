@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
-final public class HashMapHazelcastCache implements HazelcastCache {
+public final class HashMapHazelcastCache implements HazelcastCache {
     private final String name;
     private final Map<String, byte[]> values = new HashMap<>();
     private final Set<String> lockedEntries = new HashSet<>();
@@ -34,6 +34,11 @@ final public class HashMapHazelcastCache implements HazelcastCache {
     @Override
     public String name() {
         return name;
+    }
+
+    @Override
+    public Set<String> keySet() {
+        return values.keySet();
     }
 
     @Override

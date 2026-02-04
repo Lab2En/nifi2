@@ -15,24 +15,33 @@
  * limitations under the License.
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CounterEntity, CounterListingState } from '../../state/counter-listing';
 import { Store } from '@ngrx/store';
-import { loadCounters, promptCounterReset } from '../../state/counter-listing/counter-listing.actions';
+import {
+    loadCounters,
+    promptCounterReset,
+    promptResetAllCounters
+} from '../../state/counter-listing/counter-listing.actions';
 import { selectCounterListingState } from '../../state/counter-listing/counter-listing.selectors';
 import { initialState } from '../../state/counter-listing/counter-listing.reducer';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
+import { AsyncPipe } from '@angular/common';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
+import { MatIconButton } from '@angular/material/button';
+import { CounterTable } from './counter-table/counter-table.component';
 
 @Component({
     selector: 'counter-listing',
     templateUrl: './counter-listing.component.html',
+    imports: [CounterTable, AsyncPipe, NgxSkeletonLoaderComponent, MatIconButton],
     styleUrls: ['./counter-listing.component.scss']
 })
 export class CounterListing implements OnInit {
+    private store = inject<Store<CounterListingState>>(Store);
+
     counterListingState$ = this.store.select(selectCounterListingState);
     currentUser$ = this.store.select(selectCurrentUser);
-
-    constructor(private store: Store<CounterListingState>) {}
 
     ngOnInit(): void {
         this.store.dispatch(loadCounters());
@@ -51,6 +60,16 @@ export class CounterListing implements OnInit {
             promptCounterReset({
                 request: {
                     counter: entity
+                }
+            })
+        );
+    }
+
+    resetAllCounters(counterCount: number): void {
+        this.store.dispatch(
+            promptResetAllCounters({
+                request: {
+                    counterCount
                 }
             })
         );

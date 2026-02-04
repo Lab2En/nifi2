@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable, OnDestroy } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 import { CanvasState } from '../../state';
 import { Store } from '@ngrx/store';
 import { CanvasUtils } from '../canvas-utils.service';
@@ -30,10 +30,9 @@ import {
     selectTransitionRequired
 } from '../../state/flow/flow.selectors';
 import { QuickSelectBehavior } from '../behavior/quick-select-behavior.service';
-import { TextTip, NiFiCommon } from '@nifi/shared';
+import { ComponentType, TextTip, NiFiCommon } from '@nifi/shared';
 import { ValidationErrorsTip } from '../../../../ui/common/tooltips/validation-errors-tip/validation-errors-tip.component';
 import { Dimension } from '../../state/shared';
-import { ComponentType } from 'libs/shared/src';
 import { filter, Subject, switchMap, takeUntil } from 'rxjs';
 import { renderConnectionsForComponent } from '../../state/flow/flow.actions';
 
@@ -41,6 +40,14 @@ import { renderConnectionsForComponent } from '../../state/flow/flow.actions';
     providedIn: 'root'
 })
 export class PortManager implements OnDestroy {
+    private store = inject<Store<CanvasState>>(Store);
+    private canvasUtils = inject(CanvasUtils);
+    private nifiCommon = inject(NiFiCommon);
+    private positionBehavior = inject(PositionBehavior);
+    private selectableBehavior = inject(SelectableBehavior);
+    private quickSelectBehavior = inject(QuickSelectBehavior);
+    private editableBehavior = inject(EditableBehavior);
+
     private destroyed$: Subject<boolean> = new Subject();
 
     private portDimensions: Dimension = {
@@ -58,16 +65,6 @@ export class PortManager implements OnDestroy {
     private ports: [] = [];
     private portContainer: any = null;
     private transitionRequired = false;
-
-    constructor(
-        private store: Store<CanvasState>,
-        private canvasUtils: CanvasUtils,
-        private nifiCommon: NiFiCommon,
-        private positionBehavior: PositionBehavior,
-        private selectableBehavior: SelectableBehavior,
-        private quickSelectBehavior: QuickSelectBehavior,
-        private editableBehavior: EditableBehavior
-    ) {}
 
     private dimensions(d: any): Dimension {
         return d.allowRemoteAccess === true ? this.remotePortDimensions : this.portDimensions;

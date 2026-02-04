@@ -24,6 +24,7 @@ import org.apache.nifi.c2.protocol.component.api.ControllerServiceDefinition;
 import org.apache.nifi.c2.protocol.component.api.DefinedType;
 import org.apache.nifi.c2.protocol.component.api.ExtensionComponent;
 import org.apache.nifi.c2.protocol.component.api.FlowAnalysisRuleDefinition;
+import org.apache.nifi.c2.protocol.component.api.FlowRegistryClientDefinition;
 import org.apache.nifi.c2.protocol.component.api.MultiProcessorUseCase;
 import org.apache.nifi.c2.protocol.component.api.ParameterProviderDefinition;
 import org.apache.nifi.c2.protocol.component.api.ProcessorConfiguration;
@@ -31,6 +32,7 @@ import org.apache.nifi.c2.protocol.component.api.ProcessorDefinition;
 import org.apache.nifi.c2.protocol.component.api.PropertyAllowableValue;
 import org.apache.nifi.c2.protocol.component.api.PropertyDependency;
 import org.apache.nifi.c2.protocol.component.api.PropertyDescriptor;
+import org.apache.nifi.c2.protocol.component.api.PropertyListenPortDefinition;
 import org.apache.nifi.c2.protocol.component.api.PropertyResourceDefinition;
 import org.apache.nifi.c2.protocol.component.api.Relationship;
 import org.apache.nifi.c2.protocol.component.api.ReportingTaskDefinition;
@@ -53,6 +55,8 @@ import org.apache.nifi.extension.manifest.DynamicProperty;
 import org.apache.nifi.extension.manifest.DynamicRelationship;
 import org.apache.nifi.extension.manifest.Extension;
 import org.apache.nifi.extension.manifest.ExtensionManifest;
+import org.apache.nifi.extension.manifest.ExtensionType;
+import org.apache.nifi.extension.manifest.ListenPortDefinition;
 import org.apache.nifi.extension.manifest.Property;
 import org.apache.nifi.extension.manifest.ProvidedServiceAPI;
 import org.apache.nifi.extension.manifest.ResourceDefinition;
@@ -64,6 +68,8 @@ import org.apache.nifi.runtime.manifest.ComponentManifestBuilder;
 import org.apache.nifi.runtime.manifest.ExtensionManifestContainer;
 import org.apache.nifi.runtime.manifest.RuntimeManifestBuilder;
 import org.apache.nifi.scheduling.SchedulingStrategy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -83,6 +89,8 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
     private static final String DEFAULT_YIELD_PERIOD = "1 sec";
     private static final String DEFAULT_PENALIZATION_PERIOD = "30 sec";
     private static final String DEFAULT_BULLETIN_LEVEL = LogLevel.WARN.name();
+
+    private static final Logger logger = LoggerFactory.getLogger(StandardRuntimeManifestBuilder.class);
 
     private String identifier;
     private String version;
@@ -125,13 +133,13 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
         if (extensionManifest == null) {
             throw new IllegalArgumentException("Extension manifest is required");
         }
-        if (extensionManifest.getGroupId() == null || extensionManifest.getGroupId().trim().isEmpty()) {
+        if (extensionManifest.getGroupId() == null || extensionManifest.getGroupId().isBlank()) {
             throw new IllegalArgumentException("Extension manifest groupId is required");
         }
-        if (extensionManifest.getArtifactId() == null || extensionManifest.getArtifactId().trim().isEmpty()) {
+        if (extensionManifest.getArtifactId() == null || extensionManifest.getArtifactId().isBlank()) {
             throw new IllegalArgumentException("Extension manifest artifactId is required");
         }
-        if (extensionManifest.getVersion() == null || extensionManifest.getVersion().trim().isEmpty()) {
+        if (extensionManifest.getVersion() == null || extensionManifest.getVersion().isBlank()) {
             throw new IllegalArgumentException("Extension manifest version is required");
         }
 
@@ -193,7 +201,13 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
             throw new IllegalArgumentException("Extension cannot be null");
         }
 
-        switch (extension.getType()) {
+        final ExtensionType extensionType = extension.getType();
+        if (extensionType == null) {
+            logger.warn("Extension Type not found: Component Manifest Definition not added for [{}]", extension.getName());
+            return;
+        }
+
+        switch (extensionType) {
             case PROCESSOR:
                 addProcessorDefinition(extensionManifest, extension, additionalDetails, componentManifestBuilder);
                 break;
@@ -209,8 +223,9 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
             case PARAMETER_PROVIDER:
                 addParameterProviderDefinition(extensionManifest, extension, additionalDetails, componentManifestBuilder);
                 break;
-            default:
-                throw new IllegalArgumentException("Unknown extension type: " + extension.getType());
+            case FLOW_REGISTRY_CLIENT:
+                addFlowRegistryClientDefinition(extensionManifest, extension, additionalDetails, componentManifestBuilder);
+                break;
         }
     }
 
@@ -386,6 +401,15 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
         componentManifestBuilder.addParameterProvider(parameterProviderDefinition);
     }
 
+    private void addFlowRegistryClientDefinition(final ExtensionManifest extensionManifest, final Extension extension, final String additionalDetails,
+                                                 final ComponentManifestBuilder componentManifestBuilder) {
+        final FlowRegistryClientDefinition flowRegistryClientDefinition = new FlowRegistryClientDefinition();
+        populateDefinedType(extensionManifest, extension, flowRegistryClientDefinition);
+        populateExtensionComponent(extensionManifest, extension, additionalDetails, flowRegistryClientDefinition);
+        populateConfigurableComponent(extension, flowRegistryClientDefinition);
+        componentManifestBuilder.addFlowRegistryClient(flowRegistryClientDefinition);
+    }
+
     private void addFlowAnalysisRuleDefinition(final ExtensionManifest extensionManifest, final Extension extension, final String additionalDetails,
                                                 final ComponentManifestBuilder componentManifestBuilder) {
         final FlowAnalysisRuleDefinition flowAnalysisRuleDefinition = new FlowAnalysisRuleDefinition();
@@ -545,7 +569,7 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
     private void populateConfigurableComponent(final Extension extension, final ConfigurableComponentDefinition configurableComponentDefinition) {
         final List<Property> properties = extension.getProperties();
         if (isNotEmpty(properties)) {
-            final LinkedHashMap<String, PropertyDescriptor> propertyDescriptors = new LinkedHashMap<>();
+            final Map<String, PropertyDescriptor> propertyDescriptors = new LinkedHashMap<>();
             properties.forEach(property -> addPropertyDescriptor(propertyDescriptors, property));
             configurableComponentDefinition.setPropertyDescriptors(propertyDescriptors);
         }
@@ -589,6 +613,7 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
         descriptor.setAllowableValues(getPropertyAllowableValues(property.getAllowableValues()));
         descriptor.setTypeProvidedByValue(getControllerServiceDefinedType(property.getControllerServiceDefinition()));
         descriptor.setResourceDefinition(getPropertyResourceDefinition(property.getResourceDefinition()));
+        descriptor.setListenPortDefinition(getPropertyListenPortDefinition(property.getListenPortDefinition()));
         descriptor.setDependencies(getPropertyDependencies(property.getDependencies()));
         return descriptor;
     }
@@ -642,6 +667,19 @@ public class StandardRuntimeManifestBuilder implements RuntimeManifestBuilder {
             case TEXT -> ResourceType.TEXT;
             case DIRECTORY -> ResourceType.DIRECTORY;
         };
+    }
+
+    private PropertyListenPortDefinition getPropertyListenPortDefinition(final ListenPortDefinition listenPortDefinition) {
+        if (listenPortDefinition == null || listenPortDefinition.getTransportProtocol() == null) {
+            return null;
+        }
+
+        final PropertyListenPortDefinition propertyListenPortDefinition = new PropertyListenPortDefinition();
+        final PropertyListenPortDefinition.TransportProtocol transportProtocol = PropertyListenPortDefinition.TransportProtocol.valueOf(listenPortDefinition.getTransportProtocol().name());
+        propertyListenPortDefinition.setTransportProtocol(transportProtocol);
+        propertyListenPortDefinition.setApplicationProtocols(listenPortDefinition.getApplicationProtocols());
+
+        return propertyListenPortDefinition;
     }
 
     private ExpressionLanguageScope getELScope(final org.apache.nifi.extension.manifest.ExpressionLanguageScope elScope) {

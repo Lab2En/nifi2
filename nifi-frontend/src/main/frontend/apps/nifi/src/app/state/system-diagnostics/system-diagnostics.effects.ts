@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../index';
@@ -25,7 +25,7 @@ import * as SystemDiagnosticsActions from './system-diagnostics.actions';
 import { catchError, from, map, of, switchMap, tap } from 'rxjs';
 import { SystemDiagnosticsRequest } from './index';
 import { SystemDiagnosticsDialog } from '../../ui/common/system-diagnostics-dialog/system-diagnostics-dialog.component';
-import { LARGE_DIALOG } from 'libs/shared/src';
+import { LARGE_DIALOG } from '@nifi/shared';
 import * as ErrorActions from '../error/error.actions';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ErrorHelper } from '../../service/error-helper.service';
@@ -33,13 +33,11 @@ import { ErrorContextKey } from '../error';
 
 @Injectable()
 export class SystemDiagnosticsEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<NiFiState>,
-        private systemDiagnosticsService: SystemDiagnosticsService,
-        private dialog: MatDialog,
-        private errorHelper: ErrorHelper
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<NiFiState>>(Store);
+    private systemDiagnosticsService = inject(SystemDiagnosticsService);
+    private dialog = inject(MatDialog);
+    private errorHelper = inject(ErrorHelper);
 
     reloadSystemDiagnostics$ = createEffect(() =>
         this.actions$.pipe(

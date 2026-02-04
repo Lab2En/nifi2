@@ -16,7 +16,7 @@
  */
 package org.apache.nifi.web.controller;
 
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.authorization.Authorizer;
 import org.apache.nifi.authorization.RequestAction;
 import org.apache.nifi.authorization.resource.Authorizable;
@@ -50,9 +50,9 @@ import java.util.Optional;
  * NiFi web controller's helper service that implements component search.
  */
 public class ControllerSearchService {
-    private final static String FILTER_NAME_GROUP = "group";
-    private final static String FILTER_NAME_SCOPE = "scope";
-    private final static String FILTER_SCOPE_VALUE_HERE = "here";
+    private static final String FILTER_NAME_GROUP = "group";
+    private static final String FILTER_NAME_SCOPE = "scope";
+    private static final String FILTER_SCOPE_VALUE_HERE = "here";
 
     private FlowController flowController;
     private Authorizer authorizer;
@@ -123,7 +123,7 @@ public class ControllerSearchService {
         final List<ProcessGroup> lineage = getLineage(scope);
 
         for (final ProcessGroup group : lineage) {
-            if (StringUtils.containsIgnoreCase(group.getName(), filterValue) || StringUtils.containsIgnoreCase(group.getIdentifier(), filterValue)) {
+            if (Strings.CI.contains(group.getName(), filterValue) || Strings.CI.contains(group.getIdentifier(), filterValue)) {
                 return true;
             }
         }
@@ -132,7 +132,7 @@ public class ControllerSearchService {
     }
 
     private List<ProcessGroup> getLineage(final ProcessGroup group) {
-        final LinkedList<ProcessGroup> result = new LinkedList<>();
+        final List<ProcessGroup> result = new LinkedList<>();
         ProcessGroup current = group;
 
         while (current != null) {

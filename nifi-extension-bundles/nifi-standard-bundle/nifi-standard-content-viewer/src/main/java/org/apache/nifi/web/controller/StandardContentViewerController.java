@@ -18,6 +18,7 @@ package org.apache.nifi.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.avro.Conversions;
@@ -35,31 +36,31 @@ import org.apache.nifi.web.ResourceNotFoundException;
 import org.apache.nifi.xml.processing.transform.StandardTransformProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
+import java.io.ByteArrayOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
 
-@RestController()
-@RequestMapping("/api")
-public class StandardContentViewerController {
+public class StandardContentViewerController extends HttpServlet {
+
+    static final String CONTENT_ACCESS_ATTRIBUTE = "nifi-content-access";
 
     private static final Logger logger = LoggerFactory.getLogger(StandardContentViewerController.class);
 
-    @GetMapping("/content")
-    public void getContent(final HttpServletRequest request, final HttpServletResponse response) throws IOException {
+    @Override
+    public void doGet(final HttpServletRequest request, final HttpServletResponse response) throws IOException {
         final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
 
         // get the content
         final ServletContext servletContext = request.getServletContext();
-        final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute("nifi-content-access");
+        final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
 
         // get the content
         final DownloadableContent downloadableContent;
@@ -110,15 +111,14 @@ public class StandardContentViewerController {
                     break;
                 }
                 case "xml": {
-                    // format xml
                     final StreamSource source = new StreamSource(downloadableContent.getContent());
-                    final StreamResult result = new StreamResult(response.getOutputStream());
-
-                    final StandardTransformProvider transformProvider = new StandardTransformProvider();
-                    transformProvider.setIndent(true);
-                    transformProvider.setOmitXmlDeclaration(true);
-
-                    transformProvider.transform(source, result);
+                    try (OutputStream outputStream = new FormattingOutputStream(response.getOutputStream())) {
+                        final StreamResult result = new StreamResult(outputStream);
+                        final StandardTransformProvider transformProvider = new StandardTransformProvider();
+                        transformProvider.setIndent(true);
+                        transformProvider.setOmitXmlDeclaration(true);
+                        transformProvider.transform(source, result);
+                    }
                     break;
                 }
                 case "avro": {
@@ -201,5 +201,48 @@ public class StandardContentViewerController {
             case "text/csv" -> "csv";
             case null, default -> null;
         };
+    }
+
+    private static class FormattingOutputStream extends FilterOutputStream {
+
+        private static final byte LINE_FEED = 10;
+        private static final byte SPACE = 32;
+
+        private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+        private FormattingOutputStream(final OutputStream outputStream) {
+            super(outputStream);
+        }
+
+        @Override
+        public void write(final int currentByte) throws IOException {
+            buffer.write(currentByte);
+            if (currentByte == LINE_FEED) {
+                processBuffer();
+            }
+        }
+
+        private void processBuffer() throws IOException {
+            final byte[] bytes = buffer.toByteArray();
+
+            if (hasCharacters(bytes)) {
+                super.out.write(bytes);
+            }
+
+            buffer.reset();
+        }
+
+        private boolean hasCharacters(final byte[] bytes) {
+            boolean charactersFound = false;
+
+            for (byte currentByte : bytes) {
+                if (currentByte > SPACE) {
+                    charactersFound = true;
+                    break;
+                }
+            }
+
+            return charactersFound;
+        }
     }
 }

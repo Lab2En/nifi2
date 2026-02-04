@@ -16,17 +16,13 @@
  */
 package org.apache.nifi.cluster.protocol.message;
 
-import org.apache.nifi.cluster.protocol.ConnectionResponse;
-
 import jakarta.xml.bind.annotation.XmlRootElement;
+import org.apache.nifi.cluster.protocol.ConnectionResponse;
 
 @XmlRootElement(name = "connectionResponseMessage")
 public class ConnectionResponseMessage extends ProtocolMessage {
 
     private ConnectionResponse connectionResponse;
-
-    public ConnectionResponseMessage() {
-    }
 
     public ConnectionResponse getConnectionResponse() {
         return connectionResponse;

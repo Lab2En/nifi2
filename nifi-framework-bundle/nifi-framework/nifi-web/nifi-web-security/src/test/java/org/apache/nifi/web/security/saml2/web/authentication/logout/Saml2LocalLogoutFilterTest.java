@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.web.security.saml2.web.authentication.logout;
 
+import jakarta.servlet.ServletException;
 import org.apache.nifi.web.security.saml2.SamlUrlPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
-import jakarta.servlet.ServletException;
 import java.io.IOException;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -65,7 +65,7 @@ class Saml2LocalLogoutFilterTest {
 
     @Test
     void testDoFilterInternal() throws ServletException, IOException {
-        httpServletRequest.setPathInfo(SamlUrlPath.LOCAL_LOGOUT_REQUEST.getPath());
+        httpServletRequest.setRequestURI(SamlUrlPath.LOCAL_LOGOUT_REQUEST.getPath());
         filter.doFilter(httpServletRequest, httpServletResponse, filterChain);
 
         verify(logoutSuccessHandler).onLogoutSuccess(eq(httpServletRequest), eq(httpServletResponse), isNull());

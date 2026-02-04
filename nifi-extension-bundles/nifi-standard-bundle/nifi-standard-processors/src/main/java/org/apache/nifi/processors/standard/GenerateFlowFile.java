@@ -33,17 +33,15 @@ import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.scheduling.SchedulingStrategy;
 
-import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -80,6 +78,7 @@ public class GenerateFlowFile extends AbstractProcessor {
             .required(true)
             .defaultValue("0B")
             .addValidator(StandardValidators.DATA_SIZE_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
     public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Batch Size")
@@ -104,8 +103,7 @@ public class GenerateFlowFile extends AbstractProcessor {
             .defaultValue("false")
             .build();
     public static final PropertyDescriptor CUSTOM_TEXT = new PropertyDescriptor.Builder()
-            .displayName("Custom Text")
-            .name("generate-ff-custom-text")
+            .name("Custom Text")
             .description("If Data Format is text and if Unique FlowFiles is false, then this custom text will be used as content of the generated "
                     + "FlowFiles and the File Size will be ignored. Finally, if Expression Language is used, evaluation will be performed only once "
                     + "per batch of generated FlowFiles")
@@ -114,22 +112,20 @@ public class GenerateFlowFile extends AbstractProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
-            .name("character-set")
-            .displayName("Character Set")
+            .name("Character Set")
             .description("Specifies the character set to use when writing the bytes of Custom Text to a flow file.")
             .required(true)
             .defaultValue("UTF-8")
             .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR)
             .build();
     public static final PropertyDescriptor MIME_TYPE = new PropertyDescriptor.Builder()
-            .name("mime-type")
-            .displayName("Mime Type")
+            .name("Mime Type")
             .description("Specifies the value to set for the \"mime.type\" attribute.")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FILE_SIZE,
             BATCH_SIZE,
             DATA_FORMAT,
@@ -143,13 +139,15 @@ public class GenerateFlowFile extends AbstractProcessor {
             .name("success")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(SUCCESS);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS
+    );
 
     private static final char[] TEXT_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()-_=+/?.,';:\"?<>\n\t ".toCharArray();
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -194,7 +192,7 @@ public class GenerateFlowFile extends AbstractProcessor {
     }
 
     private byte[] generateData(final ProcessContext context) {
-        final int byteCount = context.getProperty(FILE_SIZE).asDataSize(DataUnit.B).intValue();
+        final int byteCount = context.getProperty(FILE_SIZE).evaluateAttributeExpressions().asDataSize(DataUnit.B).intValue();
 
         final Random random = new Random();
         final byte[] array = new byte[byteCount];
@@ -226,7 +224,7 @@ public class GenerateFlowFile extends AbstractProcessor {
         }
 
         Map<PropertyDescriptor, String> processorProperties = context.getProperties();
-        Map<String, String> generatedAttributes = new HashMap<String, String>();
+        Map<String, String> generatedAttributes = new HashMap<>();
         for (final Map.Entry<PropertyDescriptor, String> entry : processorProperties.entrySet()) {
             PropertyDescriptor property = entry.getKey();
             if (property.isDynamic() && property.isExpressionLanguageSupported()) {
@@ -240,20 +238,22 @@ public class GenerateFlowFile extends AbstractProcessor {
         }
 
         for (int i = 0; i < context.getProperty(BATCH_SIZE).asInteger(); i++) {
-        FlowFile flowFile = session.create();
+            FlowFile flowFile = session.create();
             final byte[] writtenData = uniqueData ? generateData(context) : data;
             if (writtenData.length > 0) {
-                flowFile = session.write(flowFile, new OutputStreamCallback() {
-                    @Override
-                    public void process(final OutputStream out) throws IOException {
-                        out.write(writtenData);
-                    }
-                });
+                flowFile = session.write(flowFile, out -> out.write(writtenData));
             }
             flowFile = session.putAllAttributes(flowFile, generatedAttributes);
 
             session.getProvenanceReporter().create(flowFile);
             session.transfer(flowFile, SUCCESS);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("generate-ff-custom-text", CUSTOM_TEXT.getName());
+        config.renameProperty("character-set", CHARSET.getName());
+        config.renameProperty("mime-type", MIME_TYPE.getName());
     }
 }

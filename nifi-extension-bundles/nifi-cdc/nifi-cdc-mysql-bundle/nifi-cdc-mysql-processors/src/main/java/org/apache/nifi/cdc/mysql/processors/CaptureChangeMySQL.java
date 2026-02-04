@@ -75,7 +75,6 @@ import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.components.state.StateManager;
 import org.apache.nifi.components.state.StateMap;
-import org.apache.nifi.distributed.cache.client.DistributedMapCacheClient;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
@@ -91,7 +90,6 @@ import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.security.util.TlsConfiguration;
 import org.apache.nifi.ssl.SSLContextService;
 
-import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.sql.Connection;
@@ -116,6 +114,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
+import javax.net.ssl.SSLContext;
 
 import static com.github.shyiko.mysql.binlog.event.EventType.DELETE_ROWS;
 import static com.github.shyiko.mysql.binlog.event.EventType.EXT_DELETE_ROWS;
@@ -129,7 +128,6 @@ import static com.github.shyiko.mysql.binlog.event.EventType.XID;
 import static org.apache.nifi.cdc.event.io.EventWriter.CDC_EVENT_TYPE_ATTRIBUTE;
 import static org.apache.nifi.cdc.event.io.EventWriter.SEQUENCE_ID_KEY;
 import static org.apache.nifi.cdc.event.io.FlowFileEventWriteStrategy.MAX_EVENTS_PER_FLOWFILE;
-
 
 /**
  * A processor to retrieve Change Data Capture (CDC) events and send them as flow files.
@@ -177,7 +175,9 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .description("Successfully created FlowFile from SQL query result set.")
             .build();
 
-    protected static Set<Relationship> relationships = Set.of(REL_SUCCESS);
+    protected static Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     private static final AllowableValue SSL_MODE_DISABLED = new AllowableValue(SSLMode.DISABLED.toString(),
             SSLMode.DISABLED.toString(),
@@ -195,11 +195,14 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             SSLMode.VERIFY_IDENTITY.toString(),
             "Connect with TLS or fail when server support not enabled. Verify server hostname matches presented X.509 certificate names or fail when not matched");
 
+    private static final List<String> OBSOLETE_DIST_CACHE_CLIENT_PROPERTY_NAMES = List.of(
+            "capture-change-mysql-dist-map-cache-client",
+            "Distributed Map Cache Client - unused"
+    );
 
     // Properties
     public static final PropertyDescriptor DATABASE_NAME_PATTERN = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-db-name-pattern")
-            .displayName("Database/Schema Name Pattern")
+            .name("Database/Schema Name Pattern")
             .description("A regular expression (regex) for matching databases (or schemas, depending on your RDBMS' terminology) against the list of CDC events. The regex must match "
                     + "the database name as it is stored in the RDBMS. If the property is not set, the database name will not be used to filter the CDC events. "
                     + "NOTE: DDL events, even if they affect different databases, are associated with the database used by the session to execute the DDL. "
@@ -210,8 +213,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor TABLE_NAME_PATTERN = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-name-pattern")
-            .displayName("Table Name Pattern")
+            .name("Table Name Pattern")
             .description("A regular expression (regex) for matching CDC events affecting matching tables. The regex must match the table name as it is stored in the database. "
                     + "If the property is not set, no events will be filtered based on table name.")
             .required(false)
@@ -219,8 +221,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor CONNECT_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-max-wait-time")
-            .displayName("Max Wait Time")
+            .name("Max Wait Time")
             .description("The maximum amount of time allowed for a connection to be established, zero means there is effectively no limit.")
             .defaultValue("30 seconds")
             .required(true)
@@ -229,8 +230,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor HOSTS = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-hosts")
-            .displayName("MySQL Nodes")
+            .name("MySQL Nodes")
             .description("A list of hostname (and optional port) entries corresponding to nodes in a MySQL cluster. The entries should be comma separated "
                     + "using a colon (if the port is to be specified) such as host1:port,host2:port,....  For example mysql.myhost.com:3306. The port need not be specified, "
                     + "when omitted the default MySQL port value of 3306 will be used. This processor will attempt to connect to "
@@ -242,8 +242,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor DRIVER_NAME = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-driver-class")
-            .displayName("MySQL Driver Class Name")
+            .name("MySQL Driver Class Name")
             .description("The class name of the MySQL database driver class")
             .defaultValue("com.mysql.jdbc.Driver")
             .required(true)
@@ -252,8 +251,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor DRIVER_LOCATION = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-driver-locations")
-            .displayName("MySQL Driver Location(s)")
+            .name("MySQL Driver Locations")
             .description("Comma-separated list of files/folders and/or URLs containing the MySQL driver JAR and its dependencies (if any). "
                     + "For example '/var/tmp/mysql-connector-java-5.1.38-bin.jar'")
             .required(false)
@@ -263,8 +261,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor USERNAME = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-username")
-            .displayName("Username")
+            .name("Username")
             .description("Username to access the MySQL cluster")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -272,8 +269,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-password")
-            .displayName("Password")
+            .name("Password")
             .description("Password to access the MySQL cluster")
             .required(false)
             .sensitive(true)
@@ -282,8 +278,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor EVENTS_PER_FLOWFILE_STRATEGY = new PropertyDescriptor.Builder()
-            .name("events-per-flowfile-strategy")
-            .displayName("Event Processing Strategy")
+            .name("Event Processing Strategy")
             .description("Specifies the strategy to use when writing events to FlowFile(s), such as '" + MAX_EVENTS_PER_FLOWFILE.getDisplayName() + "'")
             .required(true)
             .sensitive(false)
@@ -294,8 +289,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor NUMBER_OF_EVENTS_PER_FLOWFILE = new PropertyDescriptor.Builder()
-            .name("number-of-events-per-flowfile")
-            .displayName("Events Per FlowFile")
+            .name("Events Per FlowFile")
             .description("Specifies how many events should be written to a single FlowFile. If the processor is stopped before the specified number of events has been written,"
                     + "the events will still be written as a FlowFile before stopping.")
             .required(true)
@@ -307,8 +301,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor SERVER_ID = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-server-id")
-            .displayName("Server ID")
+            .name("Server ID")
             .description("The client connecting to the MySQL replication group is actually a simplified replica (server), and the Server ID value must be unique across the whole replication "
                     + "group (i.e. different from any other Server ID being used by any primary or replica). Thus, each instance of CaptureChangeMySQL must have a Server ID unique across "
                     + "the replication group. If the Server ID is not specified, it defaults to 65535.")
@@ -317,17 +310,8 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
-    public static final PropertyDescriptor DIST_CACHE_CLIENT = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-dist-map-cache-client")
-            .displayName("Distributed Map Cache Client - unused")
-            .description("This is a legacy property that is no longer used to store table information, the processor will handle the table information (column names, types, etc.)")
-            .identifiesControllerService(DistributedMapCacheClient.class)
-            .required(false)
-            .build();
-
     public static final PropertyDescriptor RETRIEVE_ALL_RECORDS = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-retrieve-all-records")
-            .displayName("Retrieve All Records")
+            .name("Retrieve All Records")
             .description("Specifies whether to get all available CDC events, regardless of the current binlog filename and/or position. If binlog filename and position values are present "
                     + "in the processor's State, this property's value is ignored. This allows for 4 different configurations: 1) If binlog data is available in processor State, that is used "
                     + "to determine the start location and the value of Retrieve All Records is ignored. 2) If no binlog data is in processor State, then Retrieve All Records set to true "
@@ -342,8 +326,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor INCLUDE_BEGIN_COMMIT = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-include-begin-commit")
-            .displayName("Include Begin/Commit Events")
+            .name("Include Begin/Commit Events")
             .description("Specifies whether to emit events corresponding to a BEGIN or COMMIT event in the binary log. Set to true if the BEGIN/COMMIT events are necessary in the downstream flow, "
                     + "otherwise set to false, which suppresses generation of these events and can increase flow performance.")
             .required(true)
@@ -353,8 +336,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor INCLUDE_DDL_EVENTS = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-include-ddl-events")
-            .displayName("Include DDL Events")
+            .name("Include DDL Events")
             .description("Specifies whether to emit events corresponding to Data Definition Language (DDL) events such as ALTER TABLE, TRUNCATE TABLE, e.g. in the binary log. Set to true "
                     + "if the DDL events are desired/necessary in the downstream flow, otherwise set to false, which suppresses generation of these events and can increase flow performance.")
             .required(true)
@@ -364,8 +346,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor INIT_SEQUENCE_ID = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-init-seq-id")
-            .displayName("Initial Sequence ID")
+            .name("Initial Sequence ID")
             .description("Specifies an initial sequence identifier to use if this processor's State does not have a current "
                     + "sequence identifier. If a sequence identifier is present in the processor's State, this property is ignored. Sequence identifiers are "
                     + "monotonically increasing integers that record the order of flow files generated by the processor. They can be used with the EnforceOrder "
@@ -376,8 +357,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor INIT_BINLOG_FILENAME = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-init-binlog-filename")
-            .displayName("Initial Binlog Filename")
+            .name("Initial Binlog Filename")
             .description("Specifies an initial binlog filename to use if this processor's State does not have a current binlog filename. If a filename is present "
                     + "in the processor's State or \"Use GTID\" property is set to false, this property is ignored. "
                     + "This can be used along with Initial Binlog Position to \"skip ahead\" if previous events are not desired. "
@@ -389,8 +369,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor INIT_BINLOG_POSITION = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-init-binlog-position")
-            .displayName("Initial Binlog Position")
+            .name("Initial Binlog Position")
             .description("Specifies an initial offset into a binlog (specified by Initial Binlog Filename) to use if this processor's State does not have a current "
                     + "binlog filename. If a filename is present in the processor's State or \"Use GTID\" property is false, this property is ignored. "
                     + "This can be used along with Initial Binlog Filename to \"skip ahead\" if previous events are not desired. Note that NiFi Expression Language "
@@ -402,8 +381,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor USE_BINLOG_GTID = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-use-gtid")
-            .displayName("Use Binlog GTID")
+            .name("Use Binlog GTID")
             .description("Specifies whether to use Global Transaction ID (GTID) for binlog tracking. If set to true, processor's state of binlog file name and position is ignored. "
                     + "The main benefit of using GTID is to have much reliable failover than using binlog filename/position.")
             .required(true)
@@ -413,8 +391,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor INIT_BINLOG_GTID = new PropertyDescriptor.Builder()
-            .name("capture-change-mysql-init-gtid")
-            .displayName("Initial Binlog GTID")
+            .name("Initial Binlog GTID")
             .description("Specifies an initial GTID to use if this processor's State does not have a current GTID. "
                     + "If a GTID is present in the processor's State or \"Use GTID\" property is set to false, this property is ignored. "
                     + "This can be used to \"skip ahead\" if previous events are not desired. "
@@ -427,7 +404,6 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
 
     public static final PropertyDescriptor SSL_MODE = new PropertyDescriptor.Builder()
             .name("SSL Mode")
-            .displayName("SSL Mode")
             .description("SSL Mode used when SSL Context Service configured supporting certificate verification options")
             .required(true)
             .defaultValue(SSL_MODE_DISABLED)
@@ -439,7 +415,6 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
 
     public static final PropertyDescriptor SSL_CONTEXT_SERVICE = new PropertyDescriptor.Builder()
             .name("SSL Context Service")
-            .displayName("SSL Context Service")
             .description("SSL Context Service supporting encrypted socket communication")
             .required(false)
             .identifiesControllerService(SSLContextService.class)
@@ -449,7 +424,7 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
                     SSL_MODE_VERIFY_IDENTITY)
             .build();
 
-    private static final List<PropertyDescriptor> propDescriptors = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             HOSTS,
             DRIVER_NAME,
             DRIVER_LOCATION,
@@ -461,7 +436,6 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             DATABASE_NAME_PATTERN,
             TABLE_NAME_PATTERN,
             CONNECT_TIMEOUT,
-            DIST_CACHE_CLIENT,
             RETRIEVE_ALL_RECORDS,
             INCLUDE_BEGIN_COMMIT,
             INCLUDE_DDL_EVENTS,
@@ -508,17 +482,38 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         config.removeProperty("capture-change-mysql-state-update-interval");
+        config.renameProperty("capture-change-mysql-db-name-pattern", DATABASE_NAME_PATTERN.getName());
+        config.renameProperty("capture-change-mysql-name-pattern", TABLE_NAME_PATTERN.getName());
+        config.renameProperty("capture-change-mysql-max-wait-time", CONNECT_TIMEOUT.getName());
+        config.renameProperty("capture-change-mysql-hosts", HOSTS.getName());
+        config.renameProperty("capture-change-mysql-driver-class", DRIVER_NAME.getName());
+        List.of("capture-change-mysql-driver-locations", "MySQL Driver Location(s)").forEach(
+                oldNameProperty ->  config.renameProperty(oldNameProperty, DRIVER_LOCATION.getName()));
+        config.renameProperty("capture-change-mysql-username", USERNAME.getName());
+        config.renameProperty("capture-change-mysql-password", PASSWORD.getName());
+        config.renameProperty("events-per-flowfile-strategy", EVENTS_PER_FLOWFILE_STRATEGY.getName());
+        config.renameProperty("number-of-events-per-flowfile", NUMBER_OF_EVENTS_PER_FLOWFILE.getName());
+        config.renameProperty("capture-change-mysql-server-id", SERVER_ID.getName());
+        config.renameProperty("capture-change-mysql-retrieve-all-records", RETRIEVE_ALL_RECORDS.getName());
+        config.renameProperty("capture-change-mysql-include-begin-commit", INCLUDE_BEGIN_COMMIT.getName());
+        config.renameProperty("capture-change-mysql-include-ddl-events", INCLUDE_DDL_EVENTS.getName());
+        config.renameProperty("capture-change-mysql-init-seq-id", INIT_SEQUENCE_ID.getName());
+        config.renameProperty("capture-change-mysql-init-binlog-filename", INIT_BINLOG_FILENAME.getName());
+        config.renameProperty("capture-change-mysql-init-binlog-position", INIT_BINLOG_POSITION.getName());
+        config.renameProperty("capture-change-mysql-use-gtid", USE_BINLOG_GTID.getName());
+        config.renameProperty("capture-change-mysql-init-gtid", INIT_BINLOG_GTID.getName());
+        OBSOLETE_DIST_CACHE_CLIENT_PROPERTY_NAMES.forEach(config::removeProperty);
     }
 
     @Override
@@ -574,10 +569,9 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
 
         // Build a event writer config object for the event writers to use
         final FlowFileEventWriteStrategy flowFileEventWriteStrategy = context.getProperty(EVENTS_PER_FLOWFILE_STRATEGY).asAllowableValue(FlowFileEventWriteStrategy.class);
-        eventWriterConfiguration = new EventWriterConfiguration(
-                flowFileEventWriteStrategy,
-                context.getProperty(NUMBER_OF_EVENTS_PER_FLOWFILE).evaluateAttributeExpressions().asInteger()
-        );
+        final int numberOfEventsPerFlowFile = flowFileEventWriteStrategy == FlowFileEventWriteStrategy.MAX_EVENTS_PER_FLOWFILE
+                ? context.getProperty(NUMBER_OF_EVENTS_PER_FLOWFILE).evaluateAttributeExpressions().asInteger() : 1;
+        eventWriterConfiguration = new EventWriterConfiguration(flowFileEventWriteStrategy, numberOfEventsPerFlowFile);
 
         PropertyValue dbNameValue = context.getProperty(DATABASE_NAME_PATTERN);
         databaseNamePattern = dbNameValue.isSet() ? Pattern.compile(dbNameValue.getValue()) : null;
@@ -648,9 +642,8 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
             currentDataCaptureState.setSequenceId(Long.parseLong(seqIdString));
         }
 
-        final SSLContextService sslContextService = context.getProperty(SSL_CONTEXT_SERVICE)
-                .asControllerService(SSLContextService.class);
         final SSLMode sslMode = SSLMode.valueOf(context.getProperty(SSL_MODE).getValue());
+        final SSLContextService sslContextService = sslMode == SSLMode.DISABLED ? null : context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextService.class);
 
         // Save off MySQL cluster and JDBC driver information, will be used to connect for event enrichment as well as for the binlog connector
         try {
@@ -1405,10 +1398,6 @@ public class CaptureChangeMySQL extends AbstractSessionFactoryProcessor {
         private boolean inTransaction = false;
 
         private String transitUri = "<unknown>";
-
-        public BinlogResourceInfo() {
-
-        }
 
         public TableInfo getCurrentTable() {
             return currentTable;

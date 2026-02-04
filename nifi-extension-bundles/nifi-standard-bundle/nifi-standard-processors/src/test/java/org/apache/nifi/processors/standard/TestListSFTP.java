@@ -34,13 +34,13 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -59,8 +59,8 @@ public class TestListSFTP {
     private SSHTestServer sshServer;
 
     @BeforeEach
-    public void startServer() throws Exception {
-        sshServer = new SSHTestServer();
+    public void startServer(@TempDir final Path rootPath) throws Exception {
+        sshServer = new SSHTestServer(rootPath);
         sshServer.startServer();
         writeTempFile();
 
@@ -79,7 +79,6 @@ public class TestListSFTP {
     @AfterEach
     public void stopServer() throws Exception {
         sshServer.stopServer();
-        Files.deleteIfExists(Paths.get(sshServer.getVirtualFileSystemPath()));
     }
 
     @Test
@@ -96,7 +95,7 @@ public class TestListSFTP {
         runner.assertAllFlowFilesContainAttribute(ListFile.FILE_LAST_MODIFY_TIME_ATTRIBUTE);
         runner.assertAllFlowFilesContainAttribute("filename");
 
-        final MockFlowFile retrievedFile = runner.getFlowFilesForRelationship(ListSFTP.REL_SUCCESS).get(0);
+        final MockFlowFile retrievedFile = runner.getFlowFilesForRelationship(ListSFTP.REL_SUCCESS).getFirst();
         retrievedFile.assertAttributeEquals("sftp.listing.user", sshServer.getUsername());
     }
 
@@ -179,35 +178,23 @@ public class TestListSFTP {
     }
 
     @Test
-    public void testRemotePollBatchSizeEnforced() {
-        runner.setProperty(AbstractListProcessor.LISTING_STRATEGY, AbstractListProcessor.NO_TRACKING);
-        runner.setProperty(SFTPTransfer.REMOTE_POLL_BATCH_SIZE, "1");
-
-        runner.run();
-        // Of 3 items only 1 returned due to batch size
-        runner.assertTransferCount(ListSFTP.REL_SUCCESS, 1);
-
-        runner.setProperty(SFTPTransfer.REMOTE_POLL_BATCH_SIZE, "2");
-
-        runner.run();
-        runner.assertTransferCount(ListSFTP.REL_SUCCESS, 3);
-    }
-
-    @Test
     public void testVerificationSuccessful() {
         final List<ConfigVerificationResult> results = ((VerifiableProcessor) runner.getProcessor())
                 .verify(runner.getProcessContext(), runner.getLogger(), Collections.emptyMap());
         assertEquals(1, results.size());
-        final ConfigVerificationResult result = results.get(0);
+        final ConfigVerificationResult result = results.getFirst();
         assertEquals(Outcome.SUCCESSFUL, result.getOutcome());
     }
 
     private void writeTempFile() {
         for (int i = 0; i < TEMPORARY_FILES; i++) {
-            final File file = new File(sshServer.getVirtualFileSystemPath(), String.format("%s-%s", getClass().getSimpleName(), UUID.randomUUID()));
+            final Path filePath = sshServer.getRootPath().resolve(String.format("%s-%s", getClass().getSimpleName(), UUID.randomUUID()));
             try {
-                Files.write(file.toPath(), FILE_CONTENTS);
-                file.setLastModified(0);
+                Files.write(filePath, FILE_CONTENTS);
+                final boolean modified = filePath.toFile().setLastModified(0);
+                if (!modified) {
+                    throw new IllegalStateException("Failed to set last modified on File [%s]".formatted(filePath));
+                }
             } catch (final IOException e) {
                 throw new UncheckedIOException(e);
             }

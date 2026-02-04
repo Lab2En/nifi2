@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { ClusterTable } from '../../common/cluster-table/cluster-table.component';
 import { NodeSnapshot } from '../../../../../state/system-diagnostics';
 import {
@@ -31,12 +31,13 @@ import { ConnectedPosition } from '@angular/cdk/overlay';
 
 @Component({
     selector: 'cluster-jvm-table',
-    standalone: true,
     imports: [ClusterTableFilter, MatTableModule, MatSortModule, NifiTooltipDirective],
     templateUrl: './cluster-jvm-table.component.html',
     styleUrl: './cluster-jvm-table.component.scss'
 })
 export class ClusterJvmTable extends ClusterTable<NodeSnapshot> {
+    private nifiCommon = inject(NiFiCommon);
+
     filterableColumns: ClusterTableFilterColumn[] = [{ key: 'address', label: 'Address' }];
 
     displayedColumns: string[] = [
@@ -50,10 +51,6 @@ export class ClusterJvmTable extends ClusterTable<NodeSnapshot> {
         'garbageCollection',
         'uptime'
     ];
-
-    constructor(private nifiCommon: NiFiCommon) {
-        super();
-    }
 
     formatNodeAddress(item: NodeSnapshot): string {
         return `${item.address}:${item.apiPort}`;

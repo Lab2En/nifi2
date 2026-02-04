@@ -17,11 +17,13 @@
 package org.apache.nifi.processors.standard;
 
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.networknt.schema.Error;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.Restricted;
@@ -45,16 +47,17 @@ import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.json.schema.JsonSchema;
+import org.apache.nifi.json.schema.SchemaVersion;
 import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.json.schema.JsonSchema;
 import org.apache.nifi.schema.access.JsonSchemaRegistryComponent;
-import org.apache.nifi.json.schema.SchemaVersion;
 import org.apache.nifi.schemaregistry.services.JsonSchemaRegistry;
 
 import java.io.IOException;
@@ -125,10 +128,10 @@ public class ValidateJson extends AbstractProcessor {
     protected static final String ERROR_ATTRIBUTE_KEY = "json.validation.errors";
     private static final String SCHEMA_NAME_PROPERTY_NAME = "Schema Name";
     private static final String SCHEMA_CONTENT_PROPERTY_NAME = "JSON Schema";
+    private static final String DEFAULT_MAX_STRING_LENGTH = "20 MB";
 
     public static final PropertyDescriptor SCHEMA_ACCESS_STRATEGY = new PropertyDescriptor.Builder()
             .name("Schema Access Strategy")
-            .displayName("Schema Access Strategy")
             .description("Specifies how to obtain the schema that is to be used for interpreting the data.")
             .allowableValues(JsonSchemaStrategy.class)
             .defaultValue(JsonSchemaStrategy.SCHEMA_CONTENT_PROPERTY)
@@ -137,7 +140,6 @@ public class ValidateJson extends AbstractProcessor {
 
     public static final PropertyDescriptor SCHEMA_NAME = new PropertyDescriptor.Builder()
             .name(SCHEMA_NAME_PROPERTY_NAME)
-            .displayName(SCHEMA_NAME_PROPERTY_NAME)
             .description("Specifies the name of the schema to lookup in the Schema Registry property")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -148,7 +150,6 @@ public class ValidateJson extends AbstractProcessor {
 
     public static final PropertyDescriptor SCHEMA_REGISTRY = new PropertyDescriptor.Builder()
             .name("JSON Schema Registry")
-            .displayName("JSON Schema Registry")
             .description("Specifies the Controller Service to use for the JSON Schema Registry")
             .identifiesControllerService(JsonSchemaRegistry.class)
             .required(true)
@@ -157,7 +158,6 @@ public class ValidateJson extends AbstractProcessor {
 
     public static final PropertyDescriptor SCHEMA_CONTENT = new PropertyDescriptor.Builder()
             .name(SCHEMA_CONTENT_PROPERTY_NAME)
-            .displayName(SCHEMA_CONTENT_PROPERTY_NAME)
             .description("A URL or file path to the JSON schema or the actual JSON schema content")
             .required(true)
             .identifiesExternalResource(ResourceCardinality.SINGLE, ResourceType.FILE, ResourceType.URL, ResourceType.TEXT)
@@ -165,17 +165,27 @@ public class ValidateJson extends AbstractProcessor {
             .dependsOn(SCHEMA_ACCESS_STRATEGY, JsonSchemaStrategy.SCHEMA_CONTENT_PROPERTY)
             .build();
 
+
+    public static final PropertyDescriptor MAX_STRING_LENGTH = new PropertyDescriptor.Builder()
+            .name("Max String Length")
+            .description("The maximum allowed length of a string value when parsing the JSON document")
+            .required(true)
+            .defaultValue(DEFAULT_MAX_STRING_LENGTH)
+            .addValidator(StandardValidators.DATA_SIZE_VALIDATOR)
+            .build();
+
     public static final PropertyDescriptor SCHEMA_VERSION = new PropertyDescriptor.Builder()
             .fromPropertyDescriptor(JsonSchemaRegistryComponent.SCHEMA_VERSION)
             .dependsOn(SCHEMA_ACCESS_STRATEGY, JsonSchemaStrategy.SCHEMA_CONTENT_PROPERTY)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             SCHEMA_ACCESS_STRATEGY,
             SCHEMA_NAME,
             SCHEMA_REGISTRY,
             SCHEMA_CONTENT,
-            SCHEMA_VERSION
+            SCHEMA_VERSION,
+            MAX_STRING_LENGTH
     );
 
     public static final Relationship REL_VALID = new Relationship.Builder()
@@ -199,16 +209,16 @@ public class ValidateJson extends AbstractProcessor {
         REL_FAILURE
     );
 
-    private static final ObjectMapper MAPPER = new ObjectMapper().configure(JsonParser.Feature.ALLOW_COMMENTS, true);
+    private ObjectMapper mapper;
 
-    private final ConcurrentMap<SchemaVersion, JsonSchemaFactory> schemaFactories =  Arrays.stream(SchemaVersion.values())
+    private final ConcurrentMap<SchemaVersion, SchemaRegistry> schemaRegistries = Arrays.stream(SchemaVersion.values())
             .collect(
                     Collectors.toConcurrentMap(
                             Function.identity(),
-                            schemaDraftVersion -> JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.fromId(schemaDraftVersion.getUri()).get())
+                            schemaDraftVersion -> SchemaRegistry.withDefaultDialect(mapToSpecification(schemaDraftVersion))
                     )
             );
-    private volatile com.networknt.schema.JsonSchema schema;
+    private volatile Schema schema;
     private volatile JsonSchemaRegistry jsonSchemaRegistry;
 
     @Override
@@ -223,7 +233,7 @@ public class ValidateJson extends AbstractProcessor {
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -252,15 +262,19 @@ public class ValidateJson extends AbstractProcessor {
     public void onScheduled(final ProcessContext context) throws IOException {
         switch (getSchemaAccessStrategy(context)) {
             case SCHEMA_NAME_PROPERTY ->
-                    jsonSchemaRegistry = context.getProperty(SCHEMA_REGISTRY).asControllerService(JsonSchemaRegistry.class);
+                jsonSchemaRegistry = context.getProperty(SCHEMA_REGISTRY).asControllerService(JsonSchemaRegistry.class);
             case SCHEMA_CONTENT_PROPERTY -> {
                 try (final InputStream inputStream = context.getProperty(SCHEMA_CONTENT).asResource().read()) {
                     final SchemaVersion schemaVersion = SchemaVersion.valueOf(context.getProperty(SCHEMA_VERSION).getValue());
-                    final JsonSchemaFactory factory = schemaFactories.get(schemaVersion);
-                    schema = factory.getSchema(inputStream);
+                    final SchemaRegistry registry = schemaRegistries.get(schemaVersion);
+                    schema = registry.getSchema(inputStream);
                 }
             }
         }
+        final int maxStringLength = context.getProperty(MAX_STRING_LENGTH).asDataSize(DataUnit.B).intValue();
+        final StreamReadConstraints streamReadConstraints = StreamReadConstraints.builder().maxStringLength(maxStringLength).build();
+        mapper = new ObjectMapper().configure(JsonParser.Feature.ALLOW_COMMENTS, true);
+        mapper.getFactory().setStreamReadConstraints(streamReadConstraints);
     }
 
     @Override
@@ -275,8 +289,8 @@ public class ValidateJson extends AbstractProcessor {
             try {
                 final String schemaName = context.getProperty(SCHEMA_NAME).evaluateAttributeExpressions(flowFile).getValue();
                 final JsonSchema jsonSchema = jsonSchemaRegistry.retrieveSchema(schemaName);
-                final JsonSchemaFactory factory = schemaFactories.get(jsonSchema.getSchemaVersion());
-                schema = factory.getSchema(jsonSchema.getSchemaText());
+                final SchemaRegistry registry = schemaRegistries.get(jsonSchema.getSchemaVersion());
+                schema = registry.getSchema(jsonSchema.getSchemaText());
             } catch (Exception e) {
                 getLogger().error("Could not retrieve JSON schema for {}", flowFile, e);
                 session.getProvenanceReporter().route(flowFile, REL_FAILURE);
@@ -286,8 +300,15 @@ public class ValidateJson extends AbstractProcessor {
         }
 
         try (final InputStream in = session.read(flowFile)) {
-            final JsonNode node = MAPPER.readTree(in);
-            final Set<ValidationMessage> errors = schema.validate(node);
+            final JsonNode node = mapper.readTree(in);
+            final Schema activeSchema = schema;
+            if (activeSchema == null) {
+                getLogger().error("JSON schema not configured for {}", flowFile);
+                session.getProvenanceReporter().route(flowFile, REL_FAILURE);
+                session.transfer(flowFile, REL_FAILURE);
+                return;
+            }
+            final List<Error> errors = activeSchema.validate(node);
 
             if (errors.isEmpty()) {
                 getLogger().debug("JSON {} valid", flowFile);
@@ -309,6 +330,22 @@ public class ValidateJson extends AbstractProcessor {
 
     private String getPropertyValidateMessage(JsonSchemaStrategy schemaAccessStrategy, PropertyDescriptor property) {
         return "The '" + schemaAccessStrategy.getValue() + "' Schema Access Strategy requires that the " + property.getDisplayName() + " property be set.";
+    }
+
+    private SpecificationVersion mapToSpecification(final SchemaVersion schemaVersion) {
+        switch (schemaVersion) {
+            case DRAFT_4:
+                return SpecificationVersion.DRAFT_4;
+            case DRAFT_6:
+                return SpecificationVersion.DRAFT_6;
+            case DRAFT_7:
+                return SpecificationVersion.DRAFT_7;
+            case DRAFT_2019_09:
+                return SpecificationVersion.DRAFT_2019_09;
+            case DRAFT_2020_12:
+                return SpecificationVersion.DRAFT_2020_12;
+        }
+        throw new IllegalArgumentException("Unsupported schema version: " + schemaVersion);
     }
 
     private JsonSchemaStrategy getSchemaAccessStrategy(PropertyContext context) {

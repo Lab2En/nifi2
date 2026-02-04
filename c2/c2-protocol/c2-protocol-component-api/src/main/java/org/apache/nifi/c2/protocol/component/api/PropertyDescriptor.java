@@ -16,12 +16,12 @@
  */
 package org.apache.nifi.c2.protocol.component.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import org.apache.nifi.expression.ExpressionLanguageScope;
+
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
-
-import io.swagger.v3.oas.annotations.media.Schema;
-import org.apache.nifi.expression.ExpressionLanguageScope;
 
 public class PropertyDescriptor implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -34,12 +34,14 @@ public class PropertyDescriptor implements Serializable {
     private boolean required;
     private boolean sensitive;
     private ExpressionLanguageScope expressionLanguageScope = ExpressionLanguageScope.NONE;
+    @SuppressWarnings("PMD.UnusedPrivateField")
     private String expressionLanguageScopeDescription = ExpressionLanguageScope.NONE.getDescription();
     private DefinedType typeProvidedByValue;
     private String validRegex;
     private String validator;
     private boolean dynamic;
     private PropertyResourceDefinition resourceDefinition;
+    private PropertyListenPortDefinition listenPortDefinition;
     private List<PropertyDependency> dependencies;
 
     @Schema(description = "The name of the property key")
@@ -163,6 +165,15 @@ public class PropertyDescriptor implements Serializable {
 
     public void setResourceDefinition(PropertyResourceDefinition resourceDefinition) {
         this.resourceDefinition = resourceDefinition;
+    }
+
+    @Schema(description = "Indicates that this property defines a listen port")
+    public PropertyListenPortDefinition getListenPortDefinition() {
+        return listenPortDefinition;
+    }
+
+    public void setListenPortDefinition(final PropertyListenPortDefinition listenPortDefinition) {
+        this.listenPortDefinition = listenPortDefinition;
     }
 
     @Schema(description = "The dependencies that this property has on other properties")

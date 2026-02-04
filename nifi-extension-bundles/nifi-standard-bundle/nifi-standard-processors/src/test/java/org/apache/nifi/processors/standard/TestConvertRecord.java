@@ -26,8 +26,10 @@ import org.apache.nifi.csv.CSVRecordSetWriter;
 import org.apache.nifi.csv.CSVUtils;
 import org.apache.nifi.json.JsonRecordSetWriter;
 import org.apache.nifi.json.JsonTreeReader;
+import org.apache.nifi.processors.standard.util.JsonUtil;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.schema.access.SchemaAccessUtils;
+import org.apache.nifi.schema.inference.SchemaInferenceUtil;
 import org.apache.nifi.serialization.DateTimeUtils;
 import org.apache.nifi.serialization.record.MockRecordParser;
 import org.apache.nifi.serialization.record.MockRecordWriter;
@@ -35,10 +37,9 @@ import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
+import org.apache.nifi.xml.XMLReader;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.xerial.snappy.SnappyInputStream;
 
 import java.io.ByteArrayInputStream;
@@ -56,7 +57,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisabledOnOs(value = OS.WINDOWS, disabledReason = "Pretty-printing is not portable across operating systems")
 public class TestConvertRecord {
 
     private static final String PERSON_SCHEMA;
@@ -75,6 +75,47 @@ public class TestConvertRecord {
     @BeforeEach
     void setUp() {
         runner = TestRunners.newTestRunner(ConvertRecord.class);
+    }
+
+    @Test
+    public void testXMLReaderAttributePrefixWithInferredSchema() throws InitializationException {
+        // Configure XML Reader to infer schema, parse attributes, and prefix attribute field names
+        final XMLReader xmlReader = new XMLReader();
+        final String xmlReaderId = "xml-reader";
+        runner.addControllerService(xmlReaderId, xmlReader);
+        runner.setProperty(xmlReader, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaInferenceUtil.INFER_SCHEMA);
+        // Use single-record mode to keep element name as a nested field (e.g., "to")
+        runner.setProperty(xmlReader, XMLReader.RECORD_FORMAT, XMLReader.RECORD_SINGLE.getValue());
+        runner.setProperty(xmlReader, XMLReader.PARSE_XML_ATTRIBUTES, "true");
+        runner.setProperty(xmlReader, XMLReader.ATTRIBUTE_PREFIX, "attr_");
+        runner.setProperty(xmlReader, XMLReader.CONTENT_FIELD_NAME, "tagval");
+        runner.enableControllerService(xmlReader);
+
+        // Configure JSON Writer to inherit schema from reader
+        final JsonRecordSetWriter jsonWriter = new JsonRecordSetWriter();
+        final String jsonWriterId = "json-writer";
+        runner.addControllerService(jsonWriterId, jsonWriter);
+        runner.setProperty(jsonWriter, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.INHERIT_RECORD_SCHEMA);
+        runner.enableControllerService(jsonWriter);
+
+        runner.setProperty(ConvertRecord.RECORD_READER, xmlReaderId);
+        runner.setProperty(ConvertRecord.RECORD_WRITER, jsonWriterId);
+
+        final String input = """
+                <note>
+                  <to alias=\"Toto\">Thomas Mills</to>
+                </note>
+                """;
+
+        runner.enqueue(input);
+        runner.run();
+
+        runner.assertAllFlowFilesTransferred(ConvertRecord.REL_SUCCESS, 1);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ConvertRecord.REL_SUCCESS).getFirst();
+
+        // Expected behavior: attribute field uses configured prefix
+        final String expected = "[{\"to\":{\"attr_alias\":\"Toto\",\"tagval\":\"Thomas Mills\"}}]";
+        assertEquals(expected, new String(flowFile.toByteArray(), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -238,14 +279,15 @@ public class TestConvertRecord {
         final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
         try (final SnappyInputStream sis = new SnappyInputStream(new ByteArrayInputStream(flowFile.toByteArray())); final OutputStream out = baos) {
-            final byte[] buffer = new byte[8192]; int len;
+            final byte[] buffer = new byte[8192];
+            int len;
             while ((len = sis.read(buffer)) > 0) {
                 out.write(buffer, 0, len);
             }
             out.flush();
         }
 
-        assertEquals(Files.readString(person), baos.toString(StandardCharsets.UTF_8));
+        assertEquals(JsonUtil.getExpectedContent(person), baos.toString(StandardCharsets.UTF_8));
     }
 
     @Test
@@ -382,6 +424,22 @@ public class TestConvertRecord {
             JsonTreeReader jsonTreeReader = new JsonTreeReader();
             runner.addControllerService("json-reader", jsonTreeReader);
             runner.setProperty(jsonTreeReader, DateTimeUtils.DATE_FORMAT, "yyyy-MM-dd");
+            runner.setProperty(jsonTreeReader, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.SCHEMA_TEXT_PROPERTY);
+            runner.setProperty(jsonTreeReader, SchemaAccessUtils.SCHEMA_TEXT, """
+                    {
+                      "type": "record",
+                      "name": "DateRecord",
+                      "fields": [
+                        {
+                          "name": "date",
+                          "type": {
+                            "type": "int",
+                            "logicalType": "date"
+                          }
+                        }
+                      ]
+                    }
+                    """);
             runner.enableControllerService(jsonTreeReader);
 
             AvroRecordSetWriter avroWriter = new AvroRecordSetWriter();
@@ -411,21 +469,21 @@ public class TestConvertRecord {
 
     @Test
     public void testJSONDroppingUnknownFields() throws InitializationException, IOException {
+        final String personJobSchema =
+                Files.readString(Paths.get("src/test/resources/TestConvertRecord/schema/personJob.avsc"));
         final JsonTreeReader jsonReader = new JsonTreeReader();
         runner.addControllerService(READER_ID, jsonReader);
-
         runner.setProperty(jsonReader, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.SCHEMA_TEXT_PROPERTY);
-        runner.setProperty(jsonReader, SchemaAccessUtils.SCHEMA_TEXT, PERSON_SCHEMA);
+        runner.setProperty(jsonReader, SchemaAccessUtils.SCHEMA_TEXT, personJobSchema);
         runner.enableControllerService(jsonReader);
-
         final JsonRecordSetWriter jsonWriter = new JsonRecordSetWriter();
         runner.addControllerService(WRITER_ID, jsonWriter);
         runner.setProperty(jsonWriter, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.SCHEMA_TEXT_PROPERTY);
-        runner.setProperty(jsonWriter, SchemaAccessUtils.SCHEMA_TEXT, PERSON_SCHEMA);
+        runner.setProperty(jsonWriter, SchemaAccessUtils.SCHEMA_TEXT, personJobSchema);
         runner.setProperty(jsonWriter, "Schema Write Strategy", "full-schema-attribute");
         runner.enableControllerService(jsonWriter);
 
-        runner.enqueue(Paths.get("src/test/resources/TestConvertRecord/input/person_dropfield.json"));
+        runner.enqueue(Paths.get("src/test/resources/TestConvertRecord/input/personJob_dropfield.json"));
 
         runner.setProperty(ConvertRecord.RECORD_READER, READER_ID);
         runner.setProperty(ConvertRecord.RECORD_WRITER, WRITER_ID);
@@ -434,6 +492,81 @@ public class TestConvertRecord {
         runner.assertAllFlowFilesTransferred(ConvertRecord.REL_SUCCESS, 1);
 
         final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ConvertRecord.REL_SUCCESS).getFirst();
-        assertFalse(flowFile.getContent().contains("fieldThatShouldBeRemoved"));
+
+        // This covers all the cases
+        // "undefinedKeyInObject", "undefinedKey", "undefinedObjectArray", "undefinedObject", "undefinedScalarArray"
+        assertFalse(flowFile.getContent().contains("undefined"));
+    }
+
+    @Test
+    public void testJSONWithDefinedFieldTypeBytesAndLogicalTypeDecimal() throws Exception {
+        final String schema = """
+                {
+                  "type": "record",
+                  "name": "ExampleRecord",
+                  "fields": [
+                    {
+                      "name": "big_decimal_field",
+                      "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 10,
+                        "scale": 4
+                      },
+                      "default": "0.0000"
+                    }, {
+                      "name": "default_field",
+                      "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 10,
+                        "scale": 4
+                      },
+                      "default": "0.0001"
+                    }
+                  ]
+                }
+                """;
+
+        final String inputContent = """
+                [
+                  {
+                    "big_decimal_field": 14000.5833
+                  }
+                ]
+                """;
+
+        final String expectedContent = """
+                [
+                  {
+                    "big_decimal_field": 14000.5833,
+                    "default_field": 0.0001
+                  }
+                ]
+                """.replaceAll("\\s", "");
+
+        final JsonTreeReader jsonReader = new JsonTreeReader();
+        runner.addControllerService(READER_ID, jsonReader);
+        runner.setProperty(jsonReader, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.SCHEMA_TEXT_PROPERTY);
+        runner.setProperty(jsonReader, SchemaAccessUtils.SCHEMA_TEXT, schema);
+        runner.enableControllerService(jsonReader);
+
+        final JsonRecordSetWriter jsonWriter = new JsonRecordSetWriter();
+        runner.addControllerService(WRITER_ID, jsonWriter);
+        runner.setProperty(jsonWriter, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.SCHEMA_TEXT_PROPERTY);
+        runner.setProperty(jsonWriter, SchemaAccessUtils.SCHEMA_TEXT, schema);
+        runner.setProperty(jsonWriter, "Schema Write Strategy", "full-schema-attribute");
+        runner.enableControllerService(jsonWriter);
+
+        runner.setProperty(ConvertRecord.RECORD_READER, READER_ID);
+        runner.setProperty(ConvertRecord.RECORD_WRITER, WRITER_ID);
+        runner.enqueue(inputContent);
+
+        runner.run();
+
+        runner.assertAllFlowFilesTransferred(ConvertRecord.REL_SUCCESS, 1);
+
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ConvertRecord.REL_SUCCESS).getFirst();
+        flowFile.assertContentEquals(expectedContent);
     }
 }

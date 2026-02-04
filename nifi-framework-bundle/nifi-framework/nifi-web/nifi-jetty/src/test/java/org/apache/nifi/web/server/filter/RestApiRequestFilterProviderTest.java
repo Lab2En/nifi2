@@ -16,14 +16,13 @@
  */
 package org.apache.nifi.web.server.filter;
 
+import jakarta.servlet.Filter;
 import org.apache.nifi.util.NiFiProperties;
-import org.eclipse.jetty.ee10.servlet.FilterHolder;
-import org.eclipse.jetty.ee10.servlets.DoSFilter;
+import org.eclipse.jetty.ee11.servlet.FilterHolder;
+import org.eclipse.jetty.ee11.servlets.DoSFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.web.header.HeaderWriterFilter;
 
-import jakarta.servlet.Filter;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +55,6 @@ public class RestApiRequestFilterProviderTest {
         assertNotNull(filters);
         assertFalse(filters.isEmpty());
 
-        assertFilterClassFound(filters, HeaderWriterFilter.class);
         assertFilterClassFound(filters, DataTransferExcludedDoSFilter.class);
     }
 

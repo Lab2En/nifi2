@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { SummaryListingState } from '../../state/summary-listing';
 import { initialState } from '../../state/summary-listing/summary-listing.reducer';
@@ -33,7 +33,7 @@ import { selectCurrentUser } from '../../../../state/current-user/current-user.s
 import { filter, map, switchMap, take } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { getStatusHistoryAndOpenDialog } from '../../../../state/status-history/status-history.actions';
-import { ComponentType, isDefinedAndNotNull } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull } from '@nifi/shared';
 import { loadClusterSummary } from '../../../../state/cluster-summary/cluster-summary.actions';
 import { ConnectionStatusSnapshotEntity } from '../../state';
 import {
@@ -42,13 +42,19 @@ import {
 } from '../../../../state/cluster-summary/cluster-summary.selectors';
 import * as ClusterStatusActions from '../../state/component-cluster-status/component-cluster-status.actions';
 import { NodeSearchResult } from '../../../../state/cluster-summary';
+import { AsyncPipe } from '@angular/common';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
+import { ConnectionStatusTable } from './connection-status-table/connection-status-table.component';
 
 @Component({
     selector: 'connection-status-listing',
     templateUrl: './connection-status-listing.component.html',
+    imports: [AsyncPipe, NgxSkeletonLoaderComponent, ConnectionStatusTable],
     styleUrls: ['./connection-status-listing.component.scss']
 })
 export class ConnectionStatusListing {
+    private store = inject<Store<SummaryListingState>>(Store);
+
     loadedTimestamp$ = this.store.select(selectSummaryListingLoadedTimestamp);
     summaryListingStatus$ = this.store.select(selectSummaryListingStatus);
     currentUser$ = this.store.select(selectCurrentUser);
@@ -64,7 +70,7 @@ export class ConnectionStatusListing {
     );
     selectedClusterNode$ = this.store.select(selectSelectedClusterNode);
 
-    constructor(private store: Store<SummaryListingState>) {
+    constructor() {
         this.store
             .select(selectViewStatusHistory)
             .pipe(

@@ -16,6 +16,10 @@
  */
 package org.apache.nifi.registry.service;
 
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
 import org.apache.nifi.flow.VersionedProcessGroup;
 import org.apache.nifi.flow.VersionedProcessor;
 import org.apache.nifi.registry.bucket.Bucket;
@@ -38,10 +42,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
-import jakarta.validation.ConstraintViolationException;
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
-import jakarta.validation.ValidatorFactory;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -52,7 +52,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.SortedSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -1107,8 +1106,6 @@ public class TestRegistryService {
         existingFlow.setModified(new Date());
         existingFlow.setBucketId(existingBucket.getId());
 
-        final Set<FlowSnapshotEntity> snapshots = new HashSet<>();
-
         when(metadataService.getFlowById(existingFlow.getId())).thenReturn(existingFlow);
 
         final SortedSet<VersionedFlowSnapshotMetadata> retrievedSnapshots = registryService.getFlowSnapshots(existingBucket.getId(), existingFlow.getId());
@@ -1362,7 +1359,7 @@ public class TestRegistryService {
                 .filter(p -> p.getComponentId().equals("ID-pg1")).findFirst();
 
         assertTrue(removedComponent.isPresent());
-        assertTrue(removedComponent.get().getDifferences().iterator().next().getDifferenceType().equals("COMPONENT_REMOVED"));
+        assertEquals("COMPONENT_REMOVED", removedComponent.get().getDifferences().iterator().next().getDifferenceType());
     }
 
     @Test

@@ -50,6 +50,7 @@ import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -65,10 +66,7 @@ import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -91,8 +89,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
     public static String JSLT_FILTER_DEFAULT = ". != null and . != {} and . != []";
 
     public static final PropertyDescriptor JSLT_TRANSFORM = new PropertyDescriptor.Builder()
-            .name("jslt-transform-transformation")
-            .displayName("JSLT Transformation")
+            .name("JSLT Transformation")
             .description("JSLT Transformation for transform of JSON data. Any NiFi Expression Language present will be evaluated first to get the final transform to be applied. " +
                     "The JSLT Tutorial provides an overview of supported expressions: https://github.com/schibsted/jslt/blob/master/tutorial.md")
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -102,8 +99,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor TRANSFORMATION_STRATEGY = new PropertyDescriptor.Builder()
-            .name("jslt-transform-transformation-strategy")
-            .displayName("Transformation Strategy")
+            .name("Transformation Strategy")
             .description("Whether to apply the JSLT transformation to the entire FlowFile contents or each JSON object in the root-level array")
             .required(true)
             .allowableValues(TransformationStrategy.class)
@@ -111,8 +107,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor PRETTY_PRINT = new PropertyDescriptor.Builder()
-            .name("jslt-transform-pretty_print")
-            .displayName("Pretty Print")
+            .name("Pretty Print")
             .description("Apply pretty-print formatting to the output of the JSLT transform")
             .required(true)
             .allowableValues("true", "false")
@@ -120,8 +115,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor TRANSFORM_CACHE_SIZE = new PropertyDescriptor.Builder()
-            .name("jslt-transform-cache-size")
-            .displayName("Transform Cache Size")
+            .name("Transform Cache Size")
             .description("Compiling a JSLT Transform can be fairly expensive. Ideally, this will be done only once. However, if the Expression Language is used in the transform, we may need "
                     + "a new Transform for each FlowFile. This value controls how many of those Transforms we cache in memory in order to avoid having to compile the Transform each time.")
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
@@ -131,8 +125,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor RESULT_FILTER = new PropertyDescriptor.Builder()
-            .name("jslt-transform-result-filter")
-            .displayName("Transform Result Filter")
+            .name("Transform Result Filter")
             .description("A filter for output JSON results using a JSLT expression. This property supports changing the default filter,"
                     + " which removes JSON objects with null values, empty objects and empty arrays from the output JSON."
                     + " This JSLT must return true for each JSON object to be included and false for each object to be removed."
@@ -151,39 +144,40 @@ public class JSLTTransformJSON extends AbstractProcessor {
             .description("If a FlowFile fails processing for any reason (for example, the FlowFile is not valid JSON), it will be routed to this relationship")
             .build();
 
-    private static final List<PropertyDescriptor> descriptors;
-    private static final Set<Relationship> relationships;
-    private static final ObjectMapper jsonObjectMapper = new ObjectMapper();
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            JSLT_TRANSFORM,
+            TRANSFORMATION_STRATEGY,
+            PRETTY_PRINT,
+            TRANSFORM_CACHE_SIZE,
+            RESULT_FILTER
+    );
 
-    static {
-        descriptors = Collections.unmodifiableList(
-                Arrays.asList(
-                        JSLT_TRANSFORM,
-                        TRANSFORMATION_STRATEGY,
-                        PRETTY_PRINT,
-                        TRANSFORM_CACHE_SIZE,
-                        RESULT_FILTER
-                )
-        );
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
-        relationships = Collections.unmodifiableSet(new LinkedHashSet<>(
-                Arrays.asList(
-                        REL_SUCCESS,
-                        REL_FAILURE
-                )
-        ));
-    }
+    private static final ObjectMapper JSON_OBJECT_MAPPER = new ObjectMapper();
 
     private Cache<String, Expression> transformCache;
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return descriptors;
+        return PROPERTY_DESCRIPTORS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("jslt-transform-transformation", JSLT_TRANSFORM.getName());
+        config.renameProperty("jslt-transform-transformation-strategy", TRANSFORMATION_STRATEGY.getName());
+        config.renameProperty("jslt-transform-pretty_print", PRETTY_PRINT.getName());
+        config.renameProperty("jslt-transform-cache-size", TRANSFORM_CACHE_SIZE.getName());
+        config.renameProperty("jslt-transform-result-filter", RESULT_FILTER.getName());
     }
 
     @Override
@@ -262,7 +256,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
                 JsonNode firstJsonNode;
                 if (EACH_OBJECT.equals(transformationStrategy)) {
                     jsonParser = jsonFactory.createParser(inputStream);
-                    jsonParser.setCodec(jsonObjectMapper);
+                    jsonParser.setCodec(JSON_OBJECT_MAPPER);
 
                     JsonToken token = jsonParser.nextToken();
                     if (token == JsonToken.START_ARRAY) {
@@ -279,7 +273,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
                     jsonParser = null; // This will not be used when applying the transform to the entire FlowFile
                 }
 
-                final ObjectWriter writer = prettyPrint ? jsonObjectMapper.writerWithDefaultPrettyPrinter() : jsonObjectMapper.writer();
+                final ObjectWriter writer = prettyPrint ? JSON_OBJECT_MAPPER.writerWithDefaultPrettyPrinter() : JSON_OBJECT_MAPPER.writer();
                 final JsonGenerator jsonGenerator = writer.createGenerator(outputStream);
 
                 Object outputObject;
@@ -337,7 +331,7 @@ public class JSLTTransformJSON extends AbstractProcessor {
 
     private JsonNode readJson(final InputStream in) throws IOException {
         try {
-            return jsonObjectMapper.readTree(in);
+            return JSON_OBJECT_MAPPER.readTree(in);
         } catch (final JsonParseException e) {
             throw new IOException("Could not parse data as JSON", e);
         }

@@ -22,9 +22,11 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.elasticsearch.ElasticsearchRequestOptions;
 import org.apache.nifi.elasticsearch.SearchResponse;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.util.StandardValidators;
@@ -51,8 +53,7 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
             .build();
 
     public static final PropertyDescriptor PAGINATION_TYPE = new PropertyDescriptor.Builder()
-            .name("el-rest-pagination-type")
-            .displayName("Pagination Type")
+            .name("Pagination Type")
             .description("Pagination method to use. Not all types are available for all Elasticsearch versions, " +
                     "check the Elasticsearch docs to confirm which are applicable and recommended for your service.")
             .allowableValues(PaginationType.class)
@@ -62,12 +63,12 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
             .build();
 
     public static final PropertyDescriptor PAGINATION_KEEP_ALIVE = new PropertyDescriptor.Builder()
-            .name("el-rest-pagination-keep-alive")
-            .displayName("Pagination Keep Alive")
+            .name("Pagination Keep Alive")
             .description("Pagination \"keep_alive\" period. Period Elasticsearch will keep the scroll/pit cursor alive " +
                     "in between requests (this is not the time expected for all pages to be returned, but the maximum " +
                     "allowed time for requests between page retrievals).")
             .required(true)
+            .dependsOn(PAGINATION_TYPE, PaginationType.SCROLL, PaginationType.POINT_IN_TIME)
             .defaultValue("10 mins")
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
             .addValidator(StandardValidators.createTimePeriodValidator(1, TimeUnit.SECONDS, 24, TimeUnit.HOURS))
@@ -94,23 +95,31 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
     }
 
     @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("el-rest-pagination-type", PAGINATION_TYPE.getName());
+        config.renameProperty("el-rest-pagination-keep-alive", PAGINATION_KEEP_ALIVE.getName());
+    }
+
+    @Override
     SearchResponse doQuery(final PaginatedJsonQueryParameters paginatedJsonQueryParameters, List<FlowFile> hitsFlowFiles,
                            final ProcessSession session, final ProcessContext context, final FlowFile input,
                            final StopWatch stopWatch) throws IOException {
         SearchResponse response = null;
         do {
-            // check any previously started query hasn't expired
-            final boolean expiredQuery = isExpired(paginatedJsonQueryParameters, context, response);
-            final boolean newQuery = StringUtils.isBlank(paginatedJsonQueryParameters.getPageExpirationTimestamp()) || expiredQuery;
+            // reset query params if query needs to be restarted from the beginning
+            this.resetQueryParamsIfRequired(paginatedJsonQueryParameters, context);
+            final boolean newQuery = paginatedJsonQueryParameters.getPageCount() == 0;
 
             // execute query/scroll
-            final String queryJson = updateQueryJson(newQuery, paginatedJsonQueryParameters);
-            final Map<String, String> requestParameters = getDynamicProperties(context, input);
+            final String queryJson = updateQueryJson(newQuery, paginatedJsonQueryParameters, context, input);
+            final Map<String, String> requestParameters = getRequestParametersFromDynamicProperties(context, input);
+            final Map<String, String> requestHeaders = getRequestHeadersFromDynamicProperties(context, input);
             if (!newQuery && paginationType == PaginationType.SCROLL) {
                 if (!requestParameters.isEmpty()) {
                     getLogger().warn("Elasticsearch _scroll API does not accept query parameters, ignoring dynamic properties {}", requestParameters.keySet());
                 }
-                response = clientService.get().scroll(queryJson);
+                response = clientService.get().scroll(queryJson, new ElasticsearchRequestOptions(null, requestHeaders));
             } else {
                 if (paginationType == PaginationType.SCROLL) {
                     requestParameters.put("scroll", paginatedJsonQueryParameters.getKeepAlive());
@@ -121,7 +130,7 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
                         // Point in Time uses general /_search API not /index/_search
                         paginationType == PaginationType.POINT_IN_TIME ? null : paginatedJsonQueryParameters.getIndex(),
                         paginatedJsonQueryParameters.getType(),
-                        requestParameters
+                        new ElasticsearchRequestOptions(requestParameters, requestHeaders)
                 );
                 paginatedJsonQueryParameters.setPitId(response.getPitId());
                 paginatedJsonQueryParameters.setSearchAfter(response.getSearchAfter());
@@ -142,7 +151,7 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
 
         if (response.getHits().isEmpty()) {
             getLogger().debug("No more results for paginated query, clearing Elasticsearch resources");
-            clearElasticsearchState(context, response);
+            clearElasticsearchState(context, response, input);
         }
 
         return response;
@@ -153,13 +162,14 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
         final PaginatedJsonQueryParameters paginatedJsonQueryParameters = new PaginatedJsonQueryParameters();
         populateCommonJsonQueryParameters(paginatedJsonQueryParameters, input, context, session);
 
-        paginatedJsonQueryParameters.setKeepAlive(context.getProperty(PAGINATION_KEEP_ALIVE).asTimePeriod(TimeUnit.SECONDS) + "s");
+        if (this.paginationType.hasExpiry()) {
+            paginatedJsonQueryParameters.setKeepAlive(context.getProperty(PAGINATION_KEEP_ALIVE).asTimePeriod(TimeUnit.SECONDS) + "s");
+        }
 
         return paginatedJsonQueryParameters;
     }
 
-    abstract boolean isExpired(final PaginatedJsonQueryParameters paginatedQueryParameters, final ProcessContext context,
-                               final SearchResponse response) throws IOException;
+    abstract void resetQueryParamsIfRequired(final PaginatedJsonQueryParameters paginatedQueryParameters, final ProcessContext context) throws IOException;
 
     abstract String getScrollId(final ProcessContext context, final SearchResponse response) throws IOException;
 
@@ -185,7 +195,7 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
         }
     }
 
-    private String updateQueryJson(final boolean newQuery, final PaginatedJsonQueryParameters paginatedJsonQueryParameters) throws IOException {
+    private String updateQueryJson(final boolean newQuery, final PaginatedJsonQueryParameters paginatedJsonQueryParameters, final ProcessContext context, final FlowFile input) throws IOException {
         final ObjectNode queryJson = mapper.readValue(paginatedJsonQueryParameters.getQuery(), ObjectNode.class);
 
         if (!newQuery) {
@@ -199,7 +209,10 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
         if (paginationType == PaginationType.POINT_IN_TIME) {
             // add pit_id to query JSON
             final String queryPitId = newQuery
-                    ? clientService.get().initialisePointInTime(paginatedJsonQueryParameters.getIndex(), paginatedJsonQueryParameters.getKeepAlive())
+                    ? clientService.get().initialisePointInTime(
+                            paginatedJsonQueryParameters.getIndex(), paginatedJsonQueryParameters.getKeepAlive(),
+                            new ElasticsearchRequestOptions(null, getRequestHeadersFromDynamicProperties(context, input))
+                    )
                     : paginatedJsonQueryParameters.getPitId();
 
             final ObjectNode pit = JsonNodeFactory.instance.objectNode().put("id", queryPitId);
@@ -278,27 +291,30 @@ public abstract class AbstractPaginatedJsonQueryElasticsearch extends AbstractJs
 
     void updateQueryParameters(final PaginatedJsonQueryParameters paginatedJsonQueryParameters, final SearchResponse response) {
         paginatedJsonQueryParameters.incrementPageCount();
+        paginatedJsonQueryParameters.setFinished(response.getHits().isEmpty());
 
-        // mark the paginated query for expiry if there are no hits (no more pages to obtain so stop looping on this query)
-        final String keepAliveDuration = "PT" + (!response.getHits().isEmpty() ? paginatedJsonQueryParameters.getKeepAlive() : "0s");
-        paginatedJsonQueryParameters.setPageExpirationTimestamp(
-                String.valueOf(Instant.now().plus(Duration.parse(keepAliveDuration)).toEpochMilli())
-        );
+        if (this.paginationType.hasExpiry()) {
+            final String keepAliveDuration = "PT" + paginatedJsonQueryParameters.getKeepAlive();
+            paginatedJsonQueryParameters.setPageExpirationTimestamp(
+                    String.valueOf(Instant.now().plus(Duration.parse(keepAliveDuration)).toEpochMilli())
+            );
+        }
     }
 
-    void clearElasticsearchState(final ProcessContext context, final SearchResponse response) {
+    void clearElasticsearchState(final ProcessContext context, final SearchResponse response, final FlowFile input) {
         try {
+            final Map<String, String> requestHeaders = getRequestHeadersFromDynamicProperties(context, input);
             if (paginationType == PaginationType.SCROLL) {
                 final String scrollId = getScrollId(context, response);
 
                 if (StringUtils.isNotBlank(scrollId)) {
-                    clientService.get().deleteScroll(scrollId);
+                    clientService.get().deleteScroll(scrollId, new ElasticsearchRequestOptions(null, requestHeaders));
                 }
             } else if (paginationType == PaginationType.POINT_IN_TIME) {
                 final String pitId = getPitId(context, response);
 
                 if (StringUtils.isNotBlank(pitId)) {
-                    clientService.get().deletePointInTime(pitId);
+                    clientService.get().deletePointInTime(pitId, new ElasticsearchRequestOptions(null, requestHeaders));
                 }
             }
         } catch (final Exception ex) {

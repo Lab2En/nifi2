@@ -38,9 +38,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.IntStream;
 
 import static org.apache.nifi.flowfile.attributes.FragmentAttributes.FRAGMENT_COUNT;
@@ -79,10 +80,10 @@ public class TestSplitAvro {
             userList.add(user);
         }
 
-        try (final DataFileWriter<GenericRecord> dataFileWriter = new DataFileWriter<>(new GenericDatumWriter<GenericRecord>(schema))) {
+        try (final DataFileWriter<GenericRecord> dataFileWriter = new DataFileWriter<>(new GenericDatumWriter<>(schema))) {
             dataFileWriter.setMeta(META_KEY1, META_VALUE1);
             dataFileWriter.setMeta(META_KEY2, META_VALUE2);
-            dataFileWriter.setMeta(META_KEY3, META_VALUE3.getBytes("UTF-8"));
+            dataFileWriter.setMeta(META_KEY3, META_VALUE3.getBytes(StandardCharsets.UTF_8));
 
             dataFileWriter.create(schema, users);
             for (GenericRecord user : userList) {
@@ -112,9 +113,7 @@ public class TestSplitAvro {
         final TestRunner runner = TestRunners.newTestRunner(new SplitAvro());
 
         final String filename = "users.avro";
-        runner.enqueue(users.toByteArray(), new HashMap<String, String>() {{
-            put(CoreAttributes.FILENAME.key(), filename);
-        }});
+        runner.enqueue(users.toByteArray(), Map.of(CoreAttributes.FILENAME.key(), filename));
         runner.run();
 
         runner.assertTransferCount(SplitAvro.REL_SPLIT, 100);
@@ -187,7 +186,7 @@ public class TestSplitAvro {
 
         for (final MockFlowFile flowFile : flowFiles) {
             try (final ByteArrayInputStream in = new ByteArrayInputStream(flowFile.toByteArray());
-                 final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<GenericRecord>())) {
+                 final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<>())) {
                 assertFalse(reader.getMetaKeys().contains(META_KEY1));
                 assertFalse(reader.getMetaKeys().contains(META_KEY2));
                 assertFalse(reader.getMetaKeys().contains(META_KEY3));
@@ -263,7 +262,7 @@ public class TestSplitAvro {
         final TestRunner runner = TestRunners.newTestRunner(new SplitAvro());
         runner.setProperty(SplitAvro.OUTPUT_SIZE, "200");
 
-        runner.enqueue("not avro".getBytes("UTF-8"));
+        runner.enqueue("not avro".getBytes(StandardCharsets.UTF_8));
         runner.run();
 
         runner.assertTransferCount(SplitAvro.REL_SPLIT, 0);
@@ -286,7 +285,7 @@ public class TestSplitAvro {
                         count++;
                         record = reader.read(record, decoder);
                     }
-                } catch (EOFException eof) {
+                } catch (EOFException ignored) {
                     // expected
                 }
                 assertEquals(expectedRecordsPerSplit, count);
@@ -303,7 +302,7 @@ public class TestSplitAvro {
     private void checkDataFileSplitSize(List<MockFlowFile> flowFiles, int expectedRecordsPerSplit, boolean checkMetadata) throws IOException {
         for (final MockFlowFile flowFile : flowFiles) {
             try (final ByteArrayInputStream in = new ByteArrayInputStream(flowFile.toByteArray());
-                final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<GenericRecord>())) {
+                final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<>())) {
 
                 int count = 0;
                 GenericRecord record = null;
@@ -318,7 +317,7 @@ public class TestSplitAvro {
                 if (checkMetadata) {
                     assertEquals(META_VALUE1, reader.getMetaString(META_KEY1));
                     assertEquals(META_VALUE2, reader.getMetaLong(META_KEY2));
-                    assertEquals(META_VALUE3, new String(reader.getMeta(META_KEY3), "UTF-8"));
+                    assertEquals(META_VALUE3, new String(reader.getMeta(META_KEY3), StandardCharsets.UTF_8));
                 }
             }
         }
@@ -328,7 +327,7 @@ public class TestSplitAvro {
         int count = 0;
         for (final MockFlowFile flowFile : flowFiles) {
             try (final ByteArrayInputStream in = new ByteArrayInputStream(flowFile.toByteArray());
-                 final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<GenericRecord>())) {
+                 final DataFileStream<GenericRecord> reader = new DataFileStream<>(in, new GenericDatumReader<>())) {
 
                 GenericRecord record = null;
                 while (reader.hasNext()) {

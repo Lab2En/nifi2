@@ -80,7 +80,7 @@ import java.util.stream.Collectors;
 @DefaultSchedule(strategy = SchedulingStrategy.TIMER_DRIVEN, period = "1 min")
 public class ListSFTP extends ListFileTransfer {
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FILE_TRANSFER_LISTING_STRATEGY,
             SFTPTransfer.HOSTNAME,
             SFTPTransfer.PORT,
@@ -95,7 +95,6 @@ public class ListSFTP extends ListFileTransfer {
             SFTPTransfer.FILE_FILTER_REGEX,
             SFTPTransfer.PATH_FILTER_REGEX,
             SFTPTransfer.IGNORE_DOTTED_FILES,
-            SFTPTransfer.REMOTE_POLL_BATCH_SIZE,
             SFTPTransfer.STRICT_HOST_KEY_CHECKING,
             SFTPTransfer.HOST_KEY_FILE,
             SFTPTransfer.CONNECTION_TIMEOUT,
@@ -111,6 +110,7 @@ public class ListSFTP extends ListFileTransfer {
             ListFile.MAX_AGE,
             ListFile.MIN_SIZE,
             ListFile.MAX_SIZE,
+            SFTPTransfer.ALGORITHM_CONFIGURATION,
             SFTPTransfer.CIPHERS_ALLOWED,
             SFTPTransfer.KEY_ALGORITHMS_ALLOWED,
             SFTPTransfer.KEY_EXCHANGE_ALGORITHMS_ALLOWED,
@@ -121,13 +121,19 @@ public class ListSFTP extends ListFileTransfer {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        config.removeProperty(FileTransfer.REMOTE_POLL_BATCH_SIZE.getName());
+        SFTPTransfer.migrateAlgorithmProperties(config);
+        config.renameProperty(SFTPTransfer.OLD_FOLLOW_SYMLINK_PROPERTY_NAME, SFTPTransfer.FOLLOW_SYMLINK.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_STATE_CACHE_PROPERTY_NAME, ListedEntityTracker.TRACKING_STATE_CACHE.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_TIME_WINDOW_PROPERTY_NAME, ListedEntityTracker.TRACKING_TIME_WINDOW.getName());
+        config.renameProperty(ListedEntityTracker.OLD_INITIAL_LISTING_TARGET_PROPERTY_NAME, ListedEntityTracker.INITIAL_LISTING_TARGET.getName());
     }
 
     @Override

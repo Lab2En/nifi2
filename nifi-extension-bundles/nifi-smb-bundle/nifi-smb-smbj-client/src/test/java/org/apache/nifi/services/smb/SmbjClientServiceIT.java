@@ -16,29 +16,11 @@
  */
 package org.apache.nifi.services.smb;
 
-import static java.util.stream.Collectors.toSet;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.DOMAIN;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.HOSTNAME;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.PASSWORD;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.PORT;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.SHARE;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.USERNAME;
-import static org.apache.nifi.smb.common.SmbProperties.TIMEOUT;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.Mockito.mock;
-
+import eu.rekawek.toxiproxy.Proxy;
+import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.util.MockConfigurationContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,17 +29,39 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.ToxiproxyContainer;
-import org.testcontainers.containers.ToxiproxyContainer.ContainerProxy;
 import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
+import org.testcontainers.toxiproxy.ToxiproxyContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static java.util.stream.Collectors.toSet;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.DOMAIN;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.HOSTNAME;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.PASSWORD;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.PORT;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.SHARE;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.USERNAME;
+import static org.apache.nifi.smb.common.SmbProperties.TIMEOUT;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
 
 public class SmbjClientServiceIT {
 
-    private final static Logger sambaContainerLogger = LoggerFactory.getLogger("sambaContainer");
-    private final static Logger toxyProxyLogger = LoggerFactory.getLogger("toxiProxy");
+    private static final Logger sambaContainerLogger = LoggerFactory.getLogger("sambaContainer");
+    private static final Logger toxyProxyLogger = LoggerFactory.getLogger("toxiProxy");
 
     private final Network network = Network.newNetwork();
 
@@ -92,13 +96,15 @@ public class SmbjClientServiceIT {
         writeFile("testDirectory/directory1/file", "content");
         writeFile("testDirectory/directory2/file", "content");
         writeFile("testDirectory/directory2/nested_directory/file", "content");
-        ContainerProxy sambaProxy = toxiproxy.getProxy("samba", 445);
+        final ToxiproxyClient toxiproxyClient = new ToxiproxyClient(toxiproxy.getHost(), toxiproxy.getControlPort());
+        final Proxy proxy = toxiproxyClient.createProxy("samba", "0.0.0.0:8666", "samba:445");
+        final String ipAddressViaToxiproxy = toxiproxy.getHost();
+        final int portViaToxiproxy = toxiproxy.getMappedPort(8666);
         SmbjClientProviderService smbjClientProviderService = new SmbjClientProviderService();
-        ConfigurationContext context = mock(ConfigurationContext.class);
 
         Map<PropertyDescriptor, String> properties = new HashMap<>();
-        properties.put(HOSTNAME, sambaProxy.getContainerIpAddress());
-        properties.put(PORT, String.valueOf(sambaProxy.getProxyPort()));
+        properties.put(HOSTNAME, ipAddressViaToxiproxy);
+        properties.put(PORT, String.valueOf(portViaToxiproxy));
         properties.put(SHARE, "share");
         properties.put(USERNAME, "username");
         properties.put(PASSWORD, "password");
@@ -108,7 +114,7 @@ public class SmbjClientServiceIT {
 
         smbjClientProviderService.onEnabled(mockConfigurationContext);
 
-        sambaProxy.toxics().latency("slow", ToxicDirection.DOWNSTREAM, 300);
+        proxy.toxics().latency("slow", ToxicDirection.DOWNSTREAM, 300);
 
         AtomicInteger i = new AtomicInteger(0);
 
@@ -127,9 +133,10 @@ public class SmbjClientServiceIT {
                 SmbClientService s = null;
                 try {
 
-                    s = smbjClientProviderService.getClient();
+                    s = smbjClientProviderService.getClient(mock(ComponentLog.class));
                     if (iteration == 25) {
-                        sambaProxy.setConnectionCut(true);
+                        proxy.toxics().bandwidth("CUT_CONNECTION_DOWNSTREAM", ToxicDirection.DOWNSTREAM, 0L);
+                        proxy.toxics().bandwidth("CUT_CONNECTION_UPSTREAM", ToxicDirection.UPSTREAM, 0L);
                     }
 
                     final Set<String> actual = s.listFiles("testDirectory")
@@ -144,7 +151,12 @@ public class SmbjClientServiceIT {
 
                 } catch (Exception e) {
                     if (iteration == 50) {
-                        sambaProxy.setConnectionCut(false);
+                        try {
+                            proxy.toxics().get("CUT_CONNECTION_DOWNSTREAM").remove();
+                            proxy.toxics().get("CUT_CONNECTION_UPSTREAM").remove();
+                        } catch (IOException ex) {
+                            throw new RuntimeException(ex);
+                        }
                     }
                     if (iteration == 100) {
                         fail();
@@ -153,7 +165,7 @@ public class SmbjClientServiceIT {
                     if (s != null) {
                         try {
                             s.close();
-                        } catch (Exception e) {
+                        } catch (Exception ignored) {
                         }
                     }
                 }
@@ -164,6 +176,41 @@ public class SmbjClientServiceIT {
 
         latch.await();
         executorService.shutdown();
+        smbjClientProviderService.onDisabled();
+    }
+
+    @Test
+    public void shouldContinueListingAfterPermissionDenied() throws Exception {
+        writeFile("testDirectory/directory1/file1", "content");
+        writeFile("testDirectory/directory2/file2", "content");
+        writeFile("testDirectory/directory3/file3", "content");
+
+        sambaContainer.execInContainer("bash", "-c", "chmod 000 /folder/testDirectory/directory2");
+
+        SmbjClientProviderService smbjClientProviderService = new SmbjClientProviderService();
+
+        Map<PropertyDescriptor, String> properties = new HashMap<>();
+        properties.put(HOSTNAME, sambaContainer.getHost());
+        properties.put(PORT, String.valueOf(sambaContainer.getMappedPort(445)));
+        properties.put(SHARE, "share");
+        properties.put(USERNAME, "username");
+        properties.put(PASSWORD, "password");
+        properties.put(DOMAIN, "domain");
+        properties.put(TIMEOUT, "0.5 sec");
+
+        MockConfigurationContext mockConfigurationContext = new MockConfigurationContext(properties, null, null);
+        smbjClientProviderService.onEnabled(mockConfigurationContext);
+
+        SmbClientService smbClientService = smbjClientProviderService.getClient(mock(ComponentLog.class));
+
+        final Set<String> actual = smbClientService.listFiles("testDirectory")
+                .map(SmbListableEntity::getIdentifier)
+                .collect(toSet());
+
+        assertEquals(2, actual.size());
+        assertTrue(actual.contains("testDirectory/directory1/file1"));
+        assertTrue(actual.contains("testDirectory/directory3/file3"));
+
         smbjClientProviderService.onDisabled();
     }
 

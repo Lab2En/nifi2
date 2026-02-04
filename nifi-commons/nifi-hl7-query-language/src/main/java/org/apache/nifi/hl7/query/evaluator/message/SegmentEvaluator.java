@@ -16,14 +16,14 @@
  */
 package org.apache.nifi.hl7.query.evaluator.message;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.nifi.hl7.model.HL7Message;
 import org.apache.nifi.hl7.model.HL7Segment;
 import org.apache.nifi.hl7.query.evaluator.Evaluator;
 import org.apache.nifi.hl7.query.evaluator.StringEvaluator;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 @SuppressWarnings("rawtypes")
 public class SegmentEvaluator implements Evaluator<List> {
@@ -34,17 +34,19 @@ public class SegmentEvaluator implements Evaluator<List> {
         this.segmentTypeEvaluator = segmentTypeEvaluator;
     }
 
+    @Override
     public List<HL7Segment> evaluate(final Map<String, Object> objectMap) {
         final String segmentType = segmentTypeEvaluator.evaluate(objectMap);
         if (segmentType == null) {
             return Collections.emptyList();
         }
 
-        final HL7Message message = (HL7Message) objectMap.get(Evaluator.MESSAGE_KEY);
+        final HL7Message message = (HL7Message) objectMap.get(MESSAGE_KEY);
         final List<HL7Segment> segments = message.getSegments(segmentType);
         return (segments == null) ? Collections.<HL7Segment>emptyList() : segments;
     }
 
+    @Override
     public Class<? extends List> getType() {
         return List.class;
     }

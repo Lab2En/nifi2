@@ -17,13 +17,13 @@
 package org.apache.nifi.authorization.util;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.authorization.util.IdentityMapping.Transform;
 import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Supplier;
@@ -79,7 +79,7 @@ public class IdentityMappingUtil {
 
         // go through each property
         for (String propertyName : properties.getPropertyKeys()) {
-            if (StringUtils.startsWith(propertyName, patternPrefix)) {
+            if (Strings.CS.startsWith(propertyName, patternPrefix)) {
                 final String key = StringUtils.substringAfter(propertyName, patternPrefix);
                 final String identityPattern = properties.getProperty(propertyName);
 
@@ -121,12 +121,7 @@ public class IdentityMappingUtil {
         }
 
         // sort the list by the key so users can control the ordering in nifi.properties
-        Collections.sort(mappings, new Comparator<IdentityMapping>() {
-            @Override
-            public int compare(IdentityMapping m1, IdentityMapping m2) {
-                return m1.getKey().compareTo(m2.getKey());
-            }
-        });
+        mappings.sort(Comparator.comparing(IdentityMapping::getKey));
 
         return mappings;
     }

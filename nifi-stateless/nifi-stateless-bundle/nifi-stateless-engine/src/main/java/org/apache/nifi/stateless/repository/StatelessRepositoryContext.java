@@ -19,6 +19,7 @@ package org.apache.nifi.stateless.repository;
 
 import org.apache.nifi.components.state.StateManager;
 import org.apache.nifi.connectable.Connectable;
+import org.apache.nifi.controller.metrics.ComponentMetricReporter;
 import org.apache.nifi.controller.repository.AbstractRepositoryContext;
 import org.apache.nifi.controller.repository.ContentRepository;
 import org.apache.nifi.controller.repository.CounterRepository;
@@ -32,17 +33,25 @@ import org.apache.nifi.provenance.ProvenanceEventRepository;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class StatelessRepositoryContext extends AbstractRepositoryContext implements RepositoryContext {
-    private final ContentClaimWriteCache writeCache;
+    private final ContentRepository contentRepository;
 
-    public StatelessRepositoryContext(final Connectable connectable, final AtomicLong connectionIndex, final ContentRepository contentRepository, final FlowFileRepository flowFileRepository,
-                                      final FlowFileEventRepository flowFileEventRepository, final CounterRepository counterRepository, final ProvenanceEventRepository provenanceRepository,
-                                      final StateManager stateManager) {
-        super(connectable, connectionIndex, contentRepository, flowFileRepository, flowFileEventRepository, counterRepository, provenanceRepository, stateManager);
-        writeCache = new StatelessContentClaimWriteCache(contentRepository);
+    public StatelessRepositoryContext(
+            final Connectable connectable,
+            final AtomicLong connectionIndex,
+            final ContentRepository contentRepository,
+            final FlowFileRepository flowFileRepository,
+            final FlowFileEventRepository flowFileEventRepository,
+            final CounterRepository counterRepository,
+            final ComponentMetricReporter componentMetricReporter,
+            final ProvenanceEventRepository provenanceRepository,
+            final StateManager stateManager
+    ) {
+        super(connectable, connectionIndex, contentRepository, flowFileRepository, flowFileEventRepository, counterRepository, componentMetricReporter, provenanceRepository, stateManager);
+        this.contentRepository = contentRepository;
     }
 
     @Override
     public ContentClaimWriteCache createContentClaimWriteCache(final PerformanceTracker performanceTracker) {
-        return writeCache;
+        return new StatelessContentClaimWriteCache(contentRepository, performanceTracker);
     }
 }

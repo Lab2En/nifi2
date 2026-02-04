@@ -16,20 +16,6 @@
  */
 package org.apache.nifi.parquet;
 
-import static java.util.Collections.emptyMap;
-import static java.util.stream.Collectors.toMap;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.IntStream;
 import org.apache.commons.io.IOUtils;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.ConfigurationContext;
@@ -45,9 +31,28 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnJre;
 import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.JRE;
 import org.junit.jupiter.api.condition.OS;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.IntStream;
+
+import static java.util.Collections.emptyMap;
+import static java.util.stream.Collectors.toMap;
+import static org.apache.nifi.parquet.utils.ParquetUtils.AVRO_ADD_LIST_ELEMENT_RECORDS;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+@DisabledOnJre(value = { JRE.JAVA_25 }, disabledReason = "java.security.auth.Subject.getSubject() is not supported")
 @DisabledOnOs({ OS.WINDOWS })
 public class TestParquetReader {
 
@@ -83,12 +88,8 @@ public class TestParquetReader {
         final int numUsers = 1000025; // intentionally so large, to test input with many record groups
         final int expectedRecords = 2;
         final File parquetFile = ParquetTestUtils.createUsersParquetFile(numUsers);
-        final List<Record> results = getRecords(parquetFile, new HashMap<String, String>() {
-            {
-                put(ParquetAttribute.RECORD_OFFSET, "1000020");
-                put(ParquetAttribute.RECORD_COUNT, "2");
-            }
-        });
+        final List<Record> results = getRecords(parquetFile, Map.of(ParquetAttribute.RECORD_OFFSET, "1000020",
+                ParquetAttribute.RECORD_COUNT, "2"));
 
         assertEquals(expectedRecords, results.size());
         IntStream.range(0, expectedRecords)
@@ -102,13 +103,9 @@ public class TestParquetReader {
         final File parquetFile = ParquetTestUtils.createUsersParquetFile(numUsers);
         final List<Record> results = getRecords(
                 parquetFile,
-                new HashMap<String, String>() {
-                    {
-                        put(ParquetAttribute.RECORD_OFFSET, "321");
-                        put(ParquetAttribute.FILE_RANGE_START_OFFSET, "16543");
-                        put(ParquetAttribute.FILE_RANGE_END_OFFSET, "24784");
-                    }
-                }
+                Map.of(ParquetAttribute.RECORD_OFFSET, "321",
+                        ParquetAttribute.FILE_RANGE_START_OFFSET, "16543",
+                        ParquetAttribute.FILE_RANGE_END_OFFSET, "24784")
         );
 
         assertEquals(expectedRecords, results.size());
@@ -124,14 +121,10 @@ public class TestParquetReader {
         final File parquetFile = ParquetTestUtils.createUsersParquetFile(numUsers);
         final List<Record> results = getRecords(
                 parquetFile,
-                new HashMap<String, String>() {
-                    {
-                        put(ParquetAttribute.RECORD_OFFSET, "321");
-                        put(ParquetAttribute.RECORD_COUNT, "2");
-                        put(ParquetAttribute.FILE_RANGE_START_OFFSET, "16543");
-                        put(ParquetAttribute.FILE_RANGE_END_OFFSET, "24784");
-                    }
-                }
+                Map.of(ParquetAttribute.RECORD_OFFSET, "321",
+                        ParquetAttribute.RECORD_COUNT, "2",
+                        ParquetAttribute.FILE_RANGE_START_OFFSET, "16543",
+                        ParquetAttribute.FILE_RANGE_END_OFFSET, "24784")
         );
 
         assertEquals(expectedRecords, results.size());
@@ -174,12 +167,8 @@ public class TestParquetReader {
         runner.addControllerService("reader", parquetReader);
         runner.enableControllerService(parquetReader);
 
-        runner.enqueue(Paths.get(PARQUET_PATH), new HashMap<String, String>() {
-            {
-                put(ParquetAttribute.RECORD_OFFSET, "6");
-                put(ParquetAttribute.RECORD_COUNT, "2");
-            }
-        });
+        runner.enqueue(Paths.get(PARQUET_PATH), Map.of(ParquetAttribute.RECORD_OFFSET, "6",
+                ParquetAttribute.RECORD_COUNT, "2"));
 
         runner.setProperty(TestParquetProcessor.READER, "reader");
 
@@ -188,6 +177,44 @@ public class TestParquetReader {
         runner.getFlowFilesForRelationship(TestParquetProcessor.SUCCESS).get(0).assertContentEquals(
                 "MapRecord[{name=Bob6, favorite_number=6, favorite_color=blue6}]\n" +
                 "MapRecord[{name=Bob7, favorite_number=7, favorite_color=blue7}]");
+    }
+
+    @Test
+    public void testReaderWithAddListElementRecordsEnabled() throws IOException, InitializationException {
+        final TestRunner runner = TestRunners.newTestRunner(TestParquetProcessor.class);
+        final ParquetReader parquetReader = new ParquetReader();
+
+        runner.addControllerService("reader", parquetReader);
+        runner.setProperty(parquetReader, AVRO_ADD_LIST_ELEMENT_RECORDS, "true");
+        runner.enableControllerService(parquetReader);
+
+        runner.enqueue(Paths.get("src/test/resources/TestParquetReaderWithArray.parquet"));
+
+        runner.setProperty(TestParquetProcessor.READER, "reader");
+
+        runner.run();
+        runner.assertAllFlowFilesTransferred(TestParquetProcessor.SUCCESS, 1);
+        runner.getFlowFilesForRelationship(TestParquetProcessor.SUCCESS).getFirst().assertContentEquals(
+                "MapRecord[{name=Bob, favorite_number=1, favorite_colors=[MapRecord[{element=blue}], MapRecord[{element=red}], MapRecord[{element=yellow}]]}]");
+    }
+
+    @Test
+    public void testReaderWithAddListElementRecordsDisabled() throws IOException, InitializationException {
+        final TestRunner runner = TestRunners.newTestRunner(TestParquetProcessor.class);
+        final ParquetReader parquetReader = new ParquetReader();
+
+        runner.addControllerService("reader", parquetReader);
+        runner.setProperty(parquetReader, AVRO_ADD_LIST_ELEMENT_RECORDS, "false");
+        runner.enableControllerService(parquetReader);
+
+        runner.enqueue(Paths.get("src/test/resources/TestParquetReaderWithArray.parquet"));
+
+        runner.setProperty(TestParquetProcessor.READER, "reader");
+
+        runner.run();
+        runner.assertAllFlowFilesTransferred(TestParquetProcessor.SUCCESS, 1);
+        runner.getFlowFilesForRelationship(TestParquetProcessor.SUCCESS).getFirst().assertContentEquals(
+                "MapRecord[{name=Bob, favorite_number=1, favorite_colors=[blue, red, yellow]}]");
     }
 
     private List<Record> getRecords(File parquetFile, Map<String, String> variables)

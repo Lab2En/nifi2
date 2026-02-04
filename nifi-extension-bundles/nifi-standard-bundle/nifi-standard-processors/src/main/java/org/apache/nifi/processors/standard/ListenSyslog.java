@@ -30,6 +30,10 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
+import org.apache.nifi.components.listen.ListenComponent;
+import org.apache.nifi.components.listen.ListenPort;
+import org.apache.nifi.components.listen.StandardListenPort;
+import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.event.transport.EventServer;
 import org.apache.nifi.event.transport.configuration.ShutdownQuietPeriod;
 import org.apache.nifi.event.transport.configuration.TransportProtocol;
@@ -38,6 +42,7 @@ import org.apache.nifi.event.transport.netty.ByteArrayMessageNettyEventServerFac
 import org.apache.nifi.event.transport.netty.FilteringStrategy;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -50,7 +55,6 @@ import org.apache.nifi.syslog.attributes.SyslogAttributes;
 import org.apache.nifi.syslog.events.SyslogEvent;
 import org.apache.nifi.syslog.parsers.SyslogParser;
 
-import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -65,6 +69,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
 
 import static org.apache.nifi.processor.util.listen.ListenerProperties.NETWORK_INTF_NAME;
 
@@ -93,11 +98,26 @@ import static org.apache.nifi.processor.util.listen.ListenerProperties.NETWORK_I
                     @WritesAttribute(attribute = "syslog.port", description = "The port over which the Syslog message was received."),
                     @WritesAttribute(attribute = "mime.type", description = "The mime.type of the FlowFile which will be text/plain for Syslog messages.")})
 @SeeAlso({PutSyslog.class, ParseSyslog.class})
-public class ListenSyslog extends AbstractSyslogProcessor {
+public class ListenSyslog extends AbstractSyslogProcessor implements ListenComponent {
+
+    public static final PropertyDescriptor TCP_PORT = new PropertyDescriptor.Builder()
+        .fromPropertyDescriptor(PORT)
+        .name("TCP Port")
+        .displayName("TCP Port")
+        .identifiesListenPort(org.apache.nifi.components.listen.TransportProtocol.TCP, "syslog")
+        .dependsOn(PROTOCOL, TCP_VALUE)
+        .build();
+
+    public static final PropertyDescriptor UDP_PORT = new PropertyDescriptor.Builder()
+        .fromPropertyDescriptor(PORT)
+        .name("UDP Port")
+        .displayName("UDP Port")
+        .identifiesListenPort(org.apache.nifi.components.listen.TransportProtocol.UDP, "syslog")
+        .dependsOn(PROTOCOL, UDP_VALUE)
+        .build();
 
     public static final PropertyDescriptor MAX_MESSAGE_QUEUE_SIZE = new PropertyDescriptor.Builder()
         .name("Max Size of Message Queue")
-        .displayName("Max Size of Message Queue")
         .description("The maximum size of the internal queue used to buffer messages being transferred from the underlying channel to the processor. " +
                     "Setting this value higher allows more messages to be buffered in memory during surges of incoming messages, but increases the total " +
                     "memory used by the processor.")
@@ -108,7 +128,6 @@ public class ListenSyslog extends AbstractSyslogProcessor {
 
     public static final PropertyDescriptor RECV_BUFFER_SIZE = new PropertyDescriptor.Builder()
         .name("Receive Buffer Size")
-        .displayName("Receive Buffer Size")
         .description("The size of each buffer used to receive Syslog messages. Adjust this value appropriately based on the expected size of the " +
                     "incoming Syslog messages. When UDP is selected each buffer will hold one Syslog message. When TCP is selected messages are read " +
                     "from an incoming connection until the buffer is full, or the connection is closed. ")
@@ -118,7 +137,6 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         .build();
     public static final PropertyDescriptor MAX_SOCKET_BUFFER_SIZE = new PropertyDescriptor.Builder()
         .name("Max Size of Socket Buffer")
-        .displayName("Max Size of Socket Buffer")
         .description("The maximum size of the socket buffer that should be used. This is a suggestion to the Operating System " +
                     "to indicate how big the socket buffer should be. If this value is set too low, the buffer may fill up before " +
                     "the data can be read, and incoming data will be dropped.")
@@ -127,10 +145,9 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         .required(true)
         .dependsOn(PROTOCOL, TCP_VALUE)
         .build();
-    public static final PropertyDescriptor MAX_CONNECTIONS = new PropertyDescriptor.Builder()
-        .name("Max Number of TCP Connections")
-        .displayName("Max Number of TCP Connections")
-        .description("The maximum number of concurrent connections to accept Syslog messages in TCP mode.")
+    public static final PropertyDescriptor WORKER_THREADS = new PropertyDescriptor.Builder()
+        .name("Worker Threads")
+        .description("Number of threads responsible for decoding and queuing incoming syslog messages")
         .addValidator(StandardValidators.createLongValidator(1, 65535, true))
         .defaultValue("2")
         .required(true)
@@ -138,7 +155,6 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         .build();
     public static final PropertyDescriptor MAX_BATCH_SIZE = new PropertyDescriptor.Builder()
         .name("Max Batch Size")
-        .displayName("Max Batch Size")
         .description(
                 "The maximum number of Syslog events to add to a single FlowFile. If multiple events are available, they will be concatenated along with "
                 + "the <Message Delimiter> up to this configured maximum number of messages")
@@ -148,7 +164,6 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         .build();
     public static final PropertyDescriptor MESSAGE_DELIMITER = new PropertyDescriptor.Builder()
         .name("Message Delimiter")
-        .displayName("Message Delimiter")
         .description("Specifies the delimiter to place between Syslog messages when multiple messages are bundled together (see <Max Batch Size> property).")
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .defaultValue("\\n")
@@ -156,7 +171,6 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         .build();
     public static final PropertyDescriptor PARSE_MESSAGES = new PropertyDescriptor.Builder()
         .name("Parse Messages")
-        .displayName("Parse Messages")
         .description("Indicates if the processor should parse the Syslog messages. If set to false, each outgoing FlowFile will only " +
                     "contain the sender, protocol, and port, and no additional attributes.")
         .allowableValues("true", "false")
@@ -165,7 +179,6 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         .build();
     public static final PropertyDescriptor SSL_CONTEXT_SERVICE = new PropertyDescriptor.Builder()
         .name("SSL Context Service")
-        .displayName("SSL Context Service")
         .description("The Controller Service to use in order to obtain an SSL Context. If this property is set, syslog " +
                     "messages will be received over a secure connection.")
         .required(false)
@@ -174,35 +187,24 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         .build();
     public static final PropertyDescriptor CLIENT_AUTH = new PropertyDescriptor.Builder()
         .name("Client Auth")
-        .displayName("Client Auth")
         .description("The client authentication policy to use for the SSL Context. Only used if an SSL Context Service is provided.")
         .required(false)
         .allowableValues(ClientAuth.values())
         .defaultValue(ClientAuth.REQUIRED.name())
         .dependsOn(SSL_CONTEXT_SERVICE)
         .build();
-    public static final PropertyDescriptor SOCKET_KEEP_ALIVE = new PropertyDescriptor.Builder()
-            .name("socket-keep-alive")
-            .displayName("Socket Keep Alive")
-            .description("Whether or not to have TCP socket keep alive turned on. Timing details depend on operating system properties.")
-            .required(true)
-            .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
-            .allowableValues(Boolean.TRUE.toString(), Boolean.FALSE.toString())
-            .defaultValue(Boolean.FALSE.toString())
-            .dependsOn(PROTOCOL, TCP_VALUE)
-            .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             PROTOCOL,
-            PORT,
+            TCP_PORT,
+            UDP_PORT,
             NETWORK_INTF_NAME,
-            SOCKET_KEEP_ALIVE,
             SSL_CONTEXT_SERVICE,
             CLIENT_AUTH,
             RECV_BUFFER_SIZE,
             MAX_MESSAGE_QUEUE_SIZE,
             MAX_SOCKET_BUFFER_SIZE,
-            MAX_CONNECTIONS,
+            WORKER_THREADS,
             MAX_BATCH_SIZE,
             MESSAGE_DELIMITER,
             PARSE_MESSAGES,
@@ -233,13 +235,44 @@ public class ListenSyslog extends AbstractSyslogProcessor {
     private volatile byte[] messageDemarcatorBytes; //it is only the array reference that is volatile - not the contents.
 
     @Override
+    public void migrateProperties(final PropertyConfiguration propertyConfiguration) {
+        // Remove both historical and migrated Property Names
+        propertyConfiguration.removeProperty("Socket Keep Alive");
+        propertyConfiguration.removeProperty("socket-keep-alive");
+
+        propertyConfiguration.renameProperty("Max Number of TCP Connections", WORKER_THREADS.getName());
+
+        // Older version of ListenSyslog had a single "Port" property.
+        // Starting with 2.7.0, ListenSyslog now uses two mutually exclusive "TCP Port" and "UDP Port" properties in order to support the ListenPortDefinition feature of Property Descriptors.
+        if (propertyConfiguration.hasProperty(PORT)) {
+            final String protocolRawValue = propertyConfiguration.getPropertyValue(PROTOCOL).orElse(null);
+            TransportProtocol protocol;
+            try {
+                protocol = protocolRawValue != null ? TransportProtocol.valueOf(protocolRawValue) : TransportProtocol.TCP;
+            } catch (final Exception e) {
+                // should never happen, but if we get an unexpected value that cannot be converted to an enum, default to TCP
+                getLogger().warn("Unknown legacy protocol '{}' provided for ListenSyslog. Defaulting to TCP", protocolRawValue);
+                protocol = TransportProtocol.TCP;
+            }
+
+            if (protocol == TransportProtocol.UDP) {
+                getLogger().info("Migrating ListenSyslog 'Port' property to 'UDP Port'");
+                propertyConfiguration.renameProperty(PORT.getName(), UDP_PORT.getName());
+            } else {
+                getLogger().info("Migrating ListenSyslog 'Port' property to 'TCP Port'");
+                propertyConfiguration.renameProperty(PORT.getName(), TCP_PORT.getName());
+            }
+        }
+    }
+
+    @Override
     public Set<Relationship> getRelationships() {
         return RELATIONSHIPS;
     }
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -264,12 +297,10 @@ public class ListenSyslog extends AbstractSyslogProcessor {
 
     @OnScheduled
     public void onScheduled(final ProcessContext context) throws IOException {
-        final int port = context.getProperty(PORT).evaluateAttributeExpressions().asInteger();
+        final TransportProtocol transportProtocol = context.getProperty(PROTOCOL).asAllowableValue(TransportProtocol.class);
+
         final int receiveBufferSize = context.getProperty(RECV_BUFFER_SIZE).asDataSize(DataUnit.B).intValue();
-        final int maxSocketBufferSize = context.getProperty(MAX_SOCKET_BUFFER_SIZE).asDataSize(DataUnit.B).intValue();
         final int maxMessageQueueSize = context.getProperty(MAX_MESSAGE_QUEUE_SIZE).asInteger();
-        final String protocol = context.getProperty(PROTOCOL).getValue();
-        final TransportProtocol transportProtocol = TransportProtocol.valueOf(protocol);
         final String networkInterfaceName = context.getProperty(NETWORK_INTF_NAME).evaluateAttributeExpressions().getValue();
         final Charset charset = Charset.forName(context.getProperty(CHARSET).evaluateAttributeExpressions().getValue());
         final String msgDemarcator = context.getProperty(MESSAGE_DELIMITER).getValue().replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
@@ -277,20 +308,31 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         parser = new SyslogParser(charset);
         syslogEvents = new LinkedBlockingQueue<>(maxMessageQueueSize);
 
+        final int port;
+        final int maxSocketBufferSize;
+        final int workerThreads;
+        final SSLContextProvider sslContextProvider;
+        if (transportProtocol == TransportProtocol.TCP) {
+            port = context.getProperty(TCP_PORT).evaluateAttributeExpressions().asInteger();
+            maxSocketBufferSize = context.getProperty(MAX_SOCKET_BUFFER_SIZE).asDataSize(DataUnit.B).intValue();
+            workerThreads = context.getProperty(WORKER_THREADS).asLong().intValue();
+            sslContextProvider = context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextProvider.class);
+        } else {
+            port = context.getProperty(UDP_PORT).evaluateAttributeExpressions().asInteger();
+            maxSocketBufferSize = 1_000_000;
+            workerThreads = 2;
+            sslContextProvider = null;
+        }
+
         final InetAddress address = getListenAddress(networkInterfaceName);
         final ByteArrayMessageNettyEventServerFactory factory = new ByteArrayMessageNettyEventServerFactory(getLogger(),
                 address, port, transportProtocol, messageDemarcatorBytes, receiveBufferSize, syslogEvents, FilteringStrategy.EMPTY);
         factory.setShutdownQuietPeriod(ShutdownQuietPeriod.QUICK.getDuration());
         factory.setThreadNamePrefix(String.format("%s[%s]", ListenSyslog.class.getSimpleName(), getIdentifier()));
-        final int maxConnections = context.getProperty(MAX_CONNECTIONS).asLong().intValue();
-        factory.setWorkerThreads(maxConnections);
+        factory.setWorkerThreads(workerThreads);
         factory.setSocketReceiveBuffer(maxSocketBufferSize);
 
-        final Boolean socketKeepAlive = context.getProperty(SOCKET_KEEP_ALIVE).asBoolean();
-        factory.setSocketKeepAlive(socketKeepAlive);
-
-        final SSLContextProvider sslContextProvider = context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextProvider.class);
-        if (sslContextProvider != null && TCP_VALUE.getValue().equals(protocol)) {
+        if (sslContextProvider != null) {
             final SSLContext sslContext = sslContextProvider.createContext();
             ClientAuth clientAuth = ClientAuth.REQUIRED;
             final PropertyValue clientAuthProperty = context.getProperty(CLIENT_AUTH);
@@ -303,7 +345,38 @@ public class ListenSyslog extends AbstractSyslogProcessor {
         eventServer = factory.getEventServer();
     }
 
-    public int getListeningPort() {
+    @Override
+    public List<ListenPort> getListenPorts(final ConfigurationContext context) {
+        final List<ListenPort> ports = new ArrayList<>();
+
+        final TransportProtocol transportProtocol = context.getProperty(PROTOCOL).asAllowableValue(TransportProtocol.class);
+
+        if (transportProtocol == TransportProtocol.TCP) {
+            final Integer tcpPortNumber = context.getProperty(TCP_PORT).evaluateAttributeExpressions().asInteger();
+            final ListenPort port = StandardListenPort.builder()
+                    .portNumber(tcpPortNumber)
+                    .portName(TCP_PORT.getDisplayName())
+                    .transportProtocol(org.apache.nifi.components.listen.TransportProtocol.TCP)
+                    .applicationProtocols(List.of("syslog"))
+                    .build();
+            ports.add(port);
+        }
+
+        if (transportProtocol == TransportProtocol.UDP) {
+            final Integer udpPortNumber = context.getProperty(UDP_PORT).evaluateAttributeExpressions().asInteger();
+            final ListenPort port = StandardListenPort.builder()
+                    .portNumber(udpPortNumber)
+                    .portName(UDP_PORT.getDisplayName())
+                    .transportProtocol(org.apache.nifi.components.listen.TransportProtocol.UDP)
+                    .applicationProtocols(List.of("syslog"))
+                    .build();
+            ports.add(port);
+        }
+
+        return ports;
+    }
+
+    int getListeningPort() {
         return eventServer == null ? 0 : eventServer.getListeningPort();
     }
 
@@ -372,10 +445,10 @@ public class ListenSyslog extends AbstractSyslogProcessor {
             final boolean writeDemarcator = (i > 0);
             final byte[] messageBytes = (event == null) ? rawSyslogEvent.getMessage() : event.getRawMessage();
             flowFile = session.append(flowFile, outputStream -> {
-               if (writeDemarcator) {
-                   outputStream.write(messageDemarcatorBytes);
-               }
-               outputStream.write(messageBytes);
+                if (writeDemarcator) {
+                    outputStream.write(messageDemarcatorBytes);
+                }
+                outputStream.write(messageBytes);
             });
 
             flowFilePerSender.put(sender, flowFile);

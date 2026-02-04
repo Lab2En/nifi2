@@ -16,11 +16,16 @@
  */
 package org.apache.nifi.processors.aws.kinesis.stream.record;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.json.JsonRecordSetWriter;
 import org.apache.nifi.json.JsonTreeReader;
 import org.apache.nifi.processor.ProcessSessionFactory;
+import org.apache.nifi.processors.aws.kinesis.property.SchemaDifferenceHandlingStrategy;
 import org.apache.nifi.processors.aws.kinesis.stream.ConsumeKinesisStream;
+import org.apache.nifi.processors.aws.kinesis.stream.pause.StandardRecordProcessorBlocker;
+import org.apache.nifi.processors.aws.kinesis.stream.record.converter.RecordConverterIdentity;
+import org.apache.nifi.processors.aws.kinesis.stream.record.converter.RecordConverterWrapper;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.schema.access.SchemaAccessUtils;
 import org.apache.nifi.schema.inference.SchemaInferenceUtil;
@@ -33,8 +38,14 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import software.amazon.kinesis.exceptions.InvalidStateException;
 import software.amazon.kinesis.exceptions.ShutdownException;
 import software.amazon.kinesis.lifecycle.events.ProcessRecordsInput;
@@ -53,6 +64,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -67,6 +79,7 @@ import static org.mockito.Mockito.when;
 
 public class TestKinesisRecordProcessorRecord {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS");
+    private static final StandardRecordProcessorBlocker NOOP_RECORD_PROCESSOR_BLOCKER = StandardRecordProcessorBlocker.create();
 
     private final TestRunner runner = TestRunners.newTestRunner(ConsumeKinesisStream.class);
 
@@ -87,6 +100,8 @@ public class TestKinesisRecordProcessorRecord {
 
     @BeforeEach
     public void setUp() throws InitializationException {
+        NOOP_RECORD_PROCESSOR_BLOCKER.unblockIndefinitely();
+
         runner.addControllerService("record-reader", reader);
         runner.setProperty(reader, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaInferenceUtil.INFER_SCHEMA.getValue());
         runner.enableControllerService(reader);
@@ -94,14 +109,16 @@ public class TestKinesisRecordProcessorRecord {
 
         runner.addControllerService("record-writer", writer);
         runner.setProperty(writer, SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY, SchemaAccessUtils.INHERIT_RECORD_SCHEMA.getValue());
-        runner.setProperty(writer, "output-grouping", "output-oneline");
+        runner.setProperty(writer, JsonRecordSetWriter.OUTPUT_GROUPING, "output-oneline");
         runner.enableControllerService(writer);
         runner.setProperty(ConsumeKinesisStream.RECORD_WRITER, "record-writer");
+    }
 
+    private KinesisRecordProcessorRecord defaultFixtureWithStrategy(final SchemaDifferenceHandlingStrategy strategy) {
         // default test fixture will try operations twice with very little wait in between
-        fixture = new KinesisRecordProcessorRecord(processSessionFactory, runner.getLogger(), "kinesis-test",
+        return new KinesisRecordProcessorRecord(processSessionFactory, runner.getLogger(), "kinesis-test",
                 "endpoint-prefix", null, 10_000L, 1L, 2, DATE_TIME_FORMATTER,
-                reader, writer);
+                reader, writer, new RecordConverterIdentity(), NOOP_RECORD_PROCESSOR_BLOCKER, strategy);
     }
 
     @AfterEach
@@ -110,8 +127,10 @@ public class TestKinesisRecordProcessorRecord {
         reset(checkpointer, kinesisRecord, processSessionFactory);
     }
 
-    @Test
-    public void testProcessRecordsEmpty() {
+    @ParameterizedTest
+    @EnumSource(SchemaDifferenceHandlingStrategy.class)
+    public void testProcessRecordsEmpty(final SchemaDifferenceHandlingStrategy strategy) {
+        fixture = defaultFixtureWithStrategy(strategy);
         final ProcessRecordsInput processRecordsInput = ProcessRecordsInput.builder()
                 .records(Collections.emptyList())
                 .checkpointer(checkpointer)
@@ -131,19 +150,36 @@ public class TestKinesisRecordProcessorRecord {
         session.assertNotRolledBack();
     }
 
-    @Test
-    public void testProcessRecordsNoCheckpoint() {
-        processMultipleRecordsAssertProvenance(false);
+    private static Stream<Arguments.ArgumentSet> testProcessRecordsArgs() {
+        final List<Pair<String, Boolean>> endpointOverriden = List.of(
+                Pair.of("Overriden Endpoint", true),
+                Pair.of("Default Endpoint", false)
+        );
+        final List<Pair<String, Boolean>> usingWrapper = List.of(
+                Pair.of("Using Schema Wrapper", true),
+                Pair.of("Default Schema", false)
+        );
+        final List<Pair<String, SchemaDifferenceHandlingStrategy>> schemaChangeStrategy = Arrays.stream(SchemaDifferenceHandlingStrategy.values())
+                .map(strategy -> Pair.of(strategy.name(), strategy))
+                .toList();
+        return endpointOverriden.stream()
+                .flatMap(endpoint -> schemaChangeStrategy.stream()
+                        .flatMap(strategy -> usingWrapper.stream()
+                                .map(wrapper -> Arguments.argumentSet(
+                                        String.format("%s, %s, %s", endpoint.getLeft(), wrapper.getLeft(), strategy.getLeft()),
+                                        endpoint.getRight(),
+                                        wrapper.getRight(),
+                                        strategy.getRight()
+                                ))));
     }
 
-    @Test
-    public void testProcessRecordsWithEndpointOverride() {
-        processMultipleRecordsAssertProvenance(true);
-    }
-
-    private void processMultipleRecordsAssertProvenance(final boolean endpointOverridden) {
-        final Date firstDate = Date.from(Instant.now().minus(1, ChronoUnit.MINUTES));
-        final Date secondDate = new Date();
+    @ParameterizedTest
+    @MethodSource("testProcessRecordsArgs")
+    void processMultipleRecordsAssertProvenance(final boolean endpointOverridden, final boolean useWrapper, final SchemaDifferenceHandlingStrategy strategy) {
+        fixture = defaultFixtureWithStrategy(strategy);
+        final Instant referenceInstant = Instant.parse("2021-01-01T00:00:00.000Z");
+        final Date firstDate = Date.from(referenceInstant.minus(1, ChronoUnit.MINUTES));
+        final Date secondDate = Date.from(referenceInstant);
 
         final ProcessRecordsInput processRecordsInput = ProcessRecordsInput.builder()
                 .records(Arrays.asList(
@@ -170,11 +206,9 @@ public class TestKinesisRecordProcessorRecord {
                 .build();
 
         final String transitUriPrefix = endpointOverridden ? "https://another-endpoint.com:8443" : "http://endpoint-prefix.amazonaws.com";
-        if (endpointOverridden) {
-            fixture = new KinesisRecordProcessorRecord(processSessionFactory, runner.getLogger(), "kinesis-test",
-                    "endpoint-prefix", "https://another-endpoint.com:8443", 10_000L, 1L, 2, DATE_TIME_FORMATTER,
-                    reader, writer);
-        }
+        fixture = new KinesisRecordProcessorRecord(processSessionFactory, runner.getLogger(), "kinesis-test",
+                "endpoint-prefix", transitUriPrefix, 10_000L, 1L, 2, DATE_TIME_FORMATTER,
+                reader, writer, useWrapper ? new RecordConverterWrapper() : new RecordConverterIdentity(), NOOP_RECORD_PROCESSOR_BLOCKER, strategy);
 
         // skip checkpoint
         fixture.setNextCheckpointTimeInMillis(System.currentTimeMillis() + 10_000L);
@@ -190,18 +224,38 @@ public class TestKinesisRecordProcessorRecord {
 
         final List<MockFlowFile> flowFiles = session.getFlowFilesForRelationship(ConsumeKinesisStream.REL_SUCCESS);
         // 4 records in single output file, attributes equating to that of the last record
-        assertFlowFile(flowFiles.get(0), secondDate, "partition-2", "2", "another-shard", "{\"record\":\"1\"}\n" +
-                "{\"record\":\"1b\"}\n" +
-                "{\"record\":\"no-date\"}\n" +
-                "{\"record\":\"2\"}", 4);
+        final String expectedContent = useWrapper ? expectRecordContentWrapper() : expectRecordContentIdentity();
+        assertFlowFile(flowFiles.getFirst(), secondDate, "partition-2", "2", "another-shard", expectedContent, 4);
         session.assertTransferCount(ConsumeKinesisStream.REL_PARSE_FAILURE, 0);
 
         session.assertCommitted();
         session.assertNotRolledBack();
     }
 
-    @Test
-    public void testProcessPoisonPillRecordButNoRawOutputWithCheckpoint() throws ShutdownException, InvalidStateException {
+    private String expectRecordContentIdentity() {
+        return """
+                {"record":"1"}
+                {"record":"1b"}
+                {"record":"no-date"}
+                {"record":"2"}""";
+    }
+
+    private String expectRecordContentWrapper() {
+        return """
+                {"metadata":{"stream":"kinesis-test","shardId":"another-shard","sequenceNumber":"1","subSequenceNumber":0,\
+                "shardedSequenceNumber":"100000000000000000000","partitionKey":"partition-1","approximateArrival":1609459140000},"value":{"record":"1"}}
+                {"metadata":{"stream":"kinesis-test","shardId":"another-shard","sequenceNumber":"1","subSequenceNumber":0,\
+                "shardedSequenceNumber":"100000000000000000000","partitionKey":"partition-1","approximateArrival":1609459140000},"value":{"record":"1b"}}
+                {"metadata":{"stream":"kinesis-test","shardId":"another-shard","sequenceNumber":"no-date","subSequenceNumber":0,\
+                "shardedSequenceNumber":"no-date00000000000000000000","partitionKey":"partition-no-date","approximateArrival":null},"value":{"record":"no-date"}}
+                {"metadata":{"stream":"kinesis-test","shardId":"another-shard","sequenceNumber":"2","subSequenceNumber":0,\
+                "shardedSequenceNumber":"200000000000000000000","partitionKey":"partition-2","approximateArrival":1609459200000},"value":{"record":"2"}}""";
+    }
+
+    @ParameterizedTest
+    @EnumSource(SchemaDifferenceHandlingStrategy.class)
+    public void testProcessPoisonPillRecordButNoRawOutputWithCheckpoint(final SchemaDifferenceHandlingStrategy strategy) throws ShutdownException, InvalidStateException {
+        fixture = defaultFixtureWithStrategy(strategy);
         final ProcessRecordsInput processRecordsInput = ProcessRecordsInput.builder()
                 .records(Arrays.asList(
                         KinesisClientRecord.builder().approximateArrivalTimestamp(null)
@@ -235,7 +289,7 @@ public class TestKinesisRecordProcessorRecord {
         session.assertTransferCount(ConsumeKinesisStream.REL_SUCCESS, 1);
         final List<MockFlowFile> flowFiles = session.getFlowFilesForRelationship(ConsumeKinesisStream.REL_SUCCESS);
         // 2 successful records in single output file, attributes equating to that of the last successful record
-        assertFlowFile(flowFiles.get(0), null, "partition-3", "3", "test-shard", "{\"record\":\"1\"}\n" +
+        assertFlowFile(flowFiles.getFirst(), null, "partition-3", "3", "test-shard", "{\"record\":\"1\"}\n" +
                 "{\"record\":\"3\"}", 2);
 
         // check no poison-pill output (as the raw data could not be retrieved)
@@ -251,22 +305,70 @@ public class TestKinesisRecordProcessorRecord {
         session.assertNotRolledBack();
     }
 
-    @Test
-    public void testProcessUnparsableRecordWithRawOutputWithCheckpoint() throws ShutdownException, InvalidStateException {
+    private static Stream<Arguments.ArgumentSet> unparsableRecordsLists() {
+        final KinesisClientRecord unparsableRecordMock = mock(KinesisClientRecord.class);
+        final KinesisClientRecord parsableRecord1 = KinesisClientRecord.builder().approximateArrivalTimestamp(null)
+                .partitionKey("partition-1")
+                .sequenceNumber("1")
+                .data(ByteBuffer.wrap("{\"record\":\"1\"}".getBytes(StandardCharsets.UTF_8)))
+                .build();
+        final KinesisClientRecord parsableRecord3 = KinesisClientRecord.builder().approximateArrivalTimestamp(null)
+                .partitionKey("partition-3")
+                .sequenceNumber("3")
+                .data(ByteBuffer.wrap("{\"record\":\"3\"}".getBytes(StandardCharsets.UTF_8)))
+                .build();
+        final List<List<KinesisClientRecord>> recordLists = List.of(
+                Arrays.asList(
+                        unparsableRecordMock,
+                        parsableRecord1,
+                        parsableRecord3
+                ),
+                Arrays.asList(
+                        parsableRecord1,
+                        unparsableRecordMock,
+                        parsableRecord3
+                ),
+                Arrays.asList(
+                        parsableRecord1,
+                        parsableRecord3,
+                        unparsableRecordMock
+                )
+        );
+        return Arrays.stream(SchemaDifferenceHandlingStrategy.values())
+                .flatMap(strategy -> recordLists.stream().map(recordList -> Pair.of(strategy, recordList)))
+                .map(pair -> {
+                    final SchemaDifferenceHandlingStrategy strategy = pair.getLeft();
+                    final List<KinesisClientRecord> inputRecords = pair.getRight();
+                    String position = "Middle";
+                    if (inputRecords.getFirst() == unparsableRecordMock) {
+                        position = "Beginning";
+                    }
+                    if (inputRecords.getLast() == unparsableRecordMock) {
+                        position = "End";
+                    }
+                    return Arguments.argumentSet(
+                            String.format("Strategy=%s, Unparsable Record Position=%s", strategy, position),
+                            inputRecords,
+                            unparsableRecordMock,
+                            strategy
+                    );
+                })
+                .peek(it -> {
+                    parsableRecord1.data().rewind();
+                    parsableRecord3.data().rewind();
+                    Mockito.reset(unparsableRecordMock);
+                });
+    }
+
+    @ParameterizedTest
+    @MethodSource("unparsableRecordsLists")
+    void testProcessUnparsableRecordWithRawOutputWithCheckpoint(
+            final List<KinesisClientRecord> inputRecords,
+            final KinesisClientRecord kinesisRecord,
+            final SchemaDifferenceHandlingStrategy strategy) throws ShutdownException, InvalidStateException {
+        fixture = defaultFixtureWithStrategy(strategy);
         final ProcessRecordsInput processRecordsInput = ProcessRecordsInput.builder()
-                .records(Arrays.asList(
-                        KinesisClientRecord.builder().approximateArrivalTimestamp(null)
-                                .partitionKey("partition-1")
-                                .sequenceNumber("1")
-                                .data(ByteBuffer.wrap("{\"record\":\"1\"}".getBytes(StandardCharsets.UTF_8)))
-                                .build(),
-                        kinesisRecord,
-                        KinesisClientRecord.builder().approximateArrivalTimestamp(null)
-                                .partitionKey("partition-3")
-                                .sequenceNumber("3")
-                                .data(ByteBuffer.wrap("{\"record\":\"3\"}".getBytes(StandardCharsets.UTF_8)))
-                                .build()
-                ))
+                .records(inputRecords)
                 .checkpointer(checkpointer)
                 .cacheEntryTime(Instant.now().minus(1, ChronoUnit.MINUTES))
                 .cacheExitTime(Instant.now().minus(1, ChronoUnit.SECONDS))
@@ -288,14 +390,14 @@ public class TestKinesisRecordProcessorRecord {
         session.assertTransferCount(ConsumeKinesisStream.REL_SUCCESS, 1);
         final List<MockFlowFile> flowFiles = session.getFlowFilesForRelationship(ConsumeKinesisStream.REL_SUCCESS);
         // 2 successful records in single output file, attributes equating to that of the last successful record
-        assertFlowFile(flowFiles.get(0), null, "partition-3", "3", "test-shard", "{\"record\":\"1\"}\n" +
+        assertFlowFile(flowFiles.getFirst(), null, "partition-3", "3", "test-shard", "{\"record\":\"1\"}\n" +
                 "{\"record\":\"3\"}", 2);
 
         // check poison-pill output (as the raw data could not be retrieved)
         session.assertTransferCount(ConsumeKinesisStream.REL_PARSE_FAILURE, 1);
         final List<MockFlowFile> failureFlowFiles = session.getFlowFilesForRelationship(ConsumeKinesisStream.REL_PARSE_FAILURE);
-        assertFlowFile(failureFlowFiles.get(0), null, "unparsable-partition", "unparsable-sequence", "test-shard", "invalid-json", 0);
-        failureFlowFiles.get(0).assertAttributeExists("record.error.message");
+        assertFlowFile(failureFlowFiles.getFirst(), null, "unparsable-partition", "unparsable-sequence", "test-shard", "invalid-json", 0);
+        failureFlowFiles.getFirst().assertAttributeExists("record.error.message");
 
         // check the invalid json record was *not* retried a 2nd time
         assertNull(verify(kinesisRecord, times(1)).partitionKey());
@@ -308,6 +410,100 @@ public class TestKinesisRecordProcessorRecord {
 
         session.assertCommitted();
         session.assertNotRolledBack();
+    }
+
+    @ParameterizedTest
+    @EnumSource(SchemaDifferenceHandlingStrategy.class)
+    void testProcessMultipleRecordInSingleKinesisRecord(final SchemaDifferenceHandlingStrategy strategy) throws ShutdownException, InvalidStateException {
+        fixture = defaultFixtureWithStrategy(strategy);
+        testFlowFileContents(List.of("[{\"record\":1},{\"record\":2},{\"record\":3}]"), List.of(EmittedFlowFile.of("{\"record\":1}\n{\"record\":2}\n{\"record\":3}", 3)));
+    }
+
+    @Nested
+    class StateHandlerStrategyTest {
+
+        private static List<String> inputJsonRecords() {
+            return List.of(
+                    "{\"colA\":1}", // inferred to ["colA":int]
+                    "{\"colA\":%d}".formatted(Long.MAX_VALUE), // inferred to ["colA":long]
+                    "{\"colA\":3}"
+            );
+        }
+
+        @Test
+        void testProcessIncompatibleSchemaKinesisRecordsStrategyGrouping() throws ShutdownException, InvalidStateException {
+            fixture = defaultFixtureWithStrategy(SchemaDifferenceHandlingStrategy.GROUP_RECORDS);
+            final List<String> inputJsonRecords = inputJsonRecords();
+            testFlowFileContents(
+                    inputJsonRecords,
+                    List.of(
+                            EmittedFlowFile.of(String.join("\n", inputJsonRecords.get(0), inputJsonRecords.get(2)), 2),
+                            EmittedFlowFile.of(inputJsonRecords.get(1), 1)
+                    )
+            );
+        }
+
+        @Test
+        void testProcessIncompatibleSchemaKinesisRecordsStrategyRolling() throws ShutdownException, InvalidStateException {
+            fixture = defaultFixtureWithStrategy(SchemaDifferenceHandlingStrategy.CREATE_FLOW_FILE);
+            final List<String> inputJsonRecords = inputJsonRecords();
+            testFlowFileContents(
+                    inputJsonRecords,
+                    List.of(
+                            EmittedFlowFile.of(inputJsonRecords.get(0), 1),
+                            EmittedFlowFile.of(inputJsonRecords.get(1), 1),
+                            EmittedFlowFile.of(inputJsonRecords.get(2), 1)
+                    )
+            );
+        }
+    }
+
+    void testFlowFileContents(final List<String> kinesisRecordJsonContents, final List<EmittedFlowFile> emittedFlowFiles) throws ShutdownException, InvalidStateException {
+        final List<KinesisClientRecord> kinesisRecords = kinesisRecordJsonContents.stream()
+                .map(json -> KinesisClientRecord.builder()
+                        .approximateArrivalTimestamp(null)
+                        .partitionKey("partition-1")
+                        .sequenceNumber("1")
+                        .data(ByteBuffer.wrap(json.getBytes(StandardCharsets.UTF_8)))
+                        .build())
+                .toList();
+        final ProcessRecordsInput processRecordsInput = ProcessRecordsInput.builder()
+                .records(kinesisRecords)
+                .checkpointer(checkpointer)
+                .cacheEntryTime(Instant.now().minus(1, ChronoUnit.MINUTES))
+                .cacheExitTime(Instant.now().minus(1, ChronoUnit.SECONDS))
+                .millisBehindLatest(100L)
+                .build();
+
+        when(kinesisRecord.data()).thenReturn(ByteBuffer.wrap("invalid-json".getBytes(StandardCharsets.UTF_8)));
+        when(kinesisRecord.partitionKey()).thenReturn("unparsable-partition");
+        when(kinesisRecord.sequenceNumber()).thenReturn("unparsable-sequence");
+        when(kinesisRecord.approximateArrivalTimestamp()).thenReturn(null);
+
+        fixture.setKinesisShardId("test-shard");
+
+        when(processSessionFactory.createSession()).thenReturn(session);
+        fixture.processRecords(processRecordsInput);
+        verify(processSessionFactory, times(1)).createSession();
+
+        // check non-poison pill records are output successfully
+        session.assertTransferCount(ConsumeKinesisStream.REL_SUCCESS, emittedFlowFiles.size());
+        final List<MockFlowFile> flowFiles = session.getFlowFilesForRelationship(ConsumeKinesisStream.REL_SUCCESS);
+        for (int i = 0; i < emittedFlowFiles.size(); i++) {
+            final EmittedFlowFile emittedFlowFile = emittedFlowFiles.get(i);
+            assertFlowFile(flowFiles.get(i), null, "partition-1", "1", "test-shard", emittedFlowFile.content, emittedFlowFile.recordCount);
+        }
+
+        verify(checkpointer, times(1)).checkpoint();
+
+        session.assertCommitted();
+        session.assertNotRolledBack();
+    }
+
+    private record EmittedFlowFile(String content, int recordCount) {
+        public static EmittedFlowFile of(final String content, final int recordCount) {
+            return new EmittedFlowFile(content, recordCount);
+        }
     }
 
     private void assertFlowFile(final MockFlowFile flowFile, final Date approxTimestamp, final String partitionKey,

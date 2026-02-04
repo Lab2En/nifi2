@@ -18,7 +18,6 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 @XmlType(name = "versionedFlow")
@@ -98,7 +97,7 @@ public class VersionedFlowDTO {
         this.comments = comments;
     }
 
-    @Schema(description = "The action being performed", allowableValues = COMMIT_ACTION + ", " + FORCE_COMMIT_ACTION)
+    @Schema(description = "The action being performed", allowableValues = {COMMIT_ACTION, FORCE_COMMIT_ACTION})
     public String getAction() {
         return action;
     }

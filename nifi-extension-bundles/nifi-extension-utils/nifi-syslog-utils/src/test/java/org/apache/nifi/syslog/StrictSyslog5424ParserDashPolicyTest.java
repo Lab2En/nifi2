@@ -16,10 +16,10 @@
  */
 package org.apache.nifi.syslog;
 
-
 import org.apache.nifi.syslog.utils.NilHandlingPolicy;
 
 public class StrictSyslog5424ParserDashPolicyTest extends BaseStrictSyslog5424ParserTest {
+    @Override
     protected NilHandlingPolicy getPolicy() {
         return NilHandlingPolicy.DASH;
     }

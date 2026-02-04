@@ -62,7 +62,7 @@ public abstract class AbstractHeartbeatMonitor implements HeartbeatMonitor {
     }
 
     @Override
-    public synchronized final void start() {
+    public final synchronized void start() {
         if (!stopped) {
             logger.info("Attempted to start Heartbeat Monitor but it is already started. Stopping heartbeat monitor and re-starting it.");
             stop();
@@ -77,21 +77,18 @@ public abstract class AbstractHeartbeatMonitor implements HeartbeatMonitor {
             logger.error("Failed to start Heartbeat Monitor", e);
         }
 
-        this.future = flowEngine.scheduleWithFixedDelay(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    monitorHeartbeats();
-                } catch (final Exception e) {
-                    clusterCoordinator.reportEvent(null, Severity.ERROR, "Failed to process heartbeats from nodes due to " + e.toString());
-                    logger.error("Failed to process heartbeats", e);
-                }
+        this.future = flowEngine.scheduleWithFixedDelay(() -> {
+            try {
+                monitorHeartbeats();
+            } catch (final Exception e) {
+                clusterCoordinator.reportEvent(null, Severity.ERROR, "Failed to process heartbeats from nodes due to " + e);
+                logger.error("Failed to process heartbeats", e);
             }
         }, heartbeatIntervalMillis, heartbeatIntervalMillis, TimeUnit.MILLISECONDS);
     }
 
     @Override
-    public synchronized final void stop() {
+    public final synchronized void stop() {
         if (stopped) {
             return;
         }

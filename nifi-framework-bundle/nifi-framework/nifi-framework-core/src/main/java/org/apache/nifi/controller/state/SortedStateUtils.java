@@ -28,7 +28,7 @@ public class SortedStateUtils {
     /**
      * The maximum number of state entries to return to a client
      */
-    public static final int MAX_COMPONENT_STATE_ENTRIES = 500;
+    public static final int MAX_COMPONENT_STATE_ENTRIES = 5000;
 
     /**
      * Gets a comparator for comparing state entry keys.
@@ -37,12 +37,7 @@ public class SortedStateUtils {
      */
     public static Comparator<String> getKeyComparator() {
         final Collator collator = Collator.getInstance(Locale.US);
-        return new Comparator<String>() {
-            @Override
-            public int compare(String s1, String s2) {
-                return collator.compare(s1, s2);
-            }
-        };
+        return collator::compare;
     }
 
     /**
@@ -52,11 +47,6 @@ public class SortedStateUtils {
      */
     public static Comparator<StateEntryDTO> getEntryDtoComparator() {
         final Collator collator = Collator.getInstance(Locale.US);
-        return new Comparator<StateEntryDTO>() {
-            @Override
-            public int compare(StateEntryDTO o1, StateEntryDTO o2) {
-                return collator.compare(o1.getKey(), o2.getKey());
-            }
-        };
+        return (o1, o2) -> collator.compare(o1.getKey(), o2.getKey());
     }
 }

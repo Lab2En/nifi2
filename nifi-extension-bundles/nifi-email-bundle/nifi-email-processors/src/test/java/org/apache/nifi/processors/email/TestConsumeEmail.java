@@ -20,20 +20,22 @@ package org.apache.nifi.processors.email;
 import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetupTest;
-import org.apache.nifi.util.MockFlowFile;
-import org.apache.nifi.util.TestRunner;
-import org.apache.nifi.util.TestRunners;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.integration.mail.AbstractMailReceiver;
-
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
+import org.apache.nifi.util.TestRunner;
+import org.apache.nifi.util.TestRunners;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.integration.mail.inbound.AbstractMailReceiver;
+
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -76,7 +78,6 @@ public class TestConsumeEmail {
 
     @Test
     public void testConsumeIMAP4() throws Exception {
-
         final TestRunner runner = TestRunners.newTestRunner(new ConsumeIMAP());
         runner.setProperty(ConsumeIMAP.HOST, ServerSetupTest.IMAP.getBindAddress());
         runner.setProperty(ConsumeIMAP.PORT, String.valueOf(ServerSetupTest.IMAP.getPort()));
@@ -92,7 +93,7 @@ public class TestConsumeEmail {
 
         runner.assertTransferCount(ConsumeIMAP.REL_SUCCESS, 2);
         final List<MockFlowFile> messages = runner.getFlowFilesForRelationship(ConsumeIMAP.REL_SUCCESS);
-        String result = new String(runner.getContentAsByteArray(messages.get(0)));
+        String result = new String(runner.getContentAsByteArray(messages.getFirst()));
 
         // Verify body
         assertTrue(result.contains("test test test chocolate"));
@@ -107,7 +108,6 @@ public class TestConsumeEmail {
 
     @Test
     public void testConsumePOP3() throws Exception {
-
         final TestRunner runner = TestRunners.newTestRunner(new ConsumePOP3());
         runner.setProperty(ConsumeIMAP.HOST, ServerSetupTest.POP3.getBindAddress());
         runner.setProperty(ConsumeIMAP.PORT, String.valueOf(ServerSetupTest.POP3.getPort()));
@@ -123,7 +123,7 @@ public class TestConsumeEmail {
 
         runner.assertTransferCount(ConsumePOP3.REL_SUCCESS, 2);
         final List<MockFlowFile> messages = runner.getFlowFilesForRelationship(ConsumePOP3.REL_SUCCESS);
-        String result = new String(runner.getContentAsByteArray(messages.get(0)));
+        String result = new String(runner.getContentAsByteArray(messages.getFirst()));
 
         // Verify body
         assertTrue(result.contains("test test test chocolate"));
@@ -152,5 +152,25 @@ public class TestConsumeEmail {
         consume = new ConsumePOP3();
 
         assertEquals("pop3", consume.getProtocol(runner.getProcessContext()));
+    }
+
+    @Test
+    void testMigrateProperties() {
+        final TestRunner runner = TestRunners.newTestRunner(ConsumeIMAP.class);
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("host", AbstractEmailProcessor.HOST.getName()),
+                Map.entry("port", AbstractEmailProcessor.PORT.getName()),
+                Map.entry("authorization-mode", AbstractEmailProcessor.AUTHORIZATION_MODE.getName()),
+                Map.entry("oauth2-access-token-provider", AbstractEmailProcessor.OAUTH2_ACCESS_TOKEN_PROVIDER.getName()),
+                Map.entry("user", AbstractEmailProcessor.USER.getName()),
+                Map.entry("password", AbstractEmailProcessor.PASSWORD.getName()),
+                Map.entry("folder", AbstractEmailProcessor.FOLDER.getName()),
+                Map.entry("fetch.size", AbstractEmailProcessor.FETCH_SIZE.getName()),
+                Map.entry("delete.messages", AbstractEmailProcessor.SHOULD_DELETE_MESSAGES.getName()),
+                Map.entry("connection.timeout", AbstractEmailProcessor.CONNECTION_TIMEOUT.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
     }
 }

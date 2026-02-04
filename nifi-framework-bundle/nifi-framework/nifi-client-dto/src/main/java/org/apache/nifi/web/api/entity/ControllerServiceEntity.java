@@ -16,9 +16,8 @@
  */
 package org.apache.nifi.web.api.entity;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
-
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.ControllerServiceDTO;
 import org.apache.nifi.web.api.dto.PermissionsDTO;
 import org.apache.nifi.web.api.dto.status.ControllerServiceStatusDTO;
@@ -50,10 +49,12 @@ public class ControllerServiceEntity extends ComponentEntity implements Permissi
     /**
      * @return controller service that is being serialized
      */
+    @Override
     public ControllerServiceDTO getComponent() {
         return component;
     }
 
+    @Override
     public void setComponent(ControllerServiceDTO component) {
         this.component = component;
     }

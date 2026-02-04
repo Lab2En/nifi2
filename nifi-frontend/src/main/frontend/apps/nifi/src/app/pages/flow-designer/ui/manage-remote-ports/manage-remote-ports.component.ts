@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy } from '@angular/core';
+import { Component, OnDestroy, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { filter, switchMap, take, tap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -39,10 +39,9 @@ import {
     stopRemotePortTransmission
 } from '../../state/manage-remote-ports/manage-remote-ports.actions';
 import { initialState } from '../../state/manage-remote-ports/manage-remote-ports.reducer';
-import { isDefinedAndNotNull } from 'libs/shared/src';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
 import { NiFiState } from '../../../../state';
-import { NiFiCommon, TextTip } from '@nifi/shared';
+import { isDefinedAndNotNull, NiFiCommon, TextTip } from '@nifi/shared';
 import { MatTableDataSource } from '@angular/material/table';
 import { Sort } from '@angular/material/sort';
 import { concatLatestFrom } from '@ngrx/operators';
@@ -54,9 +53,13 @@ import { selectAbout } from '../../../../state/about/about.selectors';
 
 @Component({
     templateUrl: './manage-remote-ports.component.html',
-    styleUrls: ['./manage-remote-ports.component.scss']
+    styleUrls: ['./manage-remote-ports.component.scss'],
+    standalone: false
 })
 export class ManageRemotePorts implements OnDestroy {
+    private store = inject<Store<NiFiState>>(Store);
+    private nifiCommon = inject(NiFiCommon);
+
     initialSortColumn: 'name' | 'type' | 'tasks' | 'count' | 'size' | 'duration' | 'compression' | 'actions' = 'name';
     initialSortDirection: 'asc' | 'desc' = 'asc';
     activeSort: Sort = {
@@ -85,10 +88,7 @@ export class ManageRemotePorts implements OnDestroy {
     private currentRpgId!: string;
     protected currentRpg: any | null = null;
 
-    constructor(
-        private store: Store<NiFiState>,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         // load the ports after the flow configuration `timeOffset` and about `timezone` are loaded into the store
         this.store
             .select(selectTimeOffset)

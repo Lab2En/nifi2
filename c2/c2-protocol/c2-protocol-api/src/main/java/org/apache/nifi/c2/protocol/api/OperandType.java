@@ -29,7 +29,9 @@ public enum OperandType {
     REPOSITORY,
     PROPERTIES,
     ASSET,
-    RESOURCE;
+    RESOURCE,
+    PROCESSOR,
+    FLOW;
 
     public static Optional<OperandType> fromString(String value) {
         return Arrays.stream(values())

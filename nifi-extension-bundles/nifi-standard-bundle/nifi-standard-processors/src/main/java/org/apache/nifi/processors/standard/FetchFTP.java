@@ -88,7 +88,7 @@ public class FetchFTP extends FetchFileTransfer {
     private static final PropertyDescriptor PORT =
             new PropertyDescriptor.Builder().fromPropertyDescriptor(UNDEFAULTED_PORT).defaultValue("21").build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             HOSTNAME,
             PORT,
             USERNAME,
@@ -110,13 +110,14 @@ public class FetchFTP extends FetchFileTransfer {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
-        super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        config.renameProperty(FTPTransfer.OBSOLETE_UTF8_ENCODING, FTPTransfer.UTF8_ENCODING.getName());
+        config.renameProperty(OLD_FILE_NOT_FOUND_LOG_LEVEL_PROPERTY_NAME, FILE_NOT_FOUND_LOG_LEVEL.getName());
     }
 
     @Override

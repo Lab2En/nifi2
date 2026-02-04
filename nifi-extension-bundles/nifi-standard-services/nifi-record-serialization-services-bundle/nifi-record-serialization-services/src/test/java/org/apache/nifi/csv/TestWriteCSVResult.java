@@ -17,6 +17,19 @@
 
 package org.apache.nifi.csv;
 
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.QuoteMode;
+import org.apache.nifi.schema.access.SchemaNameAsAttribute;
+import org.apache.nifi.serialization.SimpleRecordSchema;
+import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.MapRecord;
+import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.serialization.record.RecordField;
+import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.nifi.serialization.record.RecordSet;
+import org.junit.jupiter.api.Test;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -32,39 +45,26 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.QuoteMode;
-import org.apache.nifi.schema.access.SchemaNameAsAttribute;
-import org.apache.nifi.serialization.SimpleRecordSchema;
-import org.apache.nifi.serialization.record.DataType;
-import org.apache.nifi.serialization.record.MapRecord;
-import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.RecordField;
-import org.apache.nifi.serialization.record.RecordFieldType;
-import org.apache.nifi.serialization.record.RecordSchema;
-import org.apache.nifi.serialization.record.RecordSet;
-import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-
 
 public class TestWriteCSVResult {
 
     private final CSVFormat newLine = CSVFormat.DEFAULT.builder()
         .setRecordSeparator("\n")
-        .build();
+        .get();
     private final CSVFormat noQuote = newLine.builder()
         .setEscape('\\')
         .setQuoteMode(QuoteMode.NONE)
-        .build();
+        .get();
     private final CSVFormat doubleQuote = CSVFormat.DEFAULT.builder()
         .setEscape('\\')
         .setQuote('"')
         .setRecordSeparator("\n")
-        .build();
+        .get();
     private final CSVFormat doubleQuoteNoEscape = doubleQuote.builder()
         .setEscape(null)
-        .build();
+        .get();
 
     @Test
     public void testNumbersNotQuoted() throws IOException {
@@ -81,7 +81,7 @@ public class TestWriteCSVResult {
 
         // Test with Non-Numeric Quote Mode
         final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        CSVFormat csvFormat = newLine.builder().setQuoteMode(QuoteMode.NON_NUMERIC).build();
+        CSVFormat csvFormat = newLine.builder().setQuoteMode(QuoteMode.NON_NUMERIC).get();
         try (final WriteCSVResult result = new WriteCSVResult(csvFormat, schema, new SchemaNameAsAttribute(), baos,
             RecordFieldType.DATE.getDefaultFormat(), RecordFieldType.TIME.getDefaultFormat(), RecordFieldType.TIMESTAMP.getDefaultFormat(), true, "UTF-8")) {
             result.writeRecord(record);
@@ -93,7 +93,7 @@ public class TestWriteCSVResult {
         baos.reset();
 
         // Test with MINIMAL Quote Mode
-        csvFormat = newLine.builder().setQuoteMode(QuoteMode.MINIMAL).build();
+        csvFormat = newLine.builder().setQuoteMode(QuoteMode.MINIMAL).get();
         try (final WriteCSVResult result = new WriteCSVResult(csvFormat, schema, new SchemaNameAsAttribute(), baos,
             RecordFieldType.DATE.getDefaultFormat(), RecordFieldType.TIME.getDefaultFormat(), RecordFieldType.TIMESTAMP.getDefaultFormat(), true, "UTF-8")) {
             result.writeRecord(record);
@@ -105,7 +105,7 @@ public class TestWriteCSVResult {
 
     @Test
     public void testDataTypes() throws IOException {
-        final CSVFormat csvFormat = newLine.builder().setQuoteMode(QuoteMode.ALL).build();
+        final CSVFormat csvFormat = newLine.builder().setQuoteMode(QuoteMode.ALL).get();
 
         final StringBuilder headerBuilder = new StringBuilder();
         final List<RecordField> fields = new ArrayList<>();
@@ -394,7 +394,7 @@ public class TestWriteCSVResult {
 
     @Test
     public void testWriteHeaderWithNoRecords() throws IOException {
-        final CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setEscape('\\').setQuoteMode(QuoteMode.NONE).setRecordSeparator(",").build();
+        final CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setEscape('\\').setQuoteMode(QuoteMode.NONE).setRecordSeparator(",").get();
         final List<RecordField> fields = new ArrayList<>();
         fields.add(new RecordField("id", RecordFieldType.STRING.getDataType()));
         fields.add(new RecordField("name", RecordFieldType.STRING.getDataType()));

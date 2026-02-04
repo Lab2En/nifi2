@@ -16,11 +16,11 @@
  */
 package org.apache.nifi.update.attributes;
 
-import org.apache.nifi.parameter.ParameterLookup;
 import org.apache.nifi.attribute.expression.language.Query;
 import org.apache.nifi.attribute.expression.language.StandardExpressionLanguageCompiler;
 import org.apache.nifi.attribute.expression.language.exception.AttributeExpressionLanguageParsingException;
 import org.apache.nifi.expression.AttributeExpression.ResultType;
+import org.apache.nifi.parameter.ParameterLookup;
 import org.apache.nifi.update.attributes.dto.ActionDTO;
 import org.apache.nifi.update.attributes.dto.ConditionDTO;
 import org.apache.nifi.update.attributes.dto.RuleDTO;
@@ -33,9 +33,6 @@ import java.util.Set;
  */
 public class UpdateAttributeModelFactory {
 
-    public UpdateAttributeModelFactory() {
-    }
-
     public Rule createRule(final RuleDTO dto) {
         if (dto == null) {
             throw new IllegalArgumentException("Rule must be specified.");
@@ -43,7 +40,7 @@ public class UpdateAttributeModelFactory {
         if (dto.getName() == null) {
             throw new IllegalArgumentException("Rule name must be specified.");
         }
-        if (dto.getName().trim().isEmpty()) {
+        if (dto.getName().isBlank()) {
             throw new IllegalArgumentException("Rule name cannot be blank.");
         }
 

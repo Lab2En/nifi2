@@ -16,19 +16,11 @@
  */
 package org.apache.nifi.web.api;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.ServletContext;
@@ -78,6 +70,8 @@ import org.apache.nifi.web.api.dto.ProcessorConfigDTO;
 import org.apache.nifi.web.api.dto.ProcessorDTO;
 import org.apache.nifi.web.api.dto.PropertyDescriptorDTO;
 import org.apache.nifi.web.api.dto.VerifyConfigRequestDTO;
+import org.apache.nifi.web.api.entity.ClearBulletinsRequestEntity;
+import org.apache.nifi.web.api.entity.ClearBulletinsResultEntity;
 import org.apache.nifi.web.api.entity.ComponentStateEntity;
 import org.apache.nifi.web.api.entity.ConfigurationAnalysisEntity;
 import org.apache.nifi.web.api.entity.ProcessorDiagnosticsEntity;
@@ -93,6 +87,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
+
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * RESTful endpoint for managing a Processor.
@@ -195,18 +197,16 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}")
     @Operation(
             summary = "Gets a processor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /processors/{uuid}")
             }
     )
     public Response getProcessor(
@@ -236,23 +236,21 @@ public class ProcessorResource extends ApplicationResource {
 
 
     @POST
-    @Consumes(MediaType.APPLICATION_JSON)
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.WILDCARD})
     @Produces(MediaType.APPLICATION_JSON)
     @Path("/run-status-details/queries")
     @Operation(
             summary = "Submits a query to retrieve the run status details of all processors that are in the given list of Processor IDs",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorsRunStatusDetailsEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /processors/{uuid} for each processor whose run status information is requested")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorsRunStatusDetailsEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /processors/{uuid} for each processor whose run status information is requested")
             }
     )
     public Response getProcessorRunStatusDetails(
@@ -284,18 +282,16 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}/threads")
     @Operation(
             summary = "Terminates a processor, essentially \"deleting\" its threads and any active tasks",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /processors/{uuid} or /operation/processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /processors/{uuid} or /operation/processors/{uuid}")
             }
     )
     public Response terminateProcessor(
@@ -330,19 +326,17 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}/diagnostics")
     @Operation(
             summary = "Gets diagnostics information about a processor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
-            description = NON_GUARANTEED_ENDPOINT,
-            security = {
-                    @SecurityRequirement(name = "Read - /processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            description = NON_GUARANTEED_ENDPOINT,
+            security = {
+                    @SecurityRequirement(name = "Read - /processors/{uuid}")
             }
     )
     public Response getProcessorDiagnostics(
@@ -380,18 +374,16 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}/descriptors")
     @Operation(
             summary = "Gets the descriptor for a processor property",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = PropertyDescriptorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = PropertyDescriptorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /processors/{uuid}")
             }
     )
     public Response getPropertyDescriptor(
@@ -452,18 +444,16 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}/state")
     @Operation(
             summary = "Gets the state for a processor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /processors/{uuid}")
             }
     )
     public Response getState(
@@ -502,23 +492,21 @@ public class ProcessorResource extends ApplicationResource {
      * @throws InterruptedException if interrupted
      */
     @POST
-    @Consumes(MediaType.WILDCARD)
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.WILDCARD})
     @Produces(MediaType.APPLICATION_JSON)
     @Path("{id}/state/clear-requests")
     @Operation(
             summary = "Clears the state for a processor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ComponentStateEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /processors/{uuid}")
             }
     )
     public Response clearState(
@@ -526,10 +514,18 @@ public class ProcessorResource extends ApplicationResource {
                     description = "The processor id.",
                     required = true
             )
-            @PathParam("id") final String id) throws InterruptedException {
+            @PathParam("id") final String id,
+            @Parameter(
+                    description = "Optional component state to perform a selective key removal. If omitted, clears all state.",
+                    required = false
+            ) final ComponentStateEntity componentStateEntity) throws InterruptedException {
 
         if (isReplicateRequest()) {
-            return replicate(HttpMethod.POST);
+            if (componentStateEntity == null) {
+                return replicate(HttpMethod.POST);
+            } else {
+                return replicate(HttpMethod.POST, componentStateEntity);
+            }
         }
 
         final ProcessorEntity requestProcessorEntity = new ProcessorEntity();
@@ -544,13 +540,86 @@ public class ProcessorResource extends ApplicationResource {
                 },
                 () -> serviceFacade.verifyCanClearProcessorState(id),
                 (processorEntity) -> {
-                    // get the component state
-                    serviceFacade.clearProcessorState(processorEntity.getId());
+                    // clear state
+                    final ComponentStateDTO expectedState = componentStateEntity == null ? null : componentStateEntity.getComponentState();
+                    final ComponentStateDTO state = serviceFacade.clearProcessorState(processorEntity.getId(), expectedState);
 
                     // generate the response entity
                     final ComponentStateEntity entity = new ComponentStateEntity();
+                    entity.setComponentState(state);
 
                     // generate the response
+                    return generateOkResponse(entity).build();
+                }
+        );
+    }
+
+    /**
+     * Clears bulletins for a processor.
+     *
+     * @param id The id of the processor
+     * @param clearBulletinsRequestEntity The clear bulletin request
+     * @return a clearBulletinsResultEntity
+     */
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("{id}/bulletins/clear-requests")
+    @Operation(
+            summary = "Clears bulletins for a processor",
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ClearBulletinsResultEntity.class))),
+                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
+                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
+                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
+                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /processors/{uuid}")
+            }
+    )
+    public Response clearBulletins(
+            @Parameter(
+                    description = "The processor id.",
+                    required = true
+            )
+            @PathParam("id") final String id,
+            @Parameter(
+                    description = "The clear bulletin request specifying the timestamp from which to clear bulletins.",
+                    required = true
+            ) final ClearBulletinsRequestEntity clearBulletinsRequestEntity) {
+
+        if (clearBulletinsRequestEntity == null) {
+            throw new IllegalArgumentException("Clear bulletin request must be specified.");
+        }
+
+        // Validate the request
+        if (clearBulletinsRequestEntity.getFromTimestamp() == null) {
+            throw new IllegalArgumentException("From timestamp must be specified in the clear bulletin request.");
+        }
+
+        if (isReplicateRequest()) {
+            return replicate(HttpMethod.POST, clearBulletinsRequestEntity);
+        }
+
+        final ProcessorEntity requestProcessorEntity = new ProcessorEntity();
+        requestProcessorEntity.setId(id);
+
+        return withWriteLock(
+                serviceFacade,
+                requestProcessorEntity,
+                lookup -> {
+                    final Authorizable processor = lookup.getProcessor(id).getAuthorizable();
+                    processor.authorize(authorizer, RequestAction.WRITE, NiFiUserUtils.getNiFiUser());
+                },
+                () -> { },
+                (processorEntity) -> {
+                    final Instant fromTimestamp = clearBulletinsRequestEntity.getFromTimestamp();
+
+                    // Clear bulletins for the processor
+                    final ClearBulletinsResultEntity entity = serviceFacade.clearBulletinsForComponent(processorEntity.getId(), fromTimestamp);
+
                     return generateOkResponse(entity).build();
                 }
         );
@@ -563,18 +632,16 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}/config/analysis")
     @Operation(
             summary = "Performs analysis of the component's configuration, providing information about which attributes are referenced.",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ConfigurationAnalysisEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ConfigurationAnalysisEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /processors/{uuid}")
             }
     )
     public Response analyzeConfiguration(
@@ -626,7 +693,14 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}/config/verification-requests")
     @Operation(
             summary = "Performs verification of the Processor's configuration",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
+                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
+                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
+                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
+                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
             description = "This will initiate the process of verifying a given Processor configuration. This may be a long-running task. As a result, this endpoint will immediately return a " +
                     "ProcessorConfigVerificationRequestEntity, and the process of performing the verification will occur asynchronously in the background. " +
                     "The client may then periodically poll the status of the request by " +
@@ -634,15 +708,6 @@ public class ProcessorResource extends ApplicationResource {
                     "/processors/{processorId}/verification-requests/{requestId}.",
             security = {
                     @SecurityRequirement(name = "Read - /processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
-                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
-                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
-                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
-                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
-                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
             }
     )
     public Response submitProcessorVerificationRequest(
@@ -692,21 +757,19 @@ public class ProcessorResource extends ApplicationResource {
     @Path("{id}/config/verification-requests/{requestId}")
     @Operation(
             summary = "Returns the Verification Request with the given ID",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
-            description = "Returns the Verification Request with the given ID. Once an Verification Request has been created, "
-                    + "that request can subsequently be retrieved via this endpoint, and the request that is fetched will contain the updated state, such as percent complete, the "
-                    + "current state of the request, and any failures. ",
-            security = {
-                    @SecurityRequirement(name = "Only the user that submitted the request can get it")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            description = "Returns the Verification Request with the given ID. Once an Verification Request has been created, "
+                    + "that request can subsequently be retrieved via this endpoint, and the request that is fetched will contain the updated state, such as percent complete, the "
+                    + "current state of the request, and any failures. ",
+            security = {
+                    @SecurityRequirement(name = "Only the user that submitted the request can get it")
             }
     )
     public Response getVerificationRequest(
@@ -733,21 +796,19 @@ public class ProcessorResource extends ApplicationResource {
     @Path("{id}/config/verification-requests/{requestId}")
     @Operation(
             summary = "Deletes the Verification Request with the given ID",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
-            description = "Deletes the Verification Request with the given ID. After a request is created, it is expected "
-                    + "that the client will properly clean up the request by DELETE'ing it, once the Verification process has completed. If the request is deleted before the request "
-                    + "completes, then the Verification request will finish the step that it is currently performing and then will cancel any subsequent steps.",
-            security = {
-                    @SecurityRequirement(name = "Only the user that submitted the request can remove it")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = VerifyConfigRequestEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            description = "Deletes the Verification Request with the given ID. After a request is created, it is expected "
+                    + "that the client will properly clean up the request by DELETE'ing it, once the Verification process has completed. If the request is deleted before the request "
+                    + "completes, then the Verification request will finish the step that it is currently performing and then will cancel any subsequent steps.",
+            security = {
+                    @SecurityRequirement(name = "Only the user that submitted the request can remove it")
             }
     )
     public Response deleteVerificationRequest(
@@ -801,19 +862,17 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}")
     @Operation(
             summary = "Updates a processor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /processors/{uuid}"),
-                    @SecurityRequirement(name = "Read - any referenced Controller Services if this request changes the reference - /controller-services/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /processors/{uuid}"),
+                    @SecurityRequirement(name = "Read - any referenced Controller Services if this request changes the reference - /controller-services/{uuid}")
             }
     )
     public Response updateProcessor(
@@ -920,20 +979,18 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}")
     @Operation(
             summary = "Deletes a processor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /processors/{uuid}"),
-                    @SecurityRequirement(name = "Write - Parent Process Group - /process-groups/{uuid}"),
-                    @SecurityRequirement(name = "Read - any referenced Controller Services - /controller-services/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /processors/{uuid}"),
+                    @SecurityRequirement(name = "Write - Parent Process Group - /process-groups/{uuid}"),
+                    @SecurityRequirement(name = "Read - any referenced Controller Services - /controller-services/{uuid}")
             }
     )
     public Response deleteProcessor(
@@ -1005,18 +1062,16 @@ public class ProcessorResource extends ApplicationResource {
     @Path("/{id}/run-status")
     @Operation(
             summary = "Updates run status of a processor",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /processors/{uuid} or /operation/processors/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /processors/{uuid} or /operation/processors/{uuid}")
             }
     )
     public Response updateRunStatus(

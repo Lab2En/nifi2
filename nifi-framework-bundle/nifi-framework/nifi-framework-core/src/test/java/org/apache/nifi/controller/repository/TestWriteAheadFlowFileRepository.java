@@ -47,8 +47,8 @@ import org.apache.nifi.util.file.FileUtils;
 import org.apache.nifi.wali.SequentialAccessWriteAheadLog;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.slf4j.Logger;
@@ -104,7 +104,8 @@ public class TestWriteAheadFlowFileRepository {
     }
 
     @Test
-    @Disabled("Intended only for local performance testing before/after making changes")
+    @EnabledIfSystemProperty(named = "nifi.test.performance", matches = "true",
+            disabledReason = "Intended only for local performance testing before/after making changes")
     public void testUpdatePerformance() throws IOException, InterruptedException {
         final FlowFileQueue queue = new FlowFileQueue() {
             private LoadBalanceCompression compression = LoadBalanceCompression.DO_NOT_COMPRESS;
@@ -370,29 +371,26 @@ public class TestWriteAheadFlowFileRepository {
         final Thread[] threads = new Thread[numThreads];
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < numThreads; i++) {
-                final Thread t = new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        final List<SerializedRepositoryRecord> records = new ArrayList<>();
-                        final int numBatches = updateCountPerThread / batchSize;
-                        final MockFlowFile baseFlowFile = new MockFlowFile(0L);
+                final Thread t = new Thread(() -> {
+                    final List<SerializedRepositoryRecord> records = new ArrayList<>();
+                    final int numBatches = updateCountPerThread / batchSize;
+                    final MockFlowFile baseFlowFile = new MockFlowFile(0L);
 
-                        for (int i = 0; i < numBatches; i++) {
-                            records.clear();
-                            for (int k = 0; k < batchSize; k++) {
-                                final MockFlowFileRecord flowFile = new MockFlowFileRecord(baseFlowFile.getAttributes(), baseFlowFile.getSize());
-                                final String uuid = flowFile.getAttribute("uuid");
+                    for (int i1 = 0; i1 < numBatches; i1++) {
+                        records.clear();
+                        for (int k = 0; k < batchSize; k++) {
+                            final MockFlowFileRecord flowFile = new MockFlowFileRecord(baseFlowFile.getAttributes(), baseFlowFile.getSize());
+                            final String uuid = flowFile.getAttribute("uuid");
 
-                                final StandardRepositoryRecord record = new StandardRepositoryRecord(null, flowFile);
-                                record.setDestination(queue);
-                                final Map<String, String> updatedAttrs = Collections.singletonMap("uuid", uuid);
-                                record.setWorking(flowFile, updatedAttrs, false);
+                            final StandardRepositoryRecord record = new StandardRepositoryRecord(null, flowFile);
+                            record.setDestination(queue);
+                            final Map<String, String> updatedAttrs = Collections.singletonMap("uuid", uuid);
+                            record.setWorking(flowFile, updatedAttrs, false);
 
-                                records.add(new LiveSerializedRepositoryRecord(record));
-                            }
-
-                            assertThrows(IOException.class, () -> repo.update(records, false));
+                            records.add(new LiveSerializedRepositoryRecord(record));
                         }
+
+                        assertThrows(IOException.class, () -> repo.update(records, false));
                     }
                 });
 

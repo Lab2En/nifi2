@@ -55,7 +55,7 @@ import java.util.List;
 @SeeAlso(PutSFTP.class)
 public class GetSFTP extends GetFileTransfer {
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             SFTPTransfer.HOSTNAME,
             SFTPTransfer.PORT,
             SFTPTransfer.USERNAME,
@@ -80,6 +80,7 @@ public class GetSFTP extends GetFileTransfer {
             SFTPTransfer.USE_COMPRESSION,
             SFTPTransfer.USE_NATURAL_ORDERING,
             SFTPTransfer.PROXY_CONFIGURATION_SERVICE,
+            SFTPTransfer.ALGORITHM_CONFIGURATION,
             SFTPTransfer.CIPHERS_ALLOWED,
             SFTPTransfer.KEY_ALGORITHMS_ALLOWED,
             SFTPTransfer.KEY_EXCHANGE_ALGORITHMS_ALLOWED,
@@ -88,13 +89,15 @@ public class GetSFTP extends GetFileTransfer {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        SFTPTransfer.migrateAlgorithmProperties(config);
+        config.renameProperty(SFTPTransfer.OLD_FOLLOW_SYMLINK_PROPERTY_NAME, SFTPTransfer.FOLLOW_SYMLINK.getName());
     }
 
     @Override

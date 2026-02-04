@@ -16,19 +16,16 @@
  */
 package org.apache.nifi.processors.aws.credentials.provider.factory.strategies;
 
-import java.util.ArrayList;
-import java.util.Collection;
-
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.processors.aws.credentials.provider.factory.CredentialsStrategy;
-
-import com.amazonaws.auth.AWSCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
+import java.util.ArrayList;
+import java.util.Collection;
 
 /**
  * Partial implementation of CredentialsStrategy to support most simple property-based strategies.
@@ -80,8 +77,7 @@ public abstract class AbstractCredentialsStrategy implements CredentialsStrategy
         return validationFailureResults;
     }
 
-    public abstract AWSCredentialsProvider getCredentialsProvider(final PropertyContext propertyContext);
-
+    @Override
     public String getName() {
         return name;
     }
@@ -90,12 +86,6 @@ public abstract class AbstractCredentialsStrategy implements CredentialsStrategy
     @Override
     public boolean canCreateDerivedCredential(final PropertyContext propertyContext) {
         return false;
-    }
-
-    @Override
-    public AWSCredentialsProvider getDerivedCredentialsProvider(final PropertyContext propertyContext,
-                                                                final AWSCredentialsProvider primaryCredentialsProvider) {
-        return null;
     }
 
     @Override

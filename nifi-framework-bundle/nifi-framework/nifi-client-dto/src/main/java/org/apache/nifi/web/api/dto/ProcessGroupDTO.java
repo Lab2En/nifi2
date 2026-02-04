@@ -17,10 +17,9 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlType;
 import org.apache.nifi.web.api.dto.util.NumberUtil;
 import org.apache.nifi.web.api.entity.ParameterContextReferenceEntity;
-
-import jakarta.xml.bind.annotation.XmlType;
 
 /**
  * The details for a process group within this NiFi flow.
@@ -64,10 +63,6 @@ public class ProcessGroupDTO extends ComponentDTO {
     private String statelessGroupScheduledState;
 
     private FlowSnippetDTO contents;
-
-    public ProcessGroupDTO() {
-        super();
-    }
 
     /**
      * The name of this Process Group.
@@ -335,7 +330,7 @@ public class ProcessGroupDTO extends ComponentDTO {
         this.parameterContext = parameterContext;
     }
 
-    @Schema(description = "The FlowFile Concurrency for this Process Group.", allowableValues = "UNBOUNDED, SINGLE_FLOWFILE_PER_NODE, SINGLE_BATCH_PER_NODE")
+    @Schema(description = "The FlowFile Concurrency for this Process Group.", allowableValues = {"UNBOUNDED", "SINGLE_FLOWFILE_PER_NODE", "SINGLE_BATCH_PER_NODE"})
     public String getFlowfileConcurrency() {
         return flowfileConcurrency;
     }
@@ -345,7 +340,7 @@ public class ProcessGroupDTO extends ComponentDTO {
     }
 
     @Schema(description = "The Outbound Policy that is used for determining how FlowFiles should be transferred out of the Process Group.",
-        allowableValues = "STREAM_WHEN_AVAILABLE, BATCH_OUTPUT")
+        allowableValues = {"STREAM_WHEN_AVAILABLE", "BATCH_OUTPUT"})
     public String getFlowfileOutboundPolicy() {
         return flowfileOutboundPolicy;
     }
@@ -391,7 +386,7 @@ public class ProcessGroupDTO extends ComponentDTO {
     }
 
     @Schema(description = "The Execution Engine that should be used to run the flow represented by this Process Group.",
-        allowableValues = "STATELESS, STANDARD, INHERITED")
+        allowableValues = {"STATELESS", "STANDARD", "INHERITED"})
     public String getExecutionEngine() {
         return executionEngine;
     }
@@ -401,7 +396,7 @@ public class ProcessGroupDTO extends ComponentDTO {
     }
 
     @Schema(description = "If the Process Group is configured to run in using the Stateless Engine, represents the current state. Otherwise, will be STOPPED.",
-            allowableValues = "STOPPED, RUNNING")
+            allowableValues = {"STOPPED", "RUNNING"})
     public String getStatelessGroupScheduledState() {
         return statelessGroupScheduledState;
     }

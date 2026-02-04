@@ -200,52 +200,37 @@ public class Oracle12DatabaseAdapter implements DatabaseAdapter {
     }
 
     @Override
-    public List<String> getAlterTableStatements(String tableName, List<ColumnDescription> columnsToAdd, final boolean quoteTableName, final boolean quoteColumnNames) {
+    public String getAlterTableStatement(String tableName, List<ColumnDescription> columnsToAdd) {
         StringBuilder createTableStatement = new StringBuilder();
 
         List<String> columnsAndDatatypes = new ArrayList<>(columnsToAdd.size());
         for (ColumnDescription column : columnsToAdd) {
             String dataType = getSQLForDataType(column.getDataType());
             StringBuilder sb = new StringBuilder()
-                    .append(quoteColumnNames ? getColumnQuoteString() : "")
                     .append(column.getColumnName())
-                    .append(quoteColumnNames ? getColumnQuoteString() : "")
                     .append(" ")
                     .append(dataType);
             columnsAndDatatypes.add(sb.toString());
         }
 
         createTableStatement.append("ALTER TABLE ")
-                .append(quoteTableName ? getTableQuoteString() : "")
                 .append(tableName)
-                .append(quoteTableName ? getTableQuoteString() : "")
                 .append(" ADD (")
                 .append(String.join(", ", columnsAndDatatypes))
                 .append(") ");
 
-        return List.of(createTableStatement.toString());
+        return createTableStatement.toString();
     }
 
     @Override
     public String getSQLForDataType(int sqlType) {
-        switch (sqlType) {
-            case Types.DOUBLE:
-                return "DOUBLE PRECISION";
-            case CHAR:
-            case LONGNVARCHAR:
-            case LONGVARCHAR:
-            case NCHAR:
-            case NVARCHAR:
-            case VARCHAR:
-            case CLOB:
-            case NCLOB:
-            case OTHER:
-            case SQLXML:
+        return switch (sqlType) {
+            case Types.DOUBLE -> "DOUBLE PRECISION";
+            case CHAR, LONGNVARCHAR, LONGVARCHAR, NCHAR, NVARCHAR, VARCHAR, CLOB, NCLOB, OTHER, SQLXML ->
                 // Must have a max length specified (the Oracle docs say 2000), and use VARCHAR2 instead of VARCHAR for consistent comparison semantics
-                return "VARCHAR2(2000)";
-            default:
-                return JDBCType.valueOf(sqlType).getName();
-        }
+                "VARCHAR2(2000)";
+            default -> JDBCType.valueOf(sqlType).getName();
+        };
     }
 
     @Override
@@ -256,15 +241,13 @@ public class Oracle12DatabaseAdapter implements DatabaseAdapter {
     /**
      * Generates a CREATE TABLE statement using the specified table schema
      * @param tableSchema The table schema including column information
-     * @param quoteTableName Whether to quote the table name in the generated DDL
-     * @param quoteColumnNames Whether to quote column names in the generated DDL
      * @return A String containing DDL to create the specified table
      */
     @Override
-    public String getCreateTableStatement(TableSchema tableSchema, boolean quoteTableName, boolean quoteColumnNames) {
+    public String getCreateTableStatement(TableSchema tableSchema) {
         StringBuilder createTableStatement = new StringBuilder()
                 .append("DECLARE\n\tsql_stmt long;\nBEGIN\n\tsql_stmt:='CREATE TABLE ")
-                .append(generateTableName(quoteTableName, tableSchema.getCatalogName(), tableSchema.getSchemaName(), tableSchema.getTableName(), tableSchema))
+                .append(generateTableName(tableSchema.getCatalogName(), tableSchema.getSchemaName(), tableSchema.getTableName(), tableSchema))
                 .append(" (");
 
         List<ColumnDescription> columns = tableSchema.getColumnsAsList();
@@ -273,9 +256,7 @@ public class Oracle12DatabaseAdapter implements DatabaseAdapter {
             ColumnDescription column = columns.get(i);
             createTableStatement
                     .append((i != 0) ? ", " : "")
-                    .append(quoteColumnNames ? getColumnQuoteString() : "")
                     .append(column.getColumnName())
-                    .append(quoteColumnNames ? getColumnQuoteString() : "")
                     .append(" ")
                     .append(getSQLForDataType(column.getDataType()))
                     .append(column.isNullable() ? "" : " NOT NULL")

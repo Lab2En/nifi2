@@ -61,8 +61,8 @@ import java.util.Set;
 )
 @WritesAttributes(
     {
-            @WritesAttribute(attribute = "mime.type", description = "Sets the MIME type of the output if the 'MIME Type' property is set"),
-            @WritesAttribute(attribute = "Dynamic property key", description = "Value for the corresponding dynamic property, if any is set")
+        @WritesAttribute(attribute = "mime.type", description = "Sets the MIME type of the output if the 'MIME Type' property is set"),
+        @WritesAttribute(attribute = "Dynamic property key", description = "Value for the corresponding dynamic property, if any is set")
     }
 )
 @DefaultSchedule(strategy = SchedulingStrategy.TIMER_DRIVEN, period = "1 min")
@@ -88,17 +88,22 @@ public class GetFileResource extends AbstractProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(FILE_RESOURCE, MIME_TYPE);
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        FILE_RESOURCE,
+        MIME_TYPE
+    );
 
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(SUCCESS);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        SUCCESS
+    );
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -122,7 +127,7 @@ public class GetFileResource extends AbstractProcessor {
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) {
         final Map<PropertyDescriptor, String> processorProperties = context.getProperties();
-        final Map<String, String> generatedAttributes = new HashMap<String, String>();
+        final Map<String, String> generatedAttributes = new HashMap<>();
         for (final Map.Entry<PropertyDescriptor, String> entry : processorProperties.entrySet()) {
             final PropertyDescriptor property = entry.getKey();
             if (property.isDynamic()) {

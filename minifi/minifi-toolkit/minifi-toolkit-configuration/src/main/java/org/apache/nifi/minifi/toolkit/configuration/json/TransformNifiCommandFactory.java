@@ -17,19 +17,23 @@
 
 package org.apache.nifi.minifi.toolkit.configuration.json;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.ArrayList;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.nifi.controller.flow.VersionedDataflow;
+import org.apache.nifi.flow.ScheduledState;
+import org.apache.nifi.flow.VersionedProcessGroup;
+import org.apache.nifi.flow.VersionedRemoteGroupPort;
+import org.apache.nifi.flow.VersionedRemoteProcessGroup;
 import org.apache.nifi.minifi.toolkit.configuration.ConfigMain;
 import org.apache.nifi.minifi.toolkit.configuration.ConfigTransformException;
 import org.apache.nifi.minifi.toolkit.configuration.PathInputStreamFactory;
 import org.apache.nifi.minifi.toolkit.configuration.PathOutputStreamFactory;
+import org.apache.nifi.minifi.toolkit.schema.CorePropertiesSchema;
 import org.apache.nifi.registry.flow.RegisteredFlowSnapshot;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
 
 public class TransformNifiCommandFactory {
 
@@ -63,8 +67,9 @@ public class TransformNifiCommandFactory {
             RegisteredFlowSnapshot registeredFlowSnapshot = readNifiFlow(sourceNiFiJsonPath);
             VersionedDataflow versionedDataflow = new VersionedDataflow();
             versionedDataflow.setRootGroup(registeredFlowSnapshot.getFlowContents());
-            versionedDataflow
-                    .setParameterContexts(new ArrayList<>(registeredFlowSnapshot.getParameterContexts().values()));
+            versionedDataflow.setParameterContexts(new ArrayList<>(registeredFlowSnapshot.getParameterContexts().values()));
+            setDefaultValues(versionedDataflow);
+
             persistFlowJson(versionedDataflow, targetMiNiFiJsonPath);
         } catch (ConfigTransformException e) {
             System.out.println("Unable to convert NiFi JSON to MiNiFi flow JSON: " + e);
@@ -99,4 +104,24 @@ public class TransformNifiCommandFactory {
                     ConfigMain.ERR_UNABLE_TO_SAVE_CONFIG, e);
         }
     }
+
+    private void setDefaultValues(VersionedDataflow versionedDataflow) {
+        versionedDataflow.setMaxTimerDrivenThreadCount(CorePropertiesSchema.DEFAULT_MAX_CONCURRENT_THREADS);
+        setDefaultValues(versionedDataflow.getRootGroup());
+    }
+
+    private void setDefaultValues(VersionedProcessGroup versionedProcessGroup) {
+        versionedProcessGroup.getRemoteProcessGroups().forEach(this::setDefaultValues);
+        versionedProcessGroup.getProcessGroups().forEach(this::setDefaultValues);
+    }
+
+    private void setDefaultValues(VersionedRemoteProcessGroup versionedRemoteProcessGroup) {
+        versionedRemoteProcessGroup.getInputPorts().forEach(this::setDefaultValues);
+    }
+
+    private void setDefaultValues(VersionedRemoteGroupPort versionedRemoteGroupPort) {
+        versionedRemoteGroupPort.setScheduledState(ScheduledState.RUNNING);
+    }
+
+
 }

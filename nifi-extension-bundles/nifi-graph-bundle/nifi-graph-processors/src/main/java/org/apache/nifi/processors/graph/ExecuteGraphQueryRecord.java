@@ -30,6 +30,7 @@ import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.graph.GraphClientService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -51,9 +52,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -74,8 +73,7 @@ import java.util.stream.Collectors;
 public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
 
     public static final PropertyDescriptor CLIENT_SERVICE = new PropertyDescriptor.Builder()
-            .name("client-service")
-            .displayName("Client Service")
+            .name("Client Service")
             .description("The graph client service for connecting to a graph database.")
             .identifiesControllerService(GraphClientService.class)
             .addValidator(Validator.VALID)
@@ -83,8 +81,7 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
             .build();
 
     public static final PropertyDescriptor READER_SERVICE = new PropertyDescriptor.Builder()
-            .name("reader-service")
-            .displayName("Record Reader")
+            .name("Record Reader")
             .description("The record reader to use with this processor.")
             .identifiesControllerService(RecordReaderFactory.class)
             .required(true)
@@ -92,8 +89,7 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
             .build();
 
     public static final PropertyDescriptor WRITER_SERVICE = new PropertyDescriptor.Builder()
-            .name("writer-service")
-            .displayName("Failed Record Writer")
+            .name("Failed Record Writer")
             .description("The record writer to use for writing failed records.")
             .identifiesControllerService(RecordSetWriterFactory.class)
             .required(true)
@@ -101,8 +97,7 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
             .build();
 
     public static final PropertyDescriptor SUBMISSION_SCRIPT = new PropertyDescriptor.Builder()
-            .name("record-script")
-            .displayName("Graph Record Script")
+            .name("Graph Record Script")
             .description("Script to perform the business logic on graph, using flow file attributes and custom properties " +
                     "as variable-value pairs in its logic.")
             .required(true)
@@ -120,10 +115,6 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
                 .dynamic(true).addValidator(StandardValidators.NON_EMPTY_VALIDATOR).build();
     }
 
-    public static final List<PropertyDescriptor> DESCRIPTORS = Collections.unmodifiableList(Arrays.asList(
-            CLIENT_SERVICE, READER_SERVICE, WRITER_SERVICE, SUBMISSION_SCRIPT
-    ));
-
     public static final Relationship SUCCESS = new Relationship.Builder().name("original")
                                                     .description("Original flow files that successfully interacted with " +
                                                             "graph server.")
@@ -136,9 +127,18 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
                                                     .autoTerminateDefault(true)
                                                     .build();
 
-    public static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            SUCCESS, FAILURE, GRAPH
-    )));
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CLIENT_SERVICE,
+            READER_SERVICE,
+            WRITER_SERVICE,
+            SUBMISSION_SCRIPT
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE,
+            GRAPH
+    );
 
     public static final String RECORD_COUNT = "record.count";
     public static final String GRAPH_OPERATION_TIME = "graph.operations.took";
@@ -151,7 +151,7 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     private GraphClientService clientService;
@@ -166,6 +166,14 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
         recordReaderFactory = context.getProperty(READER_SERVICE).asControllerService(RecordReaderFactory.class);
         recordSetWriterFactory = context.getProperty(WRITER_SERVICE).asControllerService(RecordSetWriterFactory.class);
         recordPathCache = new RecordPathCache(100);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("client-service", CLIENT_SERVICE.getName());
+        config.renameProperty("reader-service", READER_SERVICE.getName());
+        config.renameProperty("writer-service", WRITER_SERVICE.getName());
+        config.renameProperty("record-script", SUBMISSION_SCRIPT.getName());
     }
 
     private Object getRecordValue(Record record, RecordPath recordPath) {
@@ -192,7 +200,7 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         FlowFile input = session.get();
-        if ( input == null ) {
+        if (input == null) {
             return;
         }
 
@@ -212,7 +220,7 @@ public class ExecuteGraphQueryRecord extends  AbstractGraphExecutor {
                                     .getProperty(it.getName())
                                     .evaluateAttributeExpressions(finalInput)
                                     .getValue()))
-                );
+            );
 
         long delta;
         FlowFile failedRecords = session.create(input);

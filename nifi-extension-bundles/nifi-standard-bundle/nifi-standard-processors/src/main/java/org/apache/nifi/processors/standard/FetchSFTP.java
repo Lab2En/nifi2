@@ -97,7 +97,7 @@ public class FetchSFTP extends FetchFileTransfer {
                     MOVE_CREATE_DIRECTORY.getDisplayName(),
                     SFTPTransfer.DISABLE_DIRECTORY_LISTING.getDescription())).build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             HOSTNAME,
             PORT,
             USERNAME,
@@ -117,6 +117,7 @@ public class FetchSFTP extends FetchFileTransfer {
             SFTPTransfer.USE_COMPRESSION,
             SFTPTransfer.PROXY_CONFIGURATION_SERVICE,
             FILE_NOT_FOUND_LOG_LEVEL,
+            SFTPTransfer.ALGORITHM_CONFIGURATION,
             SFTPTransfer.CIPHERS_ALLOWED,
             SFTPTransfer.KEY_ALGORITHMS_ALLOWED,
             SFTPTransfer.KEY_EXCHANGE_ALGORITHMS_ALLOWED,
@@ -125,13 +126,15 @@ public class FetchSFTP extends FetchFileTransfer {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        SFTPTransfer.migrateAlgorithmProperties(config);
+        config.renameProperty(OLD_FILE_NOT_FOUND_LOG_LEVEL_PROPERTY_NAME, FILE_NOT_FOUND_LOG_LEVEL.getName());
     }
 
     @Override

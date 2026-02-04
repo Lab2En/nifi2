@@ -16,13 +16,10 @@
  */
 package org.apache.nifi.processors.aws.credentials.provider.factory.strategies;
 
-import com.amazonaws.auth.AWSCredentialsProvider;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.processors.aws.credentials.provider.service.AWSCredentialsProviderControllerService;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
-
 
 /**
  * Supports AWS Default Credentials.  Compared to ImplicitDefaultCredentialsStrategy, this strategy is designed to be
@@ -38,13 +35,10 @@ public class ExplicitDefaultCredentialsStrategy extends AbstractBooleanCredentia
     }
 
     @Override
-    public AWSCredentialsProvider getCredentialsProvider(final PropertyContext propertyContext) {
-      return new DefaultAWSCredentialsProviderChain();
-    }
-
-    @Override
     public AwsCredentialsProvider getAwsCredentialsProvider(final PropertyContext propertyContext) {
-        return DefaultCredentialsProvider.create();
+        // always create a new Connection Pool to avoid STS auth issues after an existing Credentials Provider has been closed
+        // see https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/troubleshooting.html#faq-connection-pool-shutdown-exception
+        return DefaultCredentialsProvider.builder().build();
     }
 
 }

@@ -17,15 +17,6 @@
 
 package org.apache.nifi.processors.parquet;
 
-import static java.util.Collections.singletonList;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.SideEffectFree;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -34,7 +25,7 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.parquet.stream.NifiParquetInputFile;
+import org.apache.nifi.parquet.shared.NifiParquetInputFile;
 import org.apache.nifi.parquet.utils.ParquetAttribute;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -45,6 +36,13 @@ import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Tags({"parquet", "split", "partition", "break apart", "efficient processing", "load balance", "cluster"})
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
@@ -83,9 +81,13 @@ public class CalculateParquetRowGroupOffsets extends AbstractProcessor {
             .description("FlowFiles, with special attributes that represent a chunk of the input file.")
             .build();
 
-    static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = singletonList(PROP_ZERO_CONTENT_OUTPUT);
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            PROP_ZERO_CONTENT_OUTPUT
+    );
 
-    static final Set<Relationship> RELATIONSHIPS = new HashSet<>(singletonList(REL_SUCCESS));
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -154,14 +156,9 @@ public class CalculateParquetRowGroupOffsets extends AbstractProcessor {
             results.add(
                     session.putAllAttributes(
                             outputFlowFile,
-                            new HashMap<String, String>() {
-                                {
-                                    put(ParquetAttribute.FILE_RANGE_START_OFFSET, String.valueOf(currentBlockStartOffset));
-                                    put(ParquetAttribute.FILE_RANGE_END_OFFSET, String.valueOf(currentBlockEndOffset));
-                                    put(ParquetAttribute.RECORD_COUNT, String.valueOf(currentBlock.getRowCount()));
-                                }
-                            }
-                    )
+                            Map.of(ParquetAttribute.FILE_RANGE_START_OFFSET, String.valueOf(currentBlockStartOffset),
+                                    ParquetAttribute.FILE_RANGE_END_OFFSET, String.valueOf(currentBlockEndOffset),
+                                    ParquetAttribute.RECORD_COUNT, String.valueOf(currentBlock.getRowCount())))
             );
         }
 

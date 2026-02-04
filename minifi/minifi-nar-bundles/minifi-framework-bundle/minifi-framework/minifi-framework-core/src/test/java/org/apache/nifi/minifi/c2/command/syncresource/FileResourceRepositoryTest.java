@@ -17,38 +17,6 @@
 
 package org.apache.nifi.minifi.c2.command.syncresource;
 
-import static java.nio.file.Files.createDirectories;
-import static java.nio.file.Files.exists;
-import static java.nio.file.Files.readString;
-import static java.nio.file.Files.writeString;
-import static java.nio.file.StandardOpenOption.CREATE;
-import static java.nio.file.StandardOpenOption.SYNC;
-import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
-import static java.nio.file.StandardOpenOption.WRITE;
-import static java.util.UUID.randomUUID;
-import static org.apache.commons.codec.digest.DigestUtils.sha512Hex;
-import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.nifi.c2.protocol.api.ResourceType.ASSET;
-import static org.apache.nifi.c2.protocol.api.ResourceType.EXTENSION;
-import static org.apache.nifi.minifi.c2.command.syncresource.FileResourceRepository.ASSET_REPOSITORY_DIRECTORY;
-import static org.apache.nifi.minifi.c2.command.syncresource.FileResourceRepository.RESOURCE_REPOSITORY_FILE_NAME;
-import static org.apache.nifi.util.StringUtils.EMPTY;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertIterableEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mockStatic;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Optional;
 import org.apache.nifi.c2.protocol.api.ResourceItem;
 import org.apache.nifi.c2.protocol.api.ResourceType;
 import org.apache.nifi.c2.protocol.api.ResourcesGlobalHash;
@@ -62,6 +30,38 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+
+import static java.nio.file.Files.createDirectories;
+import static java.nio.file.Files.exists;
+import static java.nio.file.Files.readString;
+import static java.nio.file.Files.writeString;
+import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.SYNC;
+import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
+import static java.nio.file.StandardOpenOption.WRITE;
+import static java.util.UUID.randomUUID;
+import static org.apache.commons.codec.digest.DigestUtils.sha512Hex;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.nifi.c2.protocol.api.ResourceType.ASSET;
+import static org.apache.nifi.c2.protocol.api.ResourceType.EXTENSION;
+import static org.apache.nifi.minifi.c2.command.syncresource.FileResourceRepository.RESOURCE_REPOSITORY_FILE_NAME;
+import static org.apache.nifi.util.StringUtils.EMPTY;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mockStatic;
+
 @ExtendWith(MockitoExtension.class)
 public class FileResourceRepositoryTest {
 
@@ -72,7 +72,6 @@ public class FileResourceRepositoryTest {
 
     private C2Serializer c2Serializer;
 
-    private Path assetDirectory;
     private Path assetRepositoryDirectory;
     private Path extensionDirectory;
     private Path repositoryFile;
@@ -83,8 +82,7 @@ public class FileResourceRepositoryTest {
         c2Serializer = new C2JacksonSerializer();
         configDirectoryPath = testBaseDirectory.resolve("conf");
         createDirectories(configDirectoryPath);
-        assetDirectory = testBaseDirectory.resolve("assets");
-        assetRepositoryDirectory = assetDirectory.resolve(ASSET_REPOSITORY_DIRECTORY);
+        assetRepositoryDirectory = testBaseDirectory.resolve("assets").resolve("repository");
         createDirectories(assetRepositoryDirectory);
         extensionDirectory = testBaseDirectory.resolve("extensions");
         createDirectories(extensionDirectory);
@@ -381,6 +379,28 @@ public class FileResourceRepositoryTest {
         assertTrue(result.isEmpty());
     }
 
+    @Test
+    public void testGetRelativePathReturnsEmptyInCaseOfResourceNotAvailable() throws IOException {
+        FileResourceRepository testRepository = createTestRepository();
+
+        Optional<Path> relativePath = testRepository.getAbsolutePath("non_existing_resource_id");
+
+        assertTrue(relativePath.isEmpty());
+    }
+
+    @Test
+    public void testGetRelativePath() throws IOException {
+        FileResourceRepository testRepository = createTestRepository();
+        ResourceItem resourceItem = resourceItem("resource1", "subfolder", ASSET);
+        Path resourceItemPath = createResourceBinary(resourceItem, RESOURCE_BINARY_CONTENT);
+        testRepository.addResourceItem(resourceItem);
+
+        Optional<Path> relativePath = testRepository.getAbsolutePath("resource1");
+
+        assertTrue(relativePath.isPresent());
+        assertEquals(resourceItemPath.toString(), relativePath.get().toString());
+    }
+
     private ResourceRepositoryDescriptor loadRepository() throws IOException {
         return c2Serializer.deserialize(readString(repositoryFile), ResourceRepositoryDescriptor.class).orElse(null);
     }
@@ -390,7 +410,7 @@ public class FileResourceRepositoryTest {
     }
 
     private FileResourceRepository createTestRepository() {
-        return new FileResourceRepository(assetDirectory, extensionDirectory, configDirectoryPath, c2Serializer);
+        return new FileResourceRepository(assetRepositoryDirectory, extensionDirectory, configDirectoryPath, c2Serializer);
     }
 
     private ResourcesGlobalHash resourcesGlobalHash(String digest, String hashType) {

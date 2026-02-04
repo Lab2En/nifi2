@@ -16,29 +16,29 @@
  */
 package org.apache.nifi.web.security.logout;
 
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.web.filter.OncePerRequestFilter;
-
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.web.filter.OncePerRequestFilter;
+
 import java.io.IOException;
 
 /**
  * Standard Logout Filter completes application Logout Requests
  */
 public class StandardLogoutFilter extends OncePerRequestFilter {
-    private final AntPathRequestMatcher requestMatcher;
+    private final PathPatternRequestMatcher requestMatcher;
 
     private final LogoutSuccessHandler logoutSuccessHandler;
 
     public StandardLogoutFilter(
-            final AntPathRequestMatcher requestMatcher,
+            final PathPatternRequestMatcher requestMatcher,
             final LogoutSuccessHandler logoutSuccessHandler
     ) {
         this.requestMatcher = requestMatcher;

@@ -33,19 +33,6 @@ import ca.uhn.hl7v2.parser.Escaping;
 import ca.uhn.hl7v2.parser.PipeParser;
 import ca.uhn.hl7v2.validation.ValidationContext;
 import ca.uhn.hl7v2.validation.impl.ValidationContextFactory;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.WordUtils;
@@ -58,14 +45,24 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.stream.io.StreamUtils;
+
+import java.nio.charset.Charset;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @SideEffectFree
 @SupportsBatching
@@ -83,7 +80,6 @@ public class ExtractHL7Attributes extends AbstractProcessor {
 
     public static final PropertyDescriptor CHARACTER_SET = new PropertyDescriptor.Builder()
             .name("Character Encoding")
-            .displayName("Character Encoding")
             .description("The Character Encoding that is used to encode the HL7 data")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -92,8 +88,7 @@ public class ExtractHL7Attributes extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor USE_SEGMENT_NAMES = new PropertyDescriptor.Builder()
-            .name("use-segment-names")
-            .displayName("Use Segment Names")
+            .name("Use Segment Names")
             .description("Whether or not to use HL7 segment names in attributes")
             .required(true)
             .allowableValues("true", "false")
@@ -102,8 +97,7 @@ public class ExtractHL7Attributes extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor PARSE_SEGMENT_FIELDS = new PropertyDescriptor.Builder()
-            .name("parse-segment-fields")
-            .displayName("Parse Segment Fields")
+            .name("Parse Segment Fields")
             .description("Whether or not to parse HL7 segment fields into attributes")
             .required(true)
             .allowableValues("true", "false")
@@ -112,8 +106,7 @@ public class ExtractHL7Attributes extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor SKIP_VALIDATION = new PropertyDescriptor.Builder()
-            .name("skip-validation")
-            .displayName("Skip Validation")
+            .name("Skip Validation")
             .description("Whether or not to validate HL7 message values")
             .required(true)
             .allowableValues("true", "false")
@@ -122,8 +115,7 @@ public class ExtractHL7Attributes extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor HL7_INPUT_VERSION = new PropertyDescriptor.Builder()
-            .name("hl7-input-version")
-            .displayName("HL7 Input Version")
+            .name("HL7 Input Version")
             .description("The HL7 version to use for parsing and validation")
             .required(true)
             .allowableValues("autodetect", "2.2", "2.3", "2.3.1", "2.4", "2.5", "2.5.1", "2.6")
@@ -141,23 +133,27 @@ public class ExtractHL7Attributes extends AbstractProcessor {
             .description("A FlowFile is routed to this relationship if it cannot be mapped to FlowFile Attributes. This would happen if the FlowFile does not contain valid HL7 data")
             .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CHARACTER_SET,
+            USE_SEGMENT_NAMES,
+            PARSE_SEGMENT_FIELDS,
+            SKIP_VALIDATION,
+            HL7_INPUT_VERSION
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
+
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(CHARACTER_SET);
-        properties.add(USE_SEGMENT_NAMES);
-        properties.add(PARSE_SEGMENT_FIELDS);
-        properties.add(SKIP_VALIDATION);
-        properties.add(HL7_INPUT_VERSION);
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public Set<Relationship> getRelationships() {
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_SUCCESS);
-        relationships.add(REL_FAILURE);
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
@@ -174,12 +170,7 @@ public class ExtractHL7Attributes extends AbstractProcessor {
         final String inputVersion = context.getProperty(HL7_INPUT_VERSION).getValue();
 
         final byte[] buffer = new byte[(int) flowFile.getSize()];
-        session.read(flowFile, new InputStreamCallback() {
-            @Override
-            public void process(final InputStream in) throws IOException {
-                StreamUtils.fillBuffer(in, buffer);
-            }
-        });
+        session.read(flowFile, in -> StreamUtils.fillBuffer(in, buffer));
 
         @SuppressWarnings("resource")
         final HapiContext hapiContext = new DefaultHapiContext();
@@ -204,6 +195,14 @@ public class ExtractHL7Attributes extends AbstractProcessor {
         }
 
         session.transfer(flowFile, REL_SUCCESS);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("use-segment-names", USE_SEGMENT_NAMES.getName());
+        config.renameProperty("parse-segment-fields", PARSE_SEGMENT_FIELDS.getName());
+        config.renameProperty("skip-validation", SKIP_VALIDATION.getName());
+        config.renameProperty("hl7-input-version", HL7_INPUT_VERSION.getName());
     }
 
     public static Map<String, String> getAttributes(final Group group, final boolean useNames, final boolean parseFields) throws HL7Exception {
@@ -242,7 +241,7 @@ public class ExtractHL7Attributes extends AbstractProcessor {
 
     private static Map<String, Segment> getAllSegments(final Group group) throws HL7Exception {
         final Map<String, Segment> segments = new TreeMap<>();
-        addSegments(group, segments, new HashMap<String, Integer>());
+        addSegments(group, segments, new HashMap<>());
         return Collections.unmodifiableMap(segments);
     }
 

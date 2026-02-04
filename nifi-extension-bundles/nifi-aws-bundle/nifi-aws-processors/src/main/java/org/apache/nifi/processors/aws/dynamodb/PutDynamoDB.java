@@ -49,6 +49,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.apache.nifi.processors.aws.region.RegionUtil.CUSTOM_REGION;
+import static org.apache.nifi.processors.aws.region.RegionUtil.REGION;
+
 @SupportsBatching
 @SeeAlso({DeleteDynamoDB.class, GetDynamoDB.class, PutDynamoDBRecord.class})
 @InputRequirement(Requirement.INPUT_REQUIRED)
@@ -77,9 +80,10 @@ import java.util.Map;
 @SystemResourceConsideration(resource = SystemResource.MEMORY)
 public class PutDynamoDB extends AbstractDynamoDBProcessor {
 
-    public static final List<PropertyDescriptor> properties = List.of(
+    public static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
         TABLE,
         REGION,
+        CUSTOM_REGION,
         AWS_CREDENTIALS_PROVIDER_SERVICE,
         JSON_DOCUMENT,
         HASH_KEY_NAME,
@@ -99,13 +103,13 @@ public class PutDynamoDB extends AbstractDynamoDBProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) {
         List<FlowFile> flowFiles = session.get(context.getProperty(BATCH_SIZE).evaluateAttributeExpressions().asInteger());
-        if (flowFiles == null || flowFiles.size() == 0) {
+        if (flowFiles == null || flowFiles.isEmpty()) {
             return;
         }
 

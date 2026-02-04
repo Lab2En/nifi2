@@ -16,19 +16,18 @@
  */
 package org.apache.nifi.processors.pgp;
 
+import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.pgp.service.api.PGPPublicKeyService;
 import org.apache.nifi.pgp.util.PGPOperationUtils;
+import org.apache.nifi.pgp.util.PGPSecretKeyGenerator;
 import org.apache.nifi.processors.pgp.attributes.DecryptionStrategy;
 import org.apache.nifi.processors.pgp.attributes.FileEncoding;
 import org.apache.nifi.processors.pgp.attributes.SymmetricKeyAlgorithm;
-import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
-import org.apache.nifi.pgp.util.PGPSecretKeyGenerator;
-
 import org.bouncycastle.bcpg.ArmoredInputStream;
 import org.bouncycastle.openpgp.PGPCompressedData;
 import org.bouncycastle.openpgp.PGPEncryptedData;
@@ -50,11 +49,12 @@ import org.bouncycastle.openpgp.operator.bc.BcPBEDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyDecryptorBuilder;
-
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -151,16 +151,14 @@ public class EncryptContentPGPTest {
         assertSuccess(DEFAULT_SYMMETRIC_KEY_ALGORITHM, PASSPHRASE.toCharArray());
     }
 
-    @Test
-    public void testSuccessPasswordBasedEncryptionSymmetricKeyAlgorithms() throws IOException, PGPException {
-        for (final SymmetricKeyAlgorithm symmetricKeyAlgorithm : SymmetricKeyAlgorithm.values()) {
-            runner = TestRunners.newTestRunner(new EncryptContentPGP());
-            runner.setProperty(EncryptContentPGP.PASSPHRASE, PASSPHRASE);
-            runner.setProperty(EncryptContentPGP.SYMMETRIC_KEY_ALGORITHM, symmetricKeyAlgorithm.toString());
-            runner.enqueue(DATA);
-            runner.run();
-            assertSuccess(symmetricKeyAlgorithm, PASSPHRASE.toCharArray());
-        }
+    @ParameterizedTest
+    @EnumSource(SymmetricKeyAlgorithm.class)
+    public void testSuccessPasswordBasedEncryptionSymmetricKeyAlgorithms(final SymmetricKeyAlgorithm symmetricKeyAlgorithm) throws IOException, PGPException {
+        runner.setProperty(EncryptContentPGP.PASSPHRASE, PASSPHRASE);
+        runner.setProperty(EncryptContentPGP.SYMMETRIC_KEY_ALGORITHM, symmetricKeyAlgorithm.toString());
+        runner.enqueue(DATA);
+        runner.run();
+        assertSuccess(symmetricKeyAlgorithm, PASSPHRASE.toCharArray());
     }
 
     @Test
@@ -267,7 +265,7 @@ public class EncryptContentPGPTest {
 
     private void assertSuccess(final PGPPrivateKey privateKey, final DecryptionStrategy decryptionStrategy, final byte[] expected) throws IOException, PGPException {
         runner.assertAllFlowFilesTransferred(EncryptContentPGP.SUCCESS);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(EncryptContentPGP.SUCCESS).iterator().next();
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(EncryptContentPGP.SUCCESS).getFirst();
         assertAttributesFound(DEFAULT_SYMMETRIC_KEY_ALGORITHM, flowFile);
 
         final PGPEncryptedDataList encryptedDataList = getEncryptedDataList(flowFile);
@@ -283,7 +281,7 @@ public class EncryptContentPGPTest {
 
     private void assertSuccess(final SymmetricKeyAlgorithm symmetricKeyAlgorithm, final char[] passphrase) throws IOException, PGPException {
         runner.assertAllFlowFilesTransferred(EncryptContentPGP.SUCCESS);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(EncryptContentPGP.SUCCESS).iterator().next();
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(EncryptContentPGP.SUCCESS).getFirst();
         assertAttributesFound(symmetricKeyAlgorithm, flowFile);
 
         final PGPEncryptedDataList encryptedDataList = getEncryptedDataList(flowFile);
@@ -353,8 +351,7 @@ public class EncryptContentPGPTest {
             if (object instanceof PGPLiteralData) {
                 literalData = (PGPLiteralData) object;
                 break;
-            } else if (object instanceof PGPCompressedData) {
-                final PGPCompressedData compressedData = (PGPCompressedData) object;
+            } else if (object instanceof PGPCompressedData compressedData) {
                 final PGPObjectFactory compressedObjectFactory = new JcaPGPObjectFactory(compressedData.getDataStream());
                 literalData = getLiteralData(compressedObjectFactory);
                 break;

@@ -16,15 +16,15 @@
  */
 package org.apache.nifi.remote.codec;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.List;
-
 import org.apache.nifi.remote.VersionedRemoteResource;
 import org.apache.nifi.remote.exception.ProtocolException;
 import org.apache.nifi.remote.exception.TransmissionDisabledException;
 import org.apache.nifi.remote.protocol.DataPacket;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.List;
 
 /**
  * <p>
@@ -40,7 +40,7 @@ public interface FlowFileCodec extends VersionedRemoteResource {
      *
      * @return all supported versions
      */
-    public List<Integer> getSupportedVersions();
+    List<Integer> getSupportedVersions();
 
     /**
      * Encodes a DataPacket and its content as a single stream of data and

@@ -25,6 +25,7 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -36,9 +37,6 @@ import org.apache.nifi.snmp.utils.SNMPUtils;
 import org.snmp4j.Target;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -77,7 +75,7 @@ public class SetSNMP extends AbstractSNMPProcessor {
             .description("All FlowFiles that failed during the SNMP Set care routed to this relationship")
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Collections.unmodifiableList(Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             AGENT_HOST,
             AGENT_PORT,
             BasicProperties.SNMP_VERSION,
@@ -90,12 +88,12 @@ public class SetSNMP extends AbstractSNMPProcessor {
             V3SecurityProperties.SNMP_PRIVACY_PASSWORD,
             BasicProperties.SNMP_RETRIES,
             BasicProperties.SNMP_TIMEOUT
-    ));
+    );
 
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
             REL_SUCCESS,
             REL_FAILURE
-    )));
+    );
 
     private volatile SetSNMPHandler snmpHandler;
 
@@ -140,6 +138,22 @@ public class SetSNMP extends AbstractSNMPProcessor {
         return RELATIONSHIPS;
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty(BasicProperties.OLD_SNMP_VERSION_PROPERTY_NAME, BasicProperties.SNMP_VERSION.getName());
+        config.renameProperty(BasicProperties.OLD_SNMP_COMMUNITY_PROPERTY_NAME, BasicProperties.SNMP_COMMUNITY.getName());
+        config.renameProperty(BasicProperties.OLD_SNMP_RETRIES_PROPERTY_NAME,  BasicProperties.SNMP_RETRIES.getName());
+        BasicProperties.OLD_SNMP_TIMEOUT_PROPERTY_NAMES.forEach(oldPropertyName -> config.renameProperty(oldPropertyName, BasicProperties.SNMP_TIMEOUT.getName()));
+        config.renameProperty(V3SecurityProperties.OLD_SNMP_SECURITY_LEVEL_PROPERTY_NAME, V3SecurityProperties.SNMP_SECURITY_LEVEL.getName());
+        config.renameProperty(V3SecurityProperties.OLD_SNMP_SECURITY_NAME_PROPERTY_NAME, V3SecurityProperties.SNMP_SECURITY_NAME.getName());
+        config.renameProperty(V3SecurityProperties.OLD_SNMP_AUTH_PROTOCOL_PROPERTY_NAME, V3SecurityProperties.SNMP_AUTH_PROTOCOL.getName());
+        config.renameProperty(V3SecurityProperties.OLD_SNMP_AUTH_PASSWORD_PROPERTY_NAME, V3SecurityProperties.SNMP_AUTH_PASSWORD.getName());
+        config.renameProperty(V3SecurityProperties.OLD_SNMP_PRIVACY_PROTOCOL_PROPERTY_NAME, V3SecurityProperties.SNMP_PRIVACY_PROTOCOL.getName());
+        config.renameProperty(V3SecurityProperties.OLD_SNMP_PRIVACY_PASSWORD_PROPERTY_NAME, V3SecurityProperties.SNMP_PRIVACY_PASSWORD.getName());
+    }
+
+    @Override
     protected String getTargetHost(final ProcessContext processContext, final FlowFile flowFile) {
         return processContext.getProperty(AGENT_HOST).evaluateAttributeExpressions(flowFile).getValue();
     }

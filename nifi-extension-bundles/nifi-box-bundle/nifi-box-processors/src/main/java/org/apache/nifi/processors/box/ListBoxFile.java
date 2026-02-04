@@ -16,28 +16,10 @@
  */
 package org.apache.nifi.processors.box;
 
-import static org.apache.nifi.processors.box.BoxFileAttributes.FILENAME_DESC;
-import static org.apache.nifi.processors.box.BoxFileAttributes.ID;
-import static org.apache.nifi.processors.box.BoxFileAttributes.ID_DESC;
-import static org.apache.nifi.processors.box.BoxFileAttributes.PATH_DESC;
-import static org.apache.nifi.processors.box.BoxFileAttributes.SIZE;
-import static org.apache.nifi.processors.box.BoxFileAttributes.SIZE_DESC;
-import static org.apache.nifi.processors.box.BoxFileAttributes.TIMESTAMP;
-import static org.apache.nifi.processors.box.BoxFileAttributes.TIMESTAMP_DESC;
-
 import com.box.sdk.BoxAPIConnection;
 import com.box.sdk.BoxFile;
 import com.box.sdk.BoxFolder;
 import com.box.sdk.BoxItem;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.PrimaryNodeOnly;
@@ -55,12 +37,30 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processor.util.list.AbstractListProcessor;
 import org.apache.nifi.processor.util.list.ListedEntityTracker;
 import org.apache.nifi.scheduling.SchedulingStrategy;
 import org.apache.nifi.serialization.record.RecordSchema;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+
+import static org.apache.nifi.processors.box.BoxFileAttributes.FILENAME_DESC;
+import static org.apache.nifi.processors.box.BoxFileAttributes.ID;
+import static org.apache.nifi.processors.box.BoxFileAttributes.ID_DESC;
+import static org.apache.nifi.processors.box.BoxFileAttributes.PATH_DESC;
+import static org.apache.nifi.processors.box.BoxFileAttributes.SIZE;
+import static org.apache.nifi.processors.box.BoxFileAttributes.SIZE_DESC;
+import static org.apache.nifi.processors.box.BoxFileAttributes.TIMESTAMP;
+import static org.apache.nifi.processors.box.BoxFileAttributes.TIMESTAMP_DESC;
 
 @PrimaryNodeOnly
 @TriggerSerially
@@ -83,8 +83,7 @@ import org.apache.nifi.serialization.record.RecordSchema;
 @DefaultSchedule(strategy = SchedulingStrategy.TIMER_DRIVEN, period = "1 min")
 public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
     public static final PropertyDescriptor FOLDER_ID = new PropertyDescriptor.Builder()
-        .name("box-folder-id")
-        .displayName("Folder ID")
+        .name("Folder ID")
         .description("The ID of the folder from which to pull list of files.")
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -92,8 +91,7 @@ public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
         .build();
 
     public static final PropertyDescriptor RECURSIVE_SEARCH = new PropertyDescriptor.Builder()
-        .name("recursive-search")
-        .displayName("Search Recursively")
+        .name("Search Recursively")
         .description("When 'true', will include list of files from sub-folders." +
             " Otherwise, will return only files that are within the folder defined by the 'Folder ID' property.")
         .required(true)
@@ -102,8 +100,7 @@ public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
         .build();
 
     public static final PropertyDescriptor MIN_AGE = new PropertyDescriptor.Builder()
-        .name("min-age")
-        .displayName("Minimum File Age")
+        .name("Minimum File Age")
         .description("The minimum age a file must be in order to be considered; any files younger than this will be ignored.")
         .required(true)
         .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
@@ -130,8 +127,8 @@ public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
         .dependsOn(LISTING_STRATEGY, BY_ENTITIES)
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(Arrays.asList(
-        BoxClientService.BOX_CLIENT_SERVICE,
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        AbstractBoxProcessor.BOX_CLIENT_SERVICE,
         FOLDER_ID,
         RECURSIVE_SEARCH,
         MIN_AGE,
@@ -140,13 +137,13 @@ public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
         TRACKING_TIME_WINDOW,
         INITIAL_LISTING_TARGET,
         RECORD_WRITER
-    ));
+    );
 
     private volatile BoxAPIConnection boxAPIConnection;
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -166,9 +163,21 @@ public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
 
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
-        BoxClientService boxClientService = context.getProperty(BoxClientService.BOX_CLIENT_SERVICE).asControllerService(BoxClientService.class);
+        BoxClientService boxClientService = context.getProperty(AbstractBoxProcessor.BOX_CLIENT_SERVICE).asControllerService(BoxClientService.class);
 
         boxAPIConnection = boxClientService.getBoxApiConnection();
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty(AbstractBoxProcessor.OLD_BOX_CLIENT_SERVICE_PROPERTY_NAME, AbstractBoxProcessor.BOX_CLIENT_SERVICE.getName());
+        config.renameProperty("box-folder-id", FOLDER_ID.getName());
+        config.renameProperty("recursive-search", RECURSIVE_SEARCH.getName());
+        config.renameProperty("min-age", MIN_AGE.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_STATE_CACHE_PROPERTY_NAME, TRACKING_STATE_CACHE.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_TIME_WINDOW_PROPERTY_NAME, TRACKING_TIME_WINDOW.getName());
+        config.renameProperty(ListedEntityTracker.OLD_INITIAL_LISTING_TARGET_PROPERTY_NAME, INITIAL_LISTING_TARGET.getName());
     }
 
     @Override
@@ -233,8 +242,7 @@ public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
             "content_modified_at",
             "path_collection"
         )) {
-            if (itemInfo instanceof BoxFile.Info) {
-                BoxFile.Info info = (BoxFile.Info) itemInfo;
+            if (itemInfo instanceof BoxFile.Info info) {
 
                 long createdAt = itemInfo.getCreatedAt().getTime();
 
@@ -249,8 +257,7 @@ public class ListBoxFile extends AbstractListProcessor<BoxFileInfo> {
                         .build();
                     listing.add(boxFileInfo);
                 }
-            } else if (recursive && itemInfo instanceof BoxFolder.Info) {
-                BoxFolder.Info info = (BoxFolder.Info) itemInfo;
+            } else if (recursive && itemInfo instanceof BoxFolder.Info info) {
                 listFolder(listing, info.getID(), recursive, createdAtMax);
             }
         }

@@ -37,6 +37,7 @@ import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessorInitializationContext;
@@ -222,8 +223,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
             .build();
 
     public static final PropertyDescriptor TRACK_PERFORMANCE = new Builder()
-        .name("track-performance")
-        .displayName("Track Performance")
+        .name("Track Performance")
         .description("Whether or not the Processor should track the performance of disk access operations. If true, all accesses to disk will be recorded, including the file being accessed, the " +
             "information being obtained, and how long it takes. This is then logged periodically at a DEBUG level. While the amount of data will be capped, " +
             "this option may still consume a significant amount of heap (controlled by the 'Maximum Number of Files to Track' property), " +
@@ -234,8 +234,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
         .build();
 
     public static final PropertyDescriptor MAX_TRACKED_FILES = new Builder()
-        .name("max-performance-metrics")
-        .displayName("Maximum Number of Files to Track")
+        .name("Maximum Number of Files to Track")
         .description("If the 'Track Performance' property is set to 'true', this property indicates the maximum number of files whose performance metrics should be held onto. A smaller value for " +
             "this property will result in less heap utilization, while a larger value may provide more accurate insights into how the disk access operations are performing")
         .required(true)
@@ -245,8 +244,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
         .build();
 
     public static final PropertyDescriptor MAX_DISK_OPERATION_TIME = new Builder()
-        .name("max-operation-time")
-        .displayName("Max Disk Operation Time")
+        .name("Max Disk Operation Time")
         .description("The maximum amount of time that any single disk operation is expected to take. If any disk operation takes longer than this amount of time, a warning bulletin will be " +
             "generated for each operation that exceeds this amount of time.")
         .required(false)
@@ -256,8 +254,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
         .build();
 
     public static final PropertyDescriptor MAX_LISTING_TIME = new Builder()
-        .name("max-listing-time")
-        .displayName("Max Directory Listing Time")
+        .name("Max Directory Listing Time")
         .description("The maximum amount of time that listing any single directory is expected to take. If the listing for the directory specified by the 'Input Directory' property, " +
             "or the listing of any subdirectory (if 'Recurse' is set to true) takes longer than this amount of time, a warning bulletin will be generated for each directory listing " +
             "that exceeds this amount of time.")
@@ -267,7 +264,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
         .defaultValue("3 mins")
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             DIRECTORY,
             LISTING_STRATEGY,
             RECURSE,
@@ -292,7 +289,9 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
             MAX_LISTING_TIME
     );
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     private volatile ScheduledExecutorService monitoringThreadPool;
     private volatile Future<?> monitoringFuture;
@@ -324,7 +323,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -362,6 +361,19 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
         if (trackPerformance) {
             logPerformance();
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("track-performance", TRACK_PERFORMANCE.getName());
+        config.renameProperty("max-performance-metrics", MAX_TRACKED_FILES.getName());
+        config.renameProperty("max-operation-time", MAX_DISK_OPERATION_TIME.getName());
+        config.renameProperty("max-listing-time", MAX_LISTING_TIME.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_STATE_CACHE_PROPERTY_NAME, ListedEntityTracker.TRACKING_STATE_CACHE.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_TIME_WINDOW_PROPERTY_NAME, ListedEntityTracker.TRACKING_TIME_WINDOW.getName());
+        config.renameProperty(ListedEntityTracker.OLD_INITIAL_LISTING_TARGET_PROPERTY_NAME, ListedEntityTracker.INITIAL_LISTING_TARGET.getName());
+        config.renameProperty(ListedEntityTracker.OLD_NODE_IDENTIFIER_PROPERTY_NAME, ListedEntityTracker.NODE_IDENTIFIER.getName());
     }
 
     protected PerformanceTracker getPerformanceTracker() {
@@ -440,7 +452,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
                             BasicFileAttributes attrs = view.readAttributes();
                             attributes.put(FILE_CREATION_TIME_ATTRIBUTE, formatDateTime(attrs.creationTime().toMillis()));
                             attributes.put(FILE_LAST_ACCESS_TIME_ATTRIBUTE, formatDateTime(attrs.lastAccessTime().toMillis()));
-                        } catch (Exception ignore) {
+                        } catch (Exception ignored) {
                         } // allow other attributes if these fail
                     }
                 });
@@ -450,7 +462,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
                         try {
                             FileOwnerAttributeView view = Files.getFileAttributeView(filePath, FileOwnerAttributeView.class);
                             attributes.put(FILE_OWNER_ATTRIBUTE, view.getOwner().getName());
-                        } catch (Exception ignore) {
+                        } catch (Exception ignored) {
                         } // allow other attributes if these fail
                     }
                 });
@@ -461,7 +473,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
                             PosixFileAttributeView view = Files.getFileAttributeView(filePath, PosixFileAttributeView.class);
                             attributes.put(FILE_PERMISSIONS_ATTRIBUTE, PosixFilePermissions.toString(view.readAttributes().permissions()));
                             attributes.put(FILE_GROUP_ATTRIBUTE, view.readAttributes().group().getName());
-                        } catch (Exception ignore) {
+                        } catch (Exception ignored) {
                         } // allow other attributes if these fail
                     }
                 });
@@ -528,7 +540,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
 
         int maxDepth = recurse ? Integer.MAX_VALUE : 1;
 
-        final BiPredicate<Path, BasicFileAttributes> matcher = new BiPredicate<Path, BasicFileAttributes>() {
+        final BiPredicate<Path, BasicFileAttributes> matcher = new BiPredicate<>() {
             private long lastTimestamp = System.currentTimeMillis();
 
             @Override
@@ -579,7 +591,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
             final long start = System.currentTimeMillis();
             final List<FileInfo> result = new LinkedList<>();
 
-            Files.walkFileTree(basePath, Set.of(FileVisitOption.FOLLOW_LINKS), maxDepth, new FileVisitor<Path>() {
+            Files.walkFileTree(basePath, Set.of(FileVisitOption.FOLLOW_LINKS), maxDepth, new FileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attributes) {
                     if (Files.isReadable(dir)) {
@@ -841,7 +853,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
             this.logger = logger;
             this.maxDiskOperationMillis = maxDiskOperationMillis;
 
-            directoryToTimingInfo = new LinkedHashMap<Tuple<String, String>, TimingInfo>() {
+            directoryToTimingInfo = new LinkedHashMap<>() {
                 @Override
                 protected boolean removeEldestEntry(final Map.Entry<Tuple<String, String>, TimingInfo> eldest) {
                     return size() > maxEntries;
@@ -1058,7 +1070,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
             if (duration > maxDiskOperationMillis) {
                 final String fullPath = getFullPath();
                 logger.warn("This Processor completed action {} on {} in {} milliseconds, which exceeds the configured threshold of {} milliseconds",
-                    new Object[] {operation, fullPath, duration, maxDiskOperationMillis});
+                        operation, fullPath, duration, maxDiskOperationMillis);
             }
 
             if (logger.isTraceEnabled()) {
@@ -1332,7 +1344,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
                 }
 
                 logger.warn("This Processor has currently spent {} milliseconds performing the {} action on {}, which exceeds the configured threshold of {} milliseconds",
-                    new Object[] {activeTime, activeOperation.getOperation(), fullPath, maxDiskOperationMillis});
+                        activeTime, activeOperation.getOperation(), fullPath, maxDiskOperationMillis);
             }
         }
 
@@ -1347,7 +1359,7 @@ public class ListFile extends AbstractListProcessor<FileInfo> {
             if (activeMillis > maxListingMillis) {
                 final String fullPath = activeDirectory.isEmpty() ? "the base directory" : activeDirectory;
                 logger.warn("This processor has currently spent {} milliseconds performing the listing of {}, which exceeds the configured threshold of {} milliseconds",
-                    new Object[] {activeMillis, fullPath, maxListingMillis});
+                        activeMillis, fullPath, maxListingMillis);
             }
         }
     }

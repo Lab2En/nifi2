@@ -16,7 +16,7 @@
  */
 
 import { createFeatureSelector, createSelector } from '@ngrx/store';
-import { componentStateFeatureKey, ComponentStateState } from './index';
+import { componentStateFeatureKey, ComponentStateState, ComponentState } from './index';
 
 export const selectComponentStateState = createFeatureSelector<ComponentStateState>(componentStateFeatureKey);
 
@@ -30,9 +30,21 @@ export const selectComponentName = createSelector(
     (state: ComponentStateState) => state.componentName
 );
 
-export const selectComponentUri = createSelector(
+export const selectComponentType = createSelector(
     selectComponentStateState,
-    (state: ComponentStateState) => state.componentUri
+    (state: ComponentStateState) => state.componentType
+);
+
+export const selectComponentId = createSelector(
+    selectComponentStateState,
+    (state: ComponentStateState) => state.componentId
 );
 
 export const selectCanClear = createSelector(selectComponentStateState, (state: ComponentStateState) => state.canClear);
+
+export const selectClearing = createSelector(selectComponentStateState, (state: ComponentStateState) => state.clearing);
+
+export const selectDropStateKeySupported = createSelector(
+    selectComponentState,
+    (componentState: ComponentState | null) => componentState?.dropStateKeySupported ?? false
+);

@@ -15,10 +15,12 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { CanvasUtils } from './canvas-utils.service';
 import {
-    copy,
+    clearBulletinsForComponent,
+    clearBulletinsForProcessGroup,
+    copySuccess,
     deleteComponents,
     disableComponents,
     disableCurrentProcessGroup,
@@ -30,7 +32,6 @@ import {
     navigateToEditCurrentProcessGroup,
     navigateToManageComponentPolicies,
     openChangeColorDialog,
-    paste,
     reloadFlow,
     selectComponents,
     startComponents,
@@ -40,12 +41,10 @@ import {
 } from '../state/flow/flow.actions';
 import {
     ChangeColorRequest,
-    CopyComponentRequest,
     DeleteComponentRequest,
     DisableComponentRequest,
     EnableComponentRequest,
     MoveComponentRequest,
-    PasteRequest,
     SelectedComponent,
     StartComponentRequest,
     StopComponentRequest
@@ -55,8 +54,13 @@ import { CanvasState } from '../state';
 import * as d3 from 'd3';
 import { MatDialog } from '@angular/material/dialog';
 import { CanvasView } from './canvas-view.service';
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType, NiFiCommon } from '@nifi/shared';
 import { Client } from '../../../service/client.service';
+import { CopyRequestContext, CopyRequestEntity, CopyResponseEntity } from '../../../state/copy';
+import { CopyPasteService } from './copy-paste.service';
+import { firstValueFrom } from 'rxjs';
+import { selectCurrentProcessGroupId } from '../state/flow/flow.selectors';
+import { snackBarError } from '../../../state/error/error.actions';
 
 export type CanvasConditionFunction = (selection: d3.Selection<any, any, any, any>) => boolean;
 export type CanvasActionFunction = (selection: d3.Selection<any, any, any, any>, extraArgs?: any) => void;
@@ -75,6 +79,14 @@ export interface CanvasActions {
     providedIn: 'root'
 })
 export class CanvasActionsService {
+    private store = inject<Store<CanvasState>>(Store);
+    private canvasUtils = inject(CanvasUtils);
+    private canvasView = inject(CanvasView);
+    private dialog = inject(MatDialog);
+    private client = inject(Client);
+    private copyService = inject(CopyPasteService);
+    private nifiCommon = inject(NiFiCommon);
+
     private _actions: CanvasActions = {
         delete: {
             id: 'delete',
@@ -139,45 +151,95 @@ export class CanvasActionsService {
                 return this.canvasUtils.isCopyable(selection);
             },
             action: (selection: d3.Selection<any, any, any, any>) => {
-                const origin = this.canvasUtils.getOrigin(selection);
-                const dimensions = this.canvasView.getSelectionBoundingClientRect(selection);
-
-                const components: CopyComponentRequest[] = [];
+                const copyRequestEntity: CopyRequestEntity = {};
                 selection.each((d) => {
-                    components.push({
-                        id: d.id,
-                        type: d.type,
-                        uri: d.uri,
-                        entity: d
-                    });
+                    switch (d.type) {
+                        case ComponentType.Processor:
+                            if (!copyRequestEntity.processors) {
+                                copyRequestEntity.processors = [];
+                            }
+                            copyRequestEntity.processors.push(d.id);
+                            break;
+                        case ComponentType.ProcessGroup:
+                            if (!copyRequestEntity.processGroups) {
+                                copyRequestEntity.processGroups = [];
+                            }
+                            copyRequestEntity.processGroups.push(d.id);
+                            break;
+                        case ComponentType.Connection:
+                            if (!copyRequestEntity.connections) {
+                                copyRequestEntity.connections = [];
+                            }
+                            copyRequestEntity.connections.push(d.id);
+                            break;
+                        case ComponentType.RemoteProcessGroup:
+                            if (!copyRequestEntity.remoteProcessGroups) {
+                                copyRequestEntity.remoteProcessGroups = [];
+                            }
+                            copyRequestEntity.remoteProcessGroups.push(d.id);
+                            break;
+                        case ComponentType.InputPort:
+                            if (!copyRequestEntity.inputPorts) {
+                                copyRequestEntity.inputPorts = [];
+                            }
+                            copyRequestEntity.inputPorts.push(d.id);
+                            break;
+                        case ComponentType.OutputPort:
+                            if (!copyRequestEntity.outputPorts) {
+                                copyRequestEntity.outputPorts = [];
+                            }
+                            copyRequestEntity.outputPorts.push(d.id);
+                            break;
+                        case ComponentType.Label:
+                            if (!copyRequestEntity.labels) {
+                                copyRequestEntity.labels = [];
+                            }
+                            copyRequestEntity.labels.push(d.id);
+                            break;
+                        case ComponentType.Funnel:
+                            if (!copyRequestEntity.funnels) {
+                                copyRequestEntity.funnels = [];
+                            }
+                            copyRequestEntity.funnels.push(d.id);
+                            break;
+                    }
                 });
 
-                this.store.dispatch(
-                    copy({
-                        request: {
-                            components,
-                            origin,
-                            dimensions
+                const copyRequestContext: CopyRequestContext = {
+                    copyRequestEntity,
+                    processGroupId: this.currentProcessGroupId()
+                };
+                let copyResponse: CopyResponseEntity | null = null;
+
+                // Safari in particular is strict in enforcing that any writing to the clipboard needs to be triggered directly by a user action.
+                // As such, firing a simple async rxjs action to initiate the copy sequence fails this check.
+                // However, below is the workaround to construct a ClipboardItem from an async call.
+                const clipboardItem = new ClipboardItem({
+                    'text/plain': firstValueFrom(this.copyService.copy(copyRequestContext)).then((response) => {
+                        copyResponse = response;
+                        return new Blob([JSON.stringify(response, null, 2)], { type: 'text/plain' });
+                    })
+                });
+                navigator.clipboard
+                    .write([clipboardItem])
+                    .then(() => {
+                        if (copyResponse) {
+                            this.store.dispatch(
+                                copySuccess({
+                                    response: {
+                                        copyResponse,
+                                        processGroupId: copyRequestContext.processGroupId,
+                                        pasteCount: 0
+                                    }
+                                })
+                            );
+                        } else {
+                            this.store.dispatch(snackBarError({ error: 'Copy failed' }));
                         }
                     })
-                );
-            }
-        },
-        paste: {
-            id: 'paste',
-            condition: () => {
-                return this.canvasUtils.isPastable();
-            },
-            action: (selection, extraArgs) => {
-                const pasteRequest: PasteRequest = {};
-                if (extraArgs?.pasteLocation) {
-                    pasteRequest.pasteLocation = extraArgs.pasteLocation;
-                }
-                this.store.dispatch(
-                    paste({
-                        request: pasteRequest
-                    })
-                );
+                    .catch(() => {
+                        this.store.dispatch(snackBarError({ error: 'Copy failed' }));
+                    });
             }
         },
         selectAll: {
@@ -313,7 +375,6 @@ export class CanvasActionsService {
                     startable.each((d: any) => {
                         components.push({
                             id: d.id,
-                            uri: d.uri,
                             type: d.type,
                             revision: this.client.getRevision(d),
                             errorStrategy: 'snackbar'
@@ -344,7 +405,6 @@ export class CanvasActionsService {
                     stoppable.each((d: any) => {
                         components.push({
                             id: d.id,
-                            uri: d.uri,
                             type: d.type,
                             revision: this.client.getRevision(d),
                             errorStrategy: 'snackbar'
@@ -375,7 +435,6 @@ export class CanvasActionsService {
                     enableable.each((d: any) => {
                         components.push({
                             id: d.id,
-                            uri: d.uri,
                             type: d.type,
                             revision: this.client.getRevision(d),
                             errorStrategy: 'snackbar'
@@ -406,7 +465,6 @@ export class CanvasActionsService {
                     disableable.each((d: any) => {
                         components.push({
                             id: d.id,
-                            uri: d.uri,
                             type: d.type,
                             revision: this.client.getRevision(d),
                             errorStrategy: 'snackbar'
@@ -476,16 +534,106 @@ export class CanvasActionsService {
                     })
                 );
             }
+        },
+        clearBulletins: {
+            id: 'clearBulletins',
+            condition: (selection: d3.Selection<any, any, any, any>) => {
+                // Empty selection means user is opening context menu for current process group
+                if (selection.empty()) {
+                    // Use d3 to select components with has-bulletins class
+                    // If this selection is non-empty, clear bulletins action should be available
+                    const componentsWithBulletins = d3.selectAll('g.component.has-bulletins');
+                    return !componentsWithBulletins.empty();
+                }
+
+                // Show clear bulletins option only when there are bulletins to clear
+                if (selection.size() === 1) {
+                    const d = selection.datum();
+
+                    // For individual components (not process groups), check write permissions
+                    if (d.type !== ComponentType.ProcessGroup) {
+                        if (!d.permissions.canWrite) {
+                            return false;
+                        }
+                    }
+
+                    // Check if the component has the has-bulletins class
+                    return selection.classed('has-bulletins');
+                }
+                return false;
+            },
+            action: (selection: d3.Selection<any, any, any, any>) => {
+                if (selection.empty()) {
+                    // Clear bulletins for current process group when no selection
+                    // Get all components with bulletins and find the most recent timestamp
+                    const componentsWithBulletins = d3.selectAll('g.component.has-bulletins');
+
+                    // Find the most recent timestamp across all components
+                    let mostRecentTimestamp: string | null = null;
+                    let mostRecentTime: number | null = null;
+                    componentsWithBulletins.each((d: any) => {
+                        if (d?.bulletins) {
+                            const componentTimestamp = this.nifiCommon.getMostRecentBulletinTimestamp(d.bulletins);
+                            if (componentTimestamp !== null) {
+                                const componentTime = new Date(componentTimestamp).getTime();
+                                if (mostRecentTime === null || componentTime > mostRecentTime) {
+                                    mostRecentTime = componentTime;
+                                    mostRecentTimestamp = componentTimestamp;
+                                }
+                            }
+                        }
+                    });
+
+                    if (mostRecentTimestamp === null || mostRecentTimestamp === undefined) {
+                        return; // no bulletins to clear
+                    }
+
+                    this.store.dispatch(
+                        clearBulletinsForProcessGroup({
+                            request: {
+                                processGroupId: this.currentProcessGroupId(),
+                                fromTimestamp: mostRecentTimestamp
+                            }
+                        })
+                    );
+                } else if (selection.size() === 1) {
+                    const d = selection.datum();
+
+                    // Get the most recent bulletin timestamp from the selected component
+                    const fromTimestamp = this.nifiCommon.getMostRecentBulletinTimestamp(d.bulletins);
+                    if (fromTimestamp === null) {
+                        return; // no bulletins to clear
+                    }
+
+                    if (d.type === ComponentType.ProcessGroup) {
+                        // For process groups, clear bulletins for all child components
+                        this.store.dispatch(
+                            clearBulletinsForProcessGroup({
+                                request: {
+                                    processGroupId: d.id,
+                                    fromTimestamp
+                                }
+                            })
+                        );
+                    } else {
+                        // Clear bulletins for this component
+                        this.store.dispatch(
+                            clearBulletinsForComponent({
+                                request: {
+                                    uri: d.uri,
+                                    fromTimestamp,
+                                    componentId: d.id,
+                                    componentType: d.type
+                                }
+                            })
+                        );
+                    }
+                }
+            }
         }
     };
 
-    constructor(
-        private store: Store<CanvasState>,
-        private canvasUtils: CanvasUtils,
-        private canvasView: CanvasView,
-        private dialog: MatDialog,
-        private client: Client
-    ) {}
+    currentProcessGroupId = this.store.selectSignal(selectCurrentProcessGroupId);
 
     private select(selection: d3.Selection<any, any, any, any>) {
         const selectedComponents: SelectedComponent[] = [];

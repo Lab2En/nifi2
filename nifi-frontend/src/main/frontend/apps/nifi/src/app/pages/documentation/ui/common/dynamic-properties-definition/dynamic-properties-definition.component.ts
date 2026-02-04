@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input, viewChild } from '@angular/core';
+import { Component, Input, viewChild, inject } from '@angular/core';
 import { NiFiCommon } from '@nifi/shared';
 import { ConfigurableExtensionDefinition, DynamicProperty, ExpressionLanguageScope } from '../../../state';
 import { MatAccordion, MatExpansionModule } from '@angular/material/expansion';
@@ -23,12 +23,13 @@ import { MatIconButton } from '@angular/material/button';
 
 @Component({
     selector: 'dynamic-properties-definition',
-    standalone: true,
     imports: [MatAccordion, MatExpansionModule, MatIconButton],
     templateUrl: './dynamic-properties-definition.component.html',
     styleUrl: './dynamic-properties-definition.component.scss'
 })
 export class DynamicPropertiesDefinitionComponent {
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() set configurableExtensionDefinition(configurableExtensionDefinition: ConfigurableExtensionDefinition) {
         if (configurableExtensionDefinition.dynamicProperties) {
             this.dynamicProperties = Object.values(configurableExtensionDefinition.dynamicProperties).sort((a, b) => {
@@ -47,8 +48,6 @@ export class DynamicPropertiesDefinitionComponent {
     dynamicPropertiesAccordion = viewChild.required(MatAccordion);
 
     supportsDynamicSensitiveProperties: boolean | null = null;
-
-    constructor(private nifiCommon: NiFiCommon) {}
 
     expand(): void {
         this.dynamicPropertiesAccordion().openAll();

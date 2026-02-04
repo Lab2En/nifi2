@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable, OnDestroy } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 import { CanvasState } from '../../state';
 import { Store } from '@ngrx/store';
 import { PositionBehavior } from '../behavior/position-behavior.service';
@@ -26,21 +26,29 @@ import {
     selectFlowLoadingStatus,
     selectProcessGroups,
     selectAnySelectedComponentIds,
-    selectTransitionRequired
+    selectTransitionRequired,
+    selectRegistryClients
 } from '../../state/flow/flow.selectors';
 import { CanvasUtils } from '../canvas-utils.service';
 import { enterProcessGroup } from '../../state/flow/flow.actions';
 import { VersionControlTip } from '../../ui/common/tooltips/version-control-tip/version-control-tip.component';
 import { Dimension } from '../../state/shared';
-import { ComponentType } from 'libs/shared/src';
 import { filter, Subject, switchMap, takeUntil } from 'rxjs';
-import { NiFiCommon, TextTip } from '@nifi/shared';
+import { ComponentType, NiFiCommon, TextTip } from '@nifi/shared';
 
 @Injectable({
     providedIn: 'root'
 })
 export class ProcessGroupManager implements OnDestroy {
+    private store = inject<Store<CanvasState>>(Store);
+    private canvasUtils = inject(CanvasUtils);
+    private nifiCommon = inject(NiFiCommon);
+    private positionBehavior = inject(PositionBehavior);
+    private selectableBehavior = inject(SelectableBehavior);
+    private editableBehavior = inject(EditableBehavior);
+
     private destroyed$: Subject<boolean> = new Subject();
+    private registryClients = this.store.selectSignal(selectRegistryClients);
 
     private dimensions: Dimension = {
         width: 384,
@@ -55,15 +63,6 @@ export class ProcessGroupManager implements OnDestroy {
     private processGroups: [] = [];
     private processGroupContainer: any = null;
     private transitionRequired = false;
-
-    constructor(
-        private store: Store<CanvasState>,
-        private canvasUtils: CanvasUtils,
-        private nifiCommon: NiFiCommon,
-        private positionBehavior: PositionBehavior,
-        private selectableBehavior: SelectableBehavior,
-        private editableBehavior: EditableBehavior
-    ) {}
 
     private select() {
         return this.processGroupContainer.selectAll('g.process-group').data(this.processGroups, function (d: any) {
@@ -1117,7 +1116,8 @@ export class ProcessGroupManager implements OnDestroy {
                     versionControl.each(function (this: any) {
                         if (self.isUnderVersionControl(processGroupData)) {
                             self.canvasUtils.canvasTooltip(VersionControlTip, d3.select(this), {
-                                versionControlInformation: processGroupData.component.versionControlInformation
+                                versionControlInformation: processGroupData.component.versionControlInformation,
+                                registryClients: self.registryClients()
                             });
                         } else {
                             self.canvasUtils.resetCanvasTooltip(d3.select(this));

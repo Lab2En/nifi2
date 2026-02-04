@@ -41,6 +41,7 @@ import org.apache.nifi.components.resource.ResourceCardinality;
 import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
@@ -100,8 +101,7 @@ public class ExtractGrok extends AbstractProcessor {
         .build();
 
     public static final PropertyDescriptor GROK_PATTERNS = new PropertyDescriptor.Builder()
-        .name("Grok Pattern file")
-        .displayName("Grok Patterns")
+        .name("Grok Patterns")
         .description("Custom Grok pattern definitions. These definitions will be loaded after the default Grok "
             + "patterns. The Grok Parser will use the default Grok patterns when this property is not configured.")
         .required(false)
@@ -146,7 +146,7 @@ public class ExtractGrok extends AbstractProcessor {
         .build();
 
     public static final PropertyDescriptor NAMED_CAPTURES_ONLY = new PropertyDescriptor.Builder()
-        .name("Named captures only")
+        .name("Named Captures Only")
         .description("Only store named captures from grok")
         .required(true)
         .allowableValues("true", "false")
@@ -154,7 +154,7 @@ public class ExtractGrok extends AbstractProcessor {
         .defaultValue("false")
         .build();
 
-    private final static List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             GROK_EXPRESSION,
             GROK_PATTERNS,
             DESTINATION,
@@ -174,7 +174,7 @@ public class ExtractGrok extends AbstractProcessor {
             .description("FlowFiles are routed to this relationship when no provided Grok Expression matches the content of the FlowFile")
             .build();
 
-    private final static Set<Relationship> RELATIONSHIPS = Set.of(
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
             REL_MATCH,
             REL_NO_MATCH
     );
@@ -191,7 +191,7 @@ public class ExtractGrok extends AbstractProcessor {
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnStopped
@@ -326,5 +326,11 @@ public class ExtractGrok extends AbstractProcessor {
 
                 break;
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("Grok Pattern file", GROK_PATTERNS.getName());
+        config.renameProperty("Named captures only", NAMED_CAPTURES_ONLY.getName());
     }
 }

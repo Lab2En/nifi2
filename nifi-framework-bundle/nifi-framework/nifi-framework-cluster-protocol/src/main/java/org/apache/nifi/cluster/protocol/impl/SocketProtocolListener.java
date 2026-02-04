@@ -16,17 +16,6 @@
  */
 package org.apache.nifi.cluster.protocol.impl;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.Socket;
-import java.security.cert.Certificate;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLSocket;
 import org.apache.nifi.cluster.protocol.NodeIdentifier;
 import org.apache.nifi.cluster.protocol.ProtocolContext;
 import org.apache.nifi.cluster.protocol.ProtocolException;
@@ -53,6 +42,18 @@ import org.apache.nifi.stream.io.ByteCountingInputStream;
 import org.apache.nifi.util.StopWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.Socket;
+import java.security.cert.Certificate;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
 
 /**
  * Implements a listener for protocol messages sent over unicast socket.
@@ -101,7 +102,7 @@ public class SocketProtocolListener extends SocketListener implements ProtocolLi
 
     @Override
     public void stop() throws IOException {
-        if (super.isRunning() == false) {
+        if (!super.isRunning()) {
             throw new IOException("Instance is already stopped.");
         }
 
@@ -247,22 +248,16 @@ public class SocketProtocolListener extends SocketListener implements ProtocolLi
             return null;
         }
 
-        switch (message.getType()) {
-            case CONNECTION_REQUEST:
-                return ((ConnectionRequestMessage) message).getConnectionRequest().getProposedNodeIdentifier();
-            case HEARTBEAT:
-                return ((HeartbeatMessage) message).getHeartbeat().getNodeIdentifier();
-            case OFFLOAD_REQUEST:
-                return ((OffloadMessage) message).getNodeId();
-            case DISCONNECTION_REQUEST:
-                return ((DisconnectMessage) message).getNodeId();
-            case FLOW_REQUEST:
-                return ((FlowRequestMessage) message).getNodeId();
-            case RECONNECTION_REQUEST:
-                return ((ReconnectionRequestMessage) message).getNodeId();
-            default:
-                return null;
-        }
+        return switch (message.getType()) {
+            case CONNECTION_REQUEST ->
+                ((ConnectionRequestMessage) message).getConnectionRequest().getProposedNodeIdentifier();
+            case HEARTBEAT -> ((HeartbeatMessage) message).getHeartbeat().getNodeIdentifier();
+            case OFFLOAD_REQUEST -> ((OffloadMessage) message).getNodeId();
+            case DISCONNECTION_REQUEST -> ((DisconnectMessage) message).getNodeId();
+            case FLOW_REQUEST -> ((FlowRequestMessage) message).getNodeId();
+            case RECONNECTION_REQUEST -> ((ReconnectionRequestMessage) message).getNodeId();
+            default -> null;
+        };
     }
 
     private Set<String> getCertificateIdentities(final Socket socket) throws IOException {

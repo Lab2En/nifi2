@@ -16,6 +16,10 @@
  */
 package org.apache.nifi.web.api;
 
+import jakarta.ws.rs.HttpMethod;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import org.apache.nifi.authorization.AuthorizableLookup;
 import org.apache.nifi.authorization.AuthorizeControllerServiceReference;
 import org.apache.nifi.authorization.AuthorizeParameterProviders;
@@ -64,11 +68,6 @@ import org.apache.nifi.web.util.InvalidComponentAction;
 import org.apache.nifi.web.util.LifecycleManagementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import jakarta.ws.rs.HttpMethod;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.Response.Status;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 
@@ -193,6 +192,7 @@ public abstract class FlowUpdateResource<T extends ProcessGroupDescriptorEntity,
         // The new flow may not contain the same versions of components in existing flow. As a result, we need to update
         // the flow snapshot to contain compatible bundles.
         serviceFacade.discoverCompatibleBundles(flowSnapshot.getFlowContents());
+        serviceFacade.discoverCompatibleBundles(flowSnapshot.getParameterProviders());
 
         // If there are any Controller Services referenced that are inherited from the parent group, resolve those to point to the appropriate Controller Service, if we are able to.
         final Set<String> unresolvedControllerServices = serviceFacade.resolveInheritedControllerServices(flowSnapshotContainer, groupId, user);
@@ -648,7 +648,7 @@ public abstract class FlowUpdateResource<T extends ProcessGroupDescriptorEntity,
                 if (updatedEntity != null) {
                     entities.add(updatedEntity);
                 }
-            } catch (final ResourceNotFoundException rnfe) {
+            } catch (final ResourceNotFoundException ignored) {
                 // Component was removed. Just continue on without adding anything to the entities.
                 // We do this because the intent is to get updated versions of the entities with current
                 // Revisions so that we can change the states of the components. If the component was removed,

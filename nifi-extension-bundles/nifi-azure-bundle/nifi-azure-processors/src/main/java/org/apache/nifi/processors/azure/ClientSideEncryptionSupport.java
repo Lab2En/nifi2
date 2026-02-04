@@ -36,18 +36,17 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.azure.storage.utils.ClientSideEncryptionMethod;
 import org.apache.nifi.util.StringUtils;
 
-import javax.crypto.spec.SecretKeySpec;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import javax.crypto.spec.SecretKeySpec;
 
 public interface ClientSideEncryptionSupport {
     List<KeyOperation> KEY_OPERATIONS = List.of(KeyOperation.WRAP_KEY, KeyOperation.UNWRAP_KEY);
 
     PropertyDescriptor CSE_KEY_TYPE = new PropertyDescriptor.Builder()
             .name("Client-Side Encryption Key Type")
-            .displayName("Client-Side Encryption Key Type")
             .required(true)
             .allowableValues(ClientSideEncryptionMethod.class)
             .defaultValue(ClientSideEncryptionMethod.NONE)
@@ -56,7 +55,6 @@ public interface ClientSideEncryptionSupport {
 
     PropertyDescriptor CSE_KEY_ID = new PropertyDescriptor.Builder()
             .name("Client-Side Encryption Key ID")
-            .displayName("Client-Side Encryption Key ID")
             .description("Specifies the ID of the key to use for client-side encryption.")
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .required(true)
@@ -66,7 +64,6 @@ public interface ClientSideEncryptionSupport {
 
     PropertyDescriptor CSE_LOCAL_KEY = new PropertyDescriptor.Builder()
             .name("Client-Side Encryption Local Key")
-            .displayName("Client-Side Encryption Local Key")
             .description("When using local client-side encryption, this is the raw key, encoded in hexadecimal")
             .required(true)
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
@@ -147,7 +144,7 @@ public interface ClientSideEncryptionSupport {
             case keySize192 -> Optional.of(KeyWrapAlgorithm.A192KW.toString());
             case keySize256, keySize384, keySize512 ->
                 // Default to the longest allowed key length for wrap
-                    Optional.of(KeyWrapAlgorithm.A256KW.toString());
+                Optional.of(KeyWrapAlgorithm.A256KW.toString());
             default -> Optional.empty();
         };
     }

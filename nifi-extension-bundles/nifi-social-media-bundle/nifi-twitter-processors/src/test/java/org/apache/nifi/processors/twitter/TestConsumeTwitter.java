@@ -16,10 +16,11 @@
  */
 package org.apache.nifi.processors.twitter;
 
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.AfterEach;
@@ -28,18 +29,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class TestConsumeTwitter {
     private MockWebServer mockWebServer;
 
     private TestRunner runner;
 
-    private final String SAMPLE_TWEET = "{\"data\":{\"id\":\"123\",\"text\":\"This is a sample tweet and is not real!\"}}";
-    private final String EXPECTED_TWEET = "[{\"data\":{\"id\":\"123\",\"text\":\"This is a sample tweet and is not real!\"}}]";
-
     @BeforeEach
-    public void setRunnerAndAPI() {
+    public void setRunnerAndAPI() throws IOException {
         mockWebServer = new MockWebServer();
+        mockWebServer.start();
 
         runner = TestRunners.newTestRunner(ConsumeTwitter.class);
 
@@ -50,16 +52,18 @@ public class TestConsumeTwitter {
 
     @AfterEach
     public void shutdownServerAndAPI() throws IOException {
-        mockWebServer.shutdown();
+        mockWebServer.close();
     }
 
     @Test
     @Timeout(60)
-    public void testReceiveSingleTweetInStream() throws InterruptedException {
-        MockResponse response = new MockResponse()
-                .setResponseCode(200)
-                .setBody(SAMPLE_TWEET)
-                .addHeader("Content-Type", "application/json");
+    public void testReceiveSingleTweetInStream() {
+        String sampleTweet = "{\"data\":{\"id\":\"123\",\"text\":\"This is a sample tweet and is not real!\"}}";
+        MockResponse response = new MockResponse.Builder()
+                .code(200)
+                .body(sampleTweet)
+                .addHeader("Content-Type", "application/json")
+                .build();
         mockWebServer.enqueue(response);
 
 
@@ -74,16 +78,43 @@ public class TestConsumeTwitter {
         // processor, so the test will timeout after 60 seconds.
         runner.run(1, false, true);
 
-        while (runner.getFlowFilesForRelationship(ConsumeTwitter.REL_SUCCESS).size() == 0) {
+        while (runner.getFlowFilesForRelationship(ConsumeTwitter.REL_SUCCESS).isEmpty()) {
             runner.run(1, false, false);
         }
         runner.stop();
 
         // there should only be a single FlowFile containing a tweet
         runner.assertTransferCount(ConsumeTwitter.REL_SUCCESS, 1);
-        MockFlowFile flowFile = runner.getFlowFilesForRelationship(ConsumeTwitter.REL_SUCCESS).get(0);
-        flowFile.assertContentEquals(EXPECTED_TWEET);
+        MockFlowFile flowFile = runner.getFlowFilesForRelationship(ConsumeTwitter.REL_SUCCESS).getFirst();
+        String expectedTweet = "[{\"data\":{\"id\":\"123\",\"text\":\"This is a sample tweet and is not real!\"}}]";
+        flowFile.assertContentEquals(expectedTweet);
         flowFile.assertAttributeEquals(CoreAttributes.MIME_TYPE.key(), "application/json");
         flowFile.assertAttributeEquals("tweets", "1");
+    }
+
+    @Test
+    void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("stream-endpoint", ConsumeTwitter.ENDPOINT.getName()),
+                Map.entry("base-path", ConsumeTwitter.BASE_PATH.getName()),
+                Map.entry("bearer-token", ConsumeTwitter.BEARER_TOKEN.getName()),
+                Map.entry("queue-size", ConsumeTwitter.QUEUE_SIZE.getName()),
+                Map.entry("batch-size", ConsumeTwitter.BATCH_SIZE.getName()),
+                Map.entry("backoff-attempts", ConsumeTwitter.BACKOFF_ATTEMPTS.getName()),
+                Map.entry("backoff-time", ConsumeTwitter.BACKOFF_TIME.getName()),
+                Map.entry("maximum-backoff-time", ConsumeTwitter.MAXIMUM_BACKOFF_TIME.getName()),
+                Map.entry("connect-timeout", ConsumeTwitter.CONNECT_TIMEOUT.getName()),
+                Map.entry("read-timeout", ConsumeTwitter.READ_TIMEOUT.getName()),
+                Map.entry("backfill-minutes", ConsumeTwitter.BACKFILL_MINUTES.getName()),
+                Map.entry("tweet-fields", ConsumeTwitter.TWEET_FIELDS.getName()),
+                Map.entry("user-fields", ConsumeTwitter.USER_FIELDS.getName()),
+                Map.entry("media-fields", ConsumeTwitter.MEDIA_FIELDS.getName()),
+                Map.entry("poll-fields", ConsumeTwitter.POLL_FIELDS.getName()),
+                Map.entry("place-fields", ConsumeTwitter.PLACE_FIELDS.getName()),
+                Map.entry("expansions", ConsumeTwitter.EXPANSIONS.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
     }
 }

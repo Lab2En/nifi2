@@ -17,7 +17,6 @@
 package org.apache.nifi.cluster.protocol.jaxb.message;
 
 import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
-
 import org.apache.nifi.cluster.coordination.node.NodeConnectionStatus;
 import org.apache.nifi.cluster.protocol.NodeIdentifier;
 
@@ -28,9 +27,6 @@ public class AdaptedHeartbeat {
     private NodeIdentifier nodeIdentifier;
     private byte[] payload;
     private NodeConnectionStatus connectionStatus;
-
-    public AdaptedHeartbeat() {
-    }
 
     @XmlJavaTypeAdapter(NodeIdentifierAdapter.class)
     public NodeIdentifier getNodeIdentifier() {

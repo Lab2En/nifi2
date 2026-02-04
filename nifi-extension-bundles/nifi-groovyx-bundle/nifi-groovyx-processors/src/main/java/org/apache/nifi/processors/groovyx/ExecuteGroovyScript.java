@@ -18,22 +18,12 @@ package org.apache.nifi.processors.groovyx;
 
 import groovy.lang.GroovyShell;
 import groovy.lang.Script;
-import java.io.File;
-import java.lang.reflect.Method;
-import java.sql.SQLException;
-import java.sql.SQLFeatureNotSupportedException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.Restricted;
 import org.apache.nifi.annotation.behavior.Restriction;
+import org.apache.nifi.annotation.behavior.Stateful;
+import org.apache.nifi.annotation.behavior.SupportsSensitiveDynamicProperties;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -46,13 +36,14 @@ import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.resource.ResourceCardinality;
 import org.apache.nifi.components.resource.ResourceType;
+import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.dbcp.DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
@@ -65,12 +56,24 @@ import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.runtime.ResourceGroovyMethods;
 import org.codehaus.groovy.runtime.StackTraceUtils;
 
+import java.io.File;
+import java.lang.reflect.Method;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.time.Duration;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 @InputRequirement(InputRequirement.Requirement.INPUT_ALLOWED)
 @Tags({"script", "groovy", "groovyx"})
-@CapabilityDescription(
-        "Experimental Extended Groovy script processor. The script is responsible for "
-        + "handling the incoming flow file (transfer to SUCCESS or remove, e.g.) as well as any flow files created by "
-        + "the script. If the handling is incomplete or incorrect, the session will be rolled back.")
+@CapabilityDescription("""
+        Execute custom Groovy script to handle input FlowFiles and route to standard relationships.
+        Script validation includes a timeout of 5 minutes to avoid potential issues with dynamic dependency resolution.
+        """
+)
 @Restricted(
         restrictions = {
                 @Restriction(
@@ -78,7 +81,10 @@ import org.codehaus.groovy.runtime.StackTraceUtils;
                         explanation = "Provides operator the ability to execute arbitrary code assuming all permissions that NiFi has.")
         }
 )
+@Stateful(scopes = {Scope.LOCAL, Scope.CLUSTER},
+        description = "Scripts can store and retrieve state using the State Management APIs. Consult the State Manager section of the Developer's Guide for more details.")
 @SeeAlso(classNames = {"org.apache.nifi.processors.script.ExecuteScript"})
+@SupportsSensitiveDynamicProperties
 @DynamicProperty(name = "A script engine property to update",
         value = "The value to set it to",
         expressionLanguageScope = ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
@@ -93,8 +99,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
             + "import org.apache.nifi.processor.util.*;" + "import org.apache.nifi.processors.script.*;" + "import org.apache.nifi.logging.ComponentLog;";
 
     public static final PropertyDescriptor SCRIPT_FILE = new PropertyDescriptor.Builder()
-            .name("groovyx-script-file")
-            .displayName("Script File")
+            .name("Script File")
             .required(false)
             .description("Path to script file to execute. Only one of Script File or Script Body may be used")
             .identifiesExternalResource(ResourceCardinality.SINGLE, ResourceType.FILE)
@@ -102,8 +107,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor SCRIPT_BODY = new PropertyDescriptor.Builder()
-            .name("groovyx-script-body")
-            .displayName("Script Body")
+            .name("Script Body")
             .required(false)
             .description("Body of script to execute. Only one of Script File or Script Body may be used")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -112,8 +116,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
 
     public static String[] VALID_FAIL_STRATEGY = {"rollback", "transfer to failure"};
     public static final PropertyDescriptor FAIL_STRATEGY = new PropertyDescriptor.Builder()
-            .name("groovyx-failure-strategy")
-            .displayName("Failure strategy")
+            .name("Failure Strategy")
             .description("What to do with unhandled exceptions. If you want to manage exception by code then keep the default value `rollback`."
                     + " If `transfer to failure` selected and unhandled exception occurred then all flowFiles received from incoming queues in this session"
                     + " will be transferred to `failure` relationship with additional attributes set: ERROR_MESSAGE and ERROR_STACKTRACE."
@@ -126,8 +129,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor ADD_CLASSPATH = new PropertyDescriptor.Builder()
-            .name("groovyx-additional-classpath")
-            .displayName("Additional classpath")
+            .name("Additional Classpath")
             .required(false)
             .description("Classpath list separated by semicolon or comma. You can use masks like `*`, `*.jar` in file name.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -138,8 +140,18 @@ public class ExecuteGroovyScript extends AbstractProcessor {
 
     public static final Relationship REL_FAILURE = new Relationship.Builder().name("failure").description("FlowFiles that failed to be processed").build();
 
-    private List<PropertyDescriptor> descriptors;
-    private Set<Relationship> relationships;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            SCRIPT_FILE,
+            SCRIPT_BODY,
+            FAIL_STRATEGY,
+            ADD_CLASSPATH
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
+
     //parameters evaluated on Start or on Validate
     File scriptFile = null;  //SCRIPT_FILE
     String scriptBody = null; //SCRIPT_BODY
@@ -151,32 +163,17 @@ public class ExecuteGroovyScript extends AbstractProcessor {
     volatile long scriptLastModified = 0;  //last scriptFile modification to check if recompile required
 
     @Override
-    protected void init(final ProcessorInitializationContext context) {
-        List<PropertyDescriptor> descriptors = new ArrayList<>();
-        descriptors.add(SCRIPT_FILE);
-        descriptors.add(SCRIPT_BODY);
-        descriptors.add(FAIL_STRATEGY);
-        descriptors.add(ADD_CLASSPATH);
-        this.descriptors = Collections.unmodifiableList(descriptors);
-
-        HashSet<Relationship> relationshipSet = new HashSet<>();
-        relationshipSet.add(REL_SUCCESS);
-        relationshipSet.add(REL_FAILURE);
-        relationships = Collections.unmodifiableSet(relationshipSet);
-    }
-
-    @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return descriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     private File asFile(String f) {
-        if (f == null || f.length() == 0) {
+        if (f == null || f.isEmpty()) {
             return null;
         }
         return new File(f);
@@ -187,13 +184,13 @@ public class ExecuteGroovyScript extends AbstractProcessor {
             Method m = null;
             try {
                 m = compiled.getDeclaredMethod(method, ProcessContext.class);
-            } catch (NoSuchMethodException e) {
+            } catch (NoSuchMethodException ignored) {
                 // The method will not be invoked if it does not exist
             }
             if (m == null) {
                 try {
                     m = compiled.getDeclaredMethod(method, Object.class);
-                } catch (NoSuchMethodException e) {
+                } catch (NoSuchMethodException ignored) {
                     // The method will not be invoked if it does not exist
                 }
             }
@@ -216,13 +213,29 @@ public class ExecuteGroovyScript extends AbstractProcessor {
         this.addClasspath = context.getProperty(ADD_CLASSPATH).evaluateAttributeExpressions().getValue(); //ADD_CLASSPATH
         this.groovyClasspath = context.newPropertyValue(GROOVY_CLASSPATH).evaluateAttributeExpressions().getValue(); //evaluated from ${groovy.classes.path} global property
 
-        final Collection<ValidationResult> results = new HashSet<>();
+        final ValidationResult.Builder builder = new ValidationResult.Builder()
+                .subject("GroovyScript")
+                .input(scriptFile == null ? null : scriptFile.toString());
+
+        final Thread validationThread = Thread.startVirtualThread(() -> {
+            try {
+                getGroovyScript();
+                builder.valid(true);
+            } catch (final Throwable e) {
+                builder.explanation(e.toString());
+                builder.valid(false);
+            }
+        });
+
         try {
-            getGroovyScript();
-        } catch (Throwable t) {
-            results.add(new ValidationResult.Builder().subject("GroovyScript").input(this.scriptFile != null ? this.scriptFile.toString() : null).valid(false).explanation(t.toString()).build());
+            validationThread.join(Duration.ofMinutes(5));
+        } catch (final InterruptedException e) {
+            builder.valid(false);
+            builder.explanation("Groovy Script validation interrupted after 5 minutes");
         }
-        return results;
+
+        final ValidationResult result = builder.build();
+        return List.of(result);
     }
 
     /**
@@ -305,8 +318,8 @@ public class ExecuteGroovyScript extends AbstractProcessor {
             CompilerConfiguration conf = new CompilerConfiguration();
             conf.setDebug(true);
             shell = new GroovyShell(conf);
-            if (addClasspath != null && addClasspath.length() > 0) {
-                for (File fcp : Files.listPathsFiles(addClasspath)) {
+            if (addClasspath != null && !addClasspath.isEmpty()) {
+                for (File fcp : Files.listPathsFiles(addClasspath, getLogger())) {
                     if (!fcp.exists()) {
                         throw new ProcessException("Path not found `" + fcp + "` for `" + ADD_CLASSPATH.getDisplayName() + "`");
                     }
@@ -314,7 +327,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
                 }
             }
             //try to add classpath with groovy classes
-            if (groovyClasspath != null && groovyClasspath.length() > 0) {
+            if (groovyClasspath != null && !groovyClasspath.isEmpty()) {
                 shell.getClassLoader().addClasspath(groovyClasspath);
             }
         }
@@ -344,13 +357,21 @@ public class ExecuteGroovyScript extends AbstractProcessor {
         return script;
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("groovyx-script-file", SCRIPT_FILE.getName());
+        config.renameProperty("groovyx-script-body", SCRIPT_BODY.getName());
+        config.renameProperty("groovyx-failure-strategy", FAIL_STRATEGY.getName());
+        config.renameProperty("groovyx-additional-classpath", ADD_CLASSPATH.getName());
+    }
+
     /**
      * init SQL variables from DBCP services
      */
-    private void onInitSQL(Map<String, Object> SQL) throws SQLException {
+    private void onInitSQL(Map<String, Object> SQL, Map<String, String> attributes) throws SQLException {
         for (Map.Entry<String, Object> e : SQL.entrySet()) {
             DBCPService s = (DBCPService) e.getValue();
-            OSql sql = new OSql(s.getConnection(Collections.emptyMap()));
+            OSql sql = new OSql(s.getConnection(attributes));
             //try to set autocommit to false
             try {
                 if (sql.getConnection().getAutoCommit()) {
@@ -399,7 +420,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
             try {
                 sql.close();
                 sql = null;
-            } catch (Throwable ei) {
+            } catch (Throwable ignored) {
                 // Nothing to do
             }
         }
@@ -415,7 +436,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
                 if (!sql.getConnection().getAutoCommit()) {
                     sql.rollback();
                 }
-            } catch (Throwable ei) {
+            } catch (Throwable ignored) {
                 //the rollback error is usually not important, rather it is the DML error that is really important
             }
         }
@@ -438,6 +459,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
             Map bindings = script.getBinding().getVariables();
 
             bindings.clear();
+            Map<String, String> attributes = new HashMap<>();
 
             // Find the user-added properties and bind them for the script
             for (Map.Entry<PropertyDescriptor, String> property : context.getProperties().entrySet()) {
@@ -461,11 +483,12 @@ public class ExecuteGroovyScript extends AbstractProcessor {
                         // Add the dynamic property bound to its full PropertyValue to the script engine
                         if (property.getValue() != null) {
                             bindings.put(property.getKey().getName(), context.getProperty(property.getKey()));
+                            attributes.put(property.getKey().getName(), context.getProperty(property.getKey()).evaluateAttributeExpressions().getValue());
                         }
                     }
                 }
             }
-            onInitSQL(SQL);
+            onInitSQL(SQL, attributes);
 
             bindings.put("session", session);
             bindings.put("context", context);
@@ -544,6 +567,7 @@ public class ExecuteGroovyScript extends AbstractProcessor {
                     .identifiesControllerService(RecordSetWriterFactory.class)
                     .build();
         }
+
         return new PropertyDescriptor.Builder()
                 .name(propertyDescriptorName)
                 .required(false)

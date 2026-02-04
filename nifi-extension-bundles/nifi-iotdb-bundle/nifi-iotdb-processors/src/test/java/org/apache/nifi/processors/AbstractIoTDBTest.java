@@ -18,16 +18,16 @@ package org.apache.nifi.processors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.nifi.processors.model.DatabaseSchema;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSEncoding;
-import org.apache.iotdb.tsfile.write.record.Tablet;
-import org.apache.iotdb.tsfile.write.schema.MeasurementSchema;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processors.model.DatabaseSchema;
 import org.apache.nifi.processors.model.ValidationResult;
-
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.file.metadata.enums.TSEncoding;
+import org.apache.tsfile.write.record.Tablet;
+import org.apache.tsfile.write.schema.IMeasurementSchema;
+import org.apache.tsfile.write.schema.MeasurementSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -219,18 +220,18 @@ public class AbstractIoTDBTest {
         Map<String, Tablet> tablets = processor.generateTablets(schema, "root.test_sg.test_d1.", 1);
 
         Map<String, Tablet> exceptedTablets = new HashMap<>();
-        List<MeasurementSchema> schemas = Arrays.asList(
-        new MeasurementSchema("s1", TSDataType.INT32, TSEncoding.RLE),
-        new MeasurementSchema("s2", TSDataType.DOUBLE, TSEncoding.PLAIN));
+        List<IMeasurementSchema> schemas = Arrays.asList(
+            new MeasurementSchema("s1", TSDataType.INT32, TSEncoding.RLE),
+            new MeasurementSchema("s2", TSDataType.DOUBLE, TSEncoding.PLAIN));
         exceptedTablets.put("root.test_sg.test_d1", new Tablet("root.test_sg.test_d1", schemas, 1));
 
         assertEquals("root.test_sg.test_d1", tablets.keySet().toArray()[0]);
         assertEquals(exceptedTablets.get("root.test_sg.test_d1").getSchemas(), tablets.get("root.test_sg.test_d1").getSchemas());
         assertEquals(exceptedTablets.get("root.test_sg.test_d1").getMaxRowNumber(), tablets.get("root.test_sg.test_d1").getMaxRowNumber());
-        assertEquals(exceptedTablets.get("root.test_sg.test_d1").getTimeBytesSize(), tablets.get("root.test_sg.test_d1").getTimeBytesSize());
-        assertEquals(exceptedTablets.get("root.test_sg.test_d1").getTotalValueOccupation(), tablets.get("root.test_sg.test_d1").getTotalValueOccupation());
-        assertEquals(exceptedTablets.get("root.test_sg.test_d1").deviceId, tablets.get("root.test_sg.test_d1").deviceId);
-        assertEquals(exceptedTablets.get("root.test_sg.test_d1").rowSize, tablets.get("root.test_sg.test_d1").rowSize);
+        assertArrayEquals(exceptedTablets.get("root.test_sg.test_d1").getTimestamps(), tablets.get("root.test_sg.test_d1").getTimestamps());
+        assertArrayEquals(exceptedTablets.get("root.test_sg.test_d1").getValues(), tablets.get("root.test_sg.test_d1").getValues());
+        assertEquals(exceptedTablets.get("root.test_sg.test_d1").getDeviceId(), tablets.get("root.test_sg.test_d1").getDeviceId());
+        assertEquals(exceptedTablets.get("root.test_sg.test_d1").getRowSize(), tablets.get("root.test_sg.test_d1").getRowSize());
     }
 
     public static class TestAbstractIoTDBProcessor extends AbstractIoTDB {

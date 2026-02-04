@@ -34,7 +34,6 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.ssl.SSLContextProvider;
 
-import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -46,6 +45,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
 
 /**
  * A base class for processors that send data to an external system using TCP or UDP.
@@ -379,12 +379,7 @@ public abstract class AbstractPutEventProcessor<T> extends AbstractSessionFactor
         }
 
         private void transferRanges(final List<Range> ranges, final Relationship relationship) {
-            Collections.sort(ranges, new Comparator<Range>() {
-                @Override
-                public int compare(final Range o1, final Range o2) {
-                    return Long.compare(o1.getStart(), o2.getStart());
-                }
-            });
+            ranges.sort(Comparator.comparingLong(Range::getStart));
 
             for (int i = 0; i < ranges.size(); i++) {
                 Range range = ranges.get(i);

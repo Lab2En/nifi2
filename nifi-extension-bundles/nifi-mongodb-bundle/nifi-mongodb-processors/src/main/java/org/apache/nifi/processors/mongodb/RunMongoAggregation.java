@@ -30,6 +30,7 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -41,20 +42,16 @@ import org.bson.conversions.Bson;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Tags({"mongo", "aggregation", "aggregate"})
 @CapabilityDescription("A processor that runs an aggregation query whenever a flowfile is received.")
 @InputRequirement(InputRequirement.Requirement.INPUT_ALLOWED)
 public class RunMongoAggregation extends AbstractMongoProcessor {
-
-    private final static Set<Relationship> relationships;
-    private final static List<PropertyDescriptor> propertyDescriptors;
 
     static final Relationship REL_ORIGINAL = new Relationship.Builder()
             .description("The input flowfile gets sent to this relationship when the query succeeds.")
@@ -75,7 +72,7 @@ public class RunMongoAggregation extends AbstractMongoProcessor {
         ObjectMapper mapper = new ObjectMapper();
         List<Map> querySteps = mapper.readValue(query, List.class);
         for (Map<?, ?> queryStep : querySteps) {
-            BasicDBObject bson = BasicDBObject.parse(mapper.writeValueAsString(queryStep));
+            BasicDBObject bson = BasicDBObject.parse(mapper.writeValueAsString(queryStep)); //NOPMD
             result.add(bson);
         }
 
@@ -83,8 +80,7 @@ public class RunMongoAggregation extends AbstractMongoProcessor {
     }
 
     static final PropertyDescriptor QUERY = new PropertyDescriptor.Builder()
-            .name("mongo-agg-query")
-            .displayName("Query")
+            .name("Query")
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .description("The aggregation query to be executed.")
             .required(true)
@@ -92,8 +88,7 @@ public class RunMongoAggregation extends AbstractMongoProcessor {
             .build();
 
     static final PropertyDescriptor ALLOW_DISK_USE = new PropertyDescriptor.Builder()
-            .name("allow-disk-use")
-            .displayName("Allow Disk Use")
+            .name("Allow Disk Use")
             .description("Set this to true to enable writing data to temporary files to prevent exceeding the " +
                     "maximum memory use limit during aggregation pipeline staged when handling large datasets.")
             .required(true)
@@ -102,40 +97,40 @@ public class RunMongoAggregation extends AbstractMongoProcessor {
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .build();
 
-    static {
-        List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
-        _propertyDescriptors.addAll(descriptors);
-        _propertyDescriptors.add(CHARSET);
-        _propertyDescriptors.add(QUERY);
-        _propertyDescriptors.add(ALLOW_DISK_USE);
-        _propertyDescriptors.add(JSON_TYPE);
-        _propertyDescriptors.add(QUERY_ATTRIBUTE);
-        _propertyDescriptors.add(BATCH_SIZE);
-        _propertyDescriptors.add(RESULTS_PER_FLOWFILE);
-        _propertyDescriptors.add(DATE_FORMAT);
-        propertyDescriptors = Collections.unmodifiableList(_propertyDescriptors);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_RESULTS,
+            REL_ORIGINAL,
+            REL_FAILURE
+    );
 
-        final Set<Relationship> _relationships = new HashSet<>();
-        _relationships.add(REL_RESULTS);
-        _relationships.add(REL_ORIGINAL);
-        _relationships.add(REL_FAILURE);
-        relationships = Collections.unmodifiableSet(_relationships);
-    }
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                    CHARSET,
+                    QUERY,
+                    ALLOW_DISK_USE,
+                    JSON_TYPE,
+                    QUERY_ATTRIBUTE,
+                    BATCH_SIZE,
+                    RESULTS_PER_FLOWFILE,
+                    DATE_FORMAT
+            )
+    ).toList();
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     private String buildBatch(List<Document> batch) {
         String retVal;
         try {
-            retVal = objectMapper.writeValueAsString(batch.size() > 1 ? batch : batch.get(0));
+            retVal = objectMapper.writeValueAsString(batch.size() > 1 ? batch : batch.getFirst());
         } catch (Exception e) {
             retVal = null;
         }
@@ -165,7 +160,7 @@ public class RunMongoAggregation extends AbstractMongoProcessor {
         configureMapper(jsonTypeSetting, dateFormat);
 
         Map<String, String> attrs = new HashMap<>();
-        if (queryAttr != null && queryAttr.trim().length() > 0) {
+        if (queryAttr != null && !queryAttr.isBlank()) {
             attrs.put(queryAttr, query);
         }
 
@@ -174,7 +169,7 @@ public class RunMongoAggregation extends AbstractMongoProcessor {
         try {
             MongoCollection<Document> collection = getCollection(context, flowFile);
             List<Bson> aggQuery = buildAggregationQuery(query);
-            AggregateIterable<Document> it = collection.aggregate(aggQuery).allowDiskUse(allowDiskUse);;
+            AggregateIterable<Document> it = collection.aggregate(aggQuery).allowDiskUse(allowDiskUse);
             it.batchSize(batchSize != null ? batchSize : 1);
 
             iter = it.iterator();
@@ -211,5 +206,12 @@ public class RunMongoAggregation extends AbstractMongoProcessor {
                 iter.close();
             }
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("mongo-agg-query", QUERY.getName());
+        config.renameProperty("allow-disk-use", ALLOW_DISK_USE.getName());
     }
 }

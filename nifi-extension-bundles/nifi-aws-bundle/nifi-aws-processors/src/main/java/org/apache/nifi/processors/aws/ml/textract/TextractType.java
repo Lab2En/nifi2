@@ -17,19 +17,19 @@
 
 package org.apache.nifi.processors.aws.ml.textract;
 
-import static java.util.stream.Collectors.collectingAndThen;
-import static java.util.stream.Collectors.toSet;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
+
+import static java.util.stream.Collectors.collectingAndThen;
+import static java.util.stream.Collectors.toSet;
 
 public enum TextractType {
     DOCUMENT_ANALYSIS("Document Analysis"),
     DOCUMENT_TEXT_DETECTION("Document Text Detection"),
     EXPENSE_ANALYSIS("Expense Analysis");
 
-    public static final Set<String> TEXTRACT_TYPES = Arrays.stream(TextractType.values()).map(TextractType::getType)
+    public static final Set<String> TEXTRACT_TYPES = Arrays.stream(values()).map(TextractType::getType)
             .collect(collectingAndThen(toSet(), Collections::unmodifiableSet));
 
     public final String type;

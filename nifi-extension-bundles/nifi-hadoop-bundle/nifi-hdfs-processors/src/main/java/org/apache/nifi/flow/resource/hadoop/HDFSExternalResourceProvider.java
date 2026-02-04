@@ -39,7 +39,6 @@ import org.apache.nifi.security.krb.KerberosUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.net.SocketFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
@@ -51,6 +50,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import javax.net.SocketFactory;
 
 // Implementation considerations: The public methods are considered as steps orchestrated by clients. As of this, there is no direct dependency
 // or connection between {@code listResources} and {@code fetchExternalResource}: both are self-sufficing actions. As of this they do not share
@@ -262,12 +262,7 @@ public class HDFSExternalResourceProvider implements ExternalResourceProvider {
 
     private FileSystem getFileSystemAsUser(final Configuration config, final UserGroupInformation ugi) throws IOException {
         try {
-            return ugi.doAs(new PrivilegedExceptionAction<FileSystem>() {
-                @Override
-                public FileSystem run() throws Exception {
-                    return FileSystem.get(config);
-                }
-            });
+            return ugi.doAs((PrivilegedExceptionAction<FileSystem>) () -> FileSystem.get(config));
         } catch (final InterruptedException e) {
             throw new IOException("Unable to create file system: " + e.getMessage(), e);
         }

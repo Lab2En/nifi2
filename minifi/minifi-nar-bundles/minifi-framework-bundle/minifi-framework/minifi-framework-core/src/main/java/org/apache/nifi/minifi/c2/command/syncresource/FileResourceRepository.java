@@ -17,6 +17,19 @@
 
 package org.apache.nifi.minifi.c2.command.syncresource;
 
+import org.apache.nifi.c2.protocol.api.ResourceItem;
+import org.apache.nifi.c2.protocol.api.ResourcesGlobalHash;
+import org.apache.nifi.c2.serializer.C2Serializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
 import static java.nio.file.Files.copy;
 import static java.nio.file.Files.createDirectories;
 import static java.nio.file.Files.deleteIfExists;
@@ -31,7 +44,6 @@ import static java.nio.file.StandardOpenOption.SYNC;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static java.util.Optional.empty;
-import static java.util.Optional.of;
 import static java.util.Optional.ofNullable;
 import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.toList;
@@ -45,21 +57,8 @@ import static org.apache.commons.codec.digest.MessageDigestAlgorithms.SHA_256;
 import static org.apache.commons.codec.digest.MessageDigestAlgorithms.SHA_512;
 import static org.apache.commons.io.file.PathUtils.createParentDirectories;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import org.apache.nifi.c2.protocol.api.ResourceItem;
-import org.apache.nifi.c2.protocol.api.ResourcesGlobalHash;
-import org.apache.nifi.c2.serializer.C2Serializer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 public class FileResourceRepository implements ResourceRepository {
 
-    static final String ASSET_REPOSITORY_DIRECTORY = "repository";
     static final String RESOURCE_REPOSITORY_FILE_NAME = "resources.json";
 
     private static final Logger LOG = LoggerFactory.getLogger(FileResourceRepository.class);
@@ -72,10 +71,10 @@ public class FileResourceRepository implements ResourceRepository {
 
     private ResourceRepositoryDescriptor resourceRepositoryDescriptor;
 
-    public FileResourceRepository(Path assetDirectory, Path extensionDirectory, Path configDirectory, C2Serializer c2Serializer) {
+    public FileResourceRepository(Path assetRepositoryDirectory, Path extensionDirectory, Path configDirectory, C2Serializer c2Serializer) {
         this.resourceRepositoryFile = configDirectory.resolve(RESOURCE_REPOSITORY_FILE_NAME);
         this.c2Serializer = c2Serializer;
-        this.assetRepositoryDirectory = assetDirectory.resolve(ASSET_REPOSITORY_DIRECTORY);
+        this.assetRepositoryDirectory = assetRepositoryDirectory;
         this.extensionDirectory = extensionDirectory;
         initialize();
     }
@@ -115,7 +114,7 @@ public class FileResourceRepository implements ResourceRepository {
             newItems.add(resourceItem);
             ResourceRepositoryDescriptor newRepositoryDescriptor = new ResourceRepositoryDescriptor(resourceRepositoryDescriptor.resourcesGlobalHash(), newItems);
             persist(newRepositoryDescriptor);
-            return of(resourceItem);
+            return Optional.of(resourceItem);
         } catch (IOException e) {
             LOG.error("Unable to persist repository metadata", e);
             return empty();
@@ -162,6 +161,16 @@ public class FileResourceRepository implements ResourceRepository {
 
         return Optional.of(resourceItem);
     }
+
+    @Override
+    public Optional<Path> getAbsolutePath(String resourceId) {
+        return resourceRepositoryDescriptor.resourceItems.stream()
+                .filter(resourceItem -> resourceItem.getResourceId().equals(resourceId))
+                .map(this::resourcePath)
+                .map(Path::toAbsolutePath)
+                .findFirst();
+    }
+
 
     private void initialize() {
         try {

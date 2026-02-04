@@ -24,20 +24,23 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okio.Buffer;
-
 import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.controller.VerifiableControllerService;
+import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.Processor;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.util.MockConfigurationContext;
-import org.apache.nifi.util.MockControllerServiceLookup;
+import org.apache.nifi.proxy.ProxyConfigurationService;
+import org.apache.nifi.util.MockPropertyConfiguration;
+import org.apache.nifi.util.MockPropertyValue;
 import org.apache.nifi.util.NoOpProcessor;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Answers;
@@ -52,6 +55,7 @@ import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -102,8 +106,7 @@ public class StandardOauth2AccessTokenProviderTest {
     @Captor
     private ArgumentCaptor<Request> requestCaptor;
 
-    @BeforeEach
-    public void setUp() {
+    void mockSetup() {
         testSubject = new StandardOauth2AccessTokenProvider() {
             @Override
             protected OkHttpClient createHttpClient(ConfigurationContext context) {
@@ -127,150 +130,514 @@ public class StandardOauth2AccessTokenProviderTest {
         when(mockContext.getProperty(StandardOauth2AccessTokenProvider.AUDIENCE).getValue()).thenReturn(AUDIENCE);
         when(mockContext.getProperty(StandardOauth2AccessTokenProvider.REFRESH_WINDOW).asTimePeriod(eq(TimeUnit.SECONDS))).thenReturn(FIVE_MINUTES);
         when(mockContext.getProperty(StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY).getValue()).thenReturn(ClientAuthenticationStrategy.BASIC_AUTHENTICATION.getValue());
+        when(mockContext.getProperties()).thenReturn(Collections.emptyMap());
+    }
 
-        testSubject.onEnabled(mockContext);
+    @Nested
+    class WithEnabledControllerService {
+        @BeforeEach
+        public void setUp() {
+            mockSetup();
+            testSubject.onEnabled(mockContext);
+        }
+
+        @Test
+        public void testInvalidWhenClientCredentialsGrantTypeSetWithoutClientId() throws Exception {
+            // GIVEN
+            Processor processor = new NoOpProcessor();
+            TestRunner runner = TestRunners.newTestRunner(processor);
+
+            runner.addControllerService("testSubject", testSubject);
+
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
+
+            // WHEN
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
+
+            // THEN
+            runner.assertNotValid(testSubject);
+        }
+
+        @Test
+        public void testValidWhenClientCredentialsGrantTypeSetWithClientId() throws Exception {
+            // GIVEN
+            Processor processor = new NoOpProcessor();
+            TestRunner runner = TestRunners.newTestRunner(processor);
+
+            runner.addControllerService("testSubject", testSubject);
+
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
+
+            // WHEN
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_ID, CLIENT_ID);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_SECRET, CLIENT_SECRET);
+
+            // THEN
+            runner.assertValid(testSubject);
+        }
+
+        @Test
+        public void testInvalidWhenClientAuthenticationStrategyIsInvalid() throws Exception {
+            // GIVEN
+            Processor processor = new NoOpProcessor();
+            TestRunner runner = TestRunners.newTestRunner(processor);
+
+            runner.addControllerService("testSubject", testSubject);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_ID, CLIENT_ID);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_SECRET, CLIENT_SECRET);
+
+            // WHEN
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY, "UNKNOWN");
+
+            // THEN
+            runner.assertNotValid(testSubject);
+        }
+
+        @Test
+        public void testInvalidWhenRefreshTokenGrantTypeSetWithoutRefreshToken() throws Exception {
+            // GIVEN
+            Processor processor = new NoOpProcessor();
+            TestRunner runner = TestRunners.newTestRunner(processor);
+
+            runner.addControllerService("testSubject", testSubject);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.REFRESH_TOKEN_GRANT_TYPE);
+
+            // THEN
+            runner.assertNotValid(testSubject);
+        }
+
+        @Test
+        public void testValidWhenRefreshTokenGrantTypeSetWithRefreshToken() throws Exception {
+            // GIVEN
+            Processor processor = new NoOpProcessor();
+            TestRunner runner = TestRunners.newTestRunner(processor);
+
+            runner.addControllerService("testSubject", testSubject);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.REFRESH_TOKEN_GRANT_TYPE);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.REFRESH_TOKEN, "refresh_token");
+
+            // THEN
+            runner.assertValid(testSubject);
+        }
+
+        @Test
+        public void testAcquireNewTokenWhenGrantTypeIsRefreshToken() throws Exception {
+            // GIVEN
+            String refreshToken = "refresh_token_123";
+            String accessToken = "access_token_123";
+
+            Processor processor = new NoOpProcessor();
+            TestRunner runner = TestRunners.newTestRunner(processor);
+
+            runner.addControllerService("testSubject", testSubject);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.REFRESH_TOKEN_GRANT_TYPE);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.REFRESH_TOKEN, refreshToken);
+
+            runner.enableControllerService(testSubject);
+
+            Response response = buildResponse(HTTP_OK, "{\"access_token\":\"" + accessToken + "\"}");
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
+
+            // WHEN
+            String actualAccessToken = testSubject.getAccessDetails().getAccessToken();
+
+            // THEN
+            verify(mockHttpClient, atLeast(1)).newCall(requestCaptor.capture());
+            FormBody capturedRequestBody = (FormBody) requestCaptor.getValue().body();
+
+            assertEquals("grant_type", capturedRequestBody.encodedName(0));
+            assertEquals("refresh_token", capturedRequestBody.encodedValue(0));
+
+            assertEquals("refresh_token", capturedRequestBody.encodedName(1));
+            assertEquals("refresh_token_123", capturedRequestBody.encodedValue(1));
+
+            assertEquals(accessToken, actualAccessToken);
+        }
+
+        @Test
+        public void testValidWhenClientAuthenticationStrategyIsValid() throws Exception {
+            // GIVEN
+            Processor processor = new NoOpProcessor();
+            TestRunner runner = TestRunners.newTestRunner(processor);
+
+            runner.addControllerService("testSubject", testSubject);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_ID, CLIENT_ID);
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_SECRET, CLIENT_SECRET);
+
+            // WHEN
+            runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY, ClientAuthenticationStrategy.REQUEST_BODY.getValue());
+
+            // THEN
+            runner.assertValid(testSubject);
+        }
+
+        @Test
+        public void testAcquireNewToken() throws Exception {
+            String accessTokenValue = "access_token_value";
+            String scopeValue = "scope_value";
+            String customFieldKey = "custom_field_key";
+            String customFieldValue = "custom_field_value";
+
+            // GIVEN
+            Response response = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"" + accessTokenValue + "\", \"scope\":\"" + scopeValue + "\", \"" + customFieldKey + "\":\"" + customFieldValue + "\" }"
+            );
+
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
+
+            // WHEN
+            AccessToken accessToken = testSubject.getAccessDetails();
+
+            // THEN
+            assertEquals(accessTokenValue, accessToken.getAccessToken());
+            assertEquals(scopeValue, accessToken.getScope());
+            assertEquals(customFieldValue, accessToken.getAdditionalParameters().get(customFieldKey));
+        }
+
+        @Test
+        public void testRefreshToken() throws Exception {
+            // GIVEN
+            String firstToken = "first_token";
+            String expectedToken = "second_token";
+
+            Response response1 = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"" + firstToken + "\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
+            );
+
+            Response response2 = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"" + expectedToken + "\" }"
+            );
+
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response1, response2);
+
+            // WHEN
+            testSubject.getAccessDetails();
+            String actualToken = testSubject.getAccessDetails().getAccessToken();
+
+            // THEN
+            assertEquals(expectedToken, actualToken);
+        }
+
+        @Test
+        public void testKeepPreviousRefreshTokenWhenNewOneIsNotProvided() throws Exception {
+            // GIVEN
+            String refreshTokenBeforeRefresh = "refresh_token";
+
+            Response response1 = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"not_checking_in_this_test\", \"expires_in\":\"0\", \"refresh_token\":\"" + refreshTokenBeforeRefresh + "\" }"
+            );
+
+            Response response2 = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"not_checking_in_this_test_either\" }"
+            );
+
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response1, response2);
+
+            // WHEN
+            testSubject.getAccessDetails();
+            String refreshTokenAfterRefresh = testSubject.getAccessDetails().getRefreshToken();
+
+            // THEN
+            assertEquals(refreshTokenBeforeRefresh, refreshTokenAfterRefresh);
+        }
+
+        @Test
+        public void testOverwritePreviousRefreshTokenWhenNewOneIsProvided() throws Exception {
+            // GIVEN
+            String refreshTokenBeforeRefresh = "refresh_token_before_refresh";
+            String expectedRefreshTokenAfterRefresh = "refresh_token_after_refresh";
+
+            Response response1 = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"not_checking_in_this_test\", \"expires_in\":\"0\", \"refresh_token\":\"" + refreshTokenBeforeRefresh + "\" }"
+            );
+
+            Response response2 = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"not_checking_in_this_test_either\", \"refresh_token\":\"" + expectedRefreshTokenAfterRefresh + "\" }"
+            );
+
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response1, response2);
+
+            // WHEN
+            testSubject.getAccessDetails();
+            String actualRefreshTokenAfterRefresh = testSubject.getAccessDetails().getRefreshToken();
+
+            // THEN
+            assertEquals(expectedRefreshTokenAfterRefresh, actualRefreshTokenAfterRefresh);
+        }
+
+        @Test
+        public void testBasicAuthentication() throws Exception {
+            // GIVEN
+            Response response = buildResponse(HTTP_OK, "{\"access_token\":\"foobar\"}");
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
+            String expected = "Basic " + Base64.getEncoder().withoutPadding().encodeToString((CLIENT_ID + ":" + CLIENT_SECRET).getBytes());
+
+            // WHEN
+            testSubject.getAccessDetails();
+
+            // THEN
+            verify(mockHttpClient, atLeast(1)).newCall(requestCaptor.capture());
+            assertEquals(expected, requestCaptor.getValue().header("Authorization"));
+        }
+
+        @Test
+        public void testRequestBodyFormData() throws Exception {
+            when(mockContext.getProperty(StandardOauth2AccessTokenProvider.GRANT_TYPE).getValue()).thenReturn(StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE.getValue());
+            when(mockContext.getProperty(StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY).getValue()).thenReturn(ClientAuthenticationStrategy.REQUEST_BODY.getValue());
+            testSubject.onEnabled(mockContext);
+
+            // GIVEN
+            Response response = buildResponse(HTTP_OK, "{\"access_token\":\"foobar\"}");
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
+            String expected = "grant_type=client_credentials&client_id=" + CLIENT_ID
+                + "&client_secret=" + CLIENT_SECRET
+                + "&scope=" + SCOPE
+                + "&resource=" + RESOURCE
+                + "&audience=" + AUDIENCE;
+
+            // WHEN
+            testSubject.getAccessDetails();
+
+            // THEN
+            Buffer buffer = new Buffer();
+            verify(mockHttpClient, atLeast(1)).newCall(requestCaptor.capture());
+            requestCaptor.getValue().body().writeTo(buffer);
+            assertEquals(expected, buffer.readString(Charset.defaultCharset()));
+        }
+
+        @Test
+        public void testRequestBodyFormDataIncludesCustomParameters() throws Exception {
+            PropertyDescriptor accountIdDescriptor = new PropertyDescriptor.Builder()
+                .name("FORM.account_id")
+                .dynamic(true)
+                .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+                .build();
+
+            when(mockContext.getProperty(StandardOauth2AccessTokenProvider.GRANT_TYPE).getValue()).thenReturn(StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE.getValue());
+            when(mockContext.getProperty(StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY).getValue()).thenReturn(ClientAuthenticationStrategy.REQUEST_BODY.getValue());
+            Map<PropertyDescriptor, String> properties = new HashMap<>();
+            properties.put(accountIdDescriptor, "12345");
+            when(mockContext.getProperties()).thenReturn(properties);
+            when(mockContext.getProperty(accountIdDescriptor)).thenReturn(new MockPropertyValue("12345"));
+
+            testSubject.onEnabled(mockContext);
+
+            Response response = buildResponse(HTTP_OK, "{\"access_token\":\"foobar\"}");
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
+
+            testSubject.getAccessDetails();
+
+            verify(mockHttpClient, atLeast(1)).newCall(requestCaptor.capture());
+            FormBody formBody = (FormBody) requestCaptor.getValue().body();
+            assertNotNull(formBody);
+
+            Map<String, String> parameters = new HashMap<>();
+            for (int i = 0; i < formBody.size(); i++) {
+                parameters.put(formBody.encodedName(i), formBody.encodedValue(i));
+            }
+
+            assertEquals("client_credentials", parameters.get("grant_type"));
+            assertEquals(CLIENT_ID, parameters.get("client_id"));
+            assertEquals(CLIENT_SECRET, parameters.get("client_secret"));
+            assertEquals(SCOPE, parameters.get("scope"));
+            assertEquals(RESOURCE, parameters.get("resource"));
+            assertEquals(AUDIENCE, parameters.get("audience"));
+            assertEquals("12345", parameters.get("account_id"));
+        }
+
+        @Test
+        public void testIOExceptionDuringRefreshAndSubsequentAcquire() throws Exception {
+            // GIVEN
+            String refreshErrorMessage = "refresh_error";
+            String acquireErrorMessage = "acquire_error";
+
+            AtomicInteger callCounter = new AtomicInteger(0);
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
+                callCounter.incrementAndGet();
+
+                if (callCounter.get() == 1) {
+                    return buildSuccessfulInitResponse();
+                } else if (callCounter.get() == 2) {
+                    throw new IOException(refreshErrorMessage);
+                } else if (callCounter.get() == 3) {
+                    throw new IOException(acquireErrorMessage);
+                }
+
+                throw new IllegalStateException("Test improperly defined mock HTTP responses.");
+            });
+
+            // Get a good accessDetails so we can have a refresh a second time
+            testSubject.getAccessDetails();
+
+            // WHEN
+            UncheckedIOException actualException = assertThrows(
+                UncheckedIOException.class,
+                () -> testSubject.getAccessDetails()
+            );
+
+            // THEN
+            checkLoggedDebugWhenRefreshFails();
+
+            checkLoggedRefreshError(new UncheckedIOException("OAuth2 access token request failed", new IOException(refreshErrorMessage)));
+
+            checkError(new UncheckedIOException("OAuth2 access token request failed", new IOException(acquireErrorMessage)), actualException);
+        }
+
+        @Test
+        public void testIOExceptionDuringRefreshSuccessfulSubsequentAcquire() throws Exception {
+            // GIVEN
+            String refreshErrorMessage = "refresh_error";
+            String expectedToken = "expected_token";
+
+            Response successfulAcquireResponse = buildResponse(
+                HTTP_ACCEPTED,
+                "{ \"access_token\":\"" + expectedToken + "\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
+            );
+
+            AtomicInteger callCounter = new AtomicInteger(0);
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
+                callCounter.incrementAndGet();
+
+                if (callCounter.get() == 1) {
+                    return buildSuccessfulInitResponse();
+                } else if (callCounter.get() == 2) {
+                    throw new IOException(refreshErrorMessage);
+                } else if (callCounter.get() == 3) {
+                    return successfulAcquireResponse;
+                }
+
+                throw new IllegalStateException("Test improperly defined mock HTTP responses.");
+            });
+
+            // Get a good accessDetails so we can have a refresh a second time
+            testSubject.getAccessDetails();
+
+            // WHEN
+            String actualToken = testSubject.getAccessDetails().getAccessToken();
+
+            // THEN
+            checkLoggedDebugWhenRefreshFails();
+
+            checkLoggedRefreshError(new UncheckedIOException("OAuth2 access token request failed", new IOException(refreshErrorMessage)));
+
+            assertEquals(expectedToken, actualToken);
+        }
+
+        @Test
+        public void testHTTPErrorDuringRefreshAndSubsequentAcquire() throws Exception {
+            // GIVEN
+            String errorRefreshResponseBody = "{ \"error_response\":\"refresh_error\" }";
+            String errorAcquireResponseBody = "{ \"error_response\":\"acquire_error\" }";
+
+            Response errorRefreshResponse = buildResponse(500, errorRefreshResponseBody);
+            Response errorAcquireResponse = buildResponse(503, errorAcquireResponseBody);
+
+            AtomicInteger callCounter = new AtomicInteger(0);
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
+                callCounter.incrementAndGet();
+
+                if (callCounter.get() == 1) {
+                    return buildSuccessfulInitResponse();
+                } else if (callCounter.get() == 2) {
+                    return errorRefreshResponse;
+                } else if (callCounter.get() == 3) {
+                    return errorAcquireResponse;
+                }
+
+                throw new IllegalStateException("Test improperly defined mock HTTP responses.");
+            });
+
+            List<String> expectedLoggedError = Arrays.asList(
+                String.format("OAuth2 access token request failed [HTTP %d], response:%n%s", 500, errorRefreshResponseBody),
+                String.format("OAuth2 access token request failed [HTTP %d], response:%n%s", 503, errorAcquireResponseBody)
+            );
+
+            // Get a good accessDetails so we can have a refresh a second time
+            testSubject.getAccessDetails();
+
+            // WHEN
+            ProcessException actualException = assertThrows(
+                ProcessException.class,
+                () -> testSubject.getAccessDetails()
+            );
+
+            // THEN
+            checkLoggedDebugWhenRefreshFails();
+
+            checkLoggedRefreshError(new ProcessException("OAuth2 access token request failed [HTTP 500]"));
+
+            checkedLoggedErrorWhenRefreshReturnsBadHTTPResponse(expectedLoggedError);
+
+            checkError(new ProcessException("OAuth2 access token request failed [HTTP 503]"), actualException);
+        }
+
+        @Test
+        public void testHTTPErrorDuringRefreshSuccessfulSubsequentAcquire() throws Exception {
+            // GIVEN
+            String expectedRefreshErrorResponse = "{ \"error_response\":\"refresh_error\" }";
+            String expectedToken = "expected_token";
+
+            Response errorRefreshResponse = buildResponse(500, expectedRefreshErrorResponse);
+            Response successfulAcquireResponse = buildResponse(
+                HTTP_OK,
+                "{ \"access_token\":\"" + expectedToken + "\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
+            );
+
+            AtomicInteger callCounter = new AtomicInteger(0);
+            when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
+                callCounter.incrementAndGet();
+
+                if (callCounter.get() == 1) {
+                    return buildSuccessfulInitResponse();
+                } else if (callCounter.get() == 2) {
+                    return errorRefreshResponse;
+                } else if (callCounter.get() == 3) {
+                    return successfulAcquireResponse;
+                }
+
+                throw new IllegalStateException("Test improperly defined mock HTTP responses.");
+            });
+
+            List<String> expectedLoggedError = Collections.singletonList(String.format("OAuth2 access token request failed [HTTP %d], response:%n%s", 500, expectedRefreshErrorResponse));
+
+            // Get a good accessDetails so we can have a refresh a second time
+            testSubject.getAccessDetails();
+
+            // WHEN
+            String actualToken = testSubject.getAccessDetails().getAccessToken();
+
+            // THEN
+            checkLoggedDebugWhenRefreshFails();
+
+            checkLoggedRefreshError(new ProcessException("OAuth2 access token request failed [HTTP 500]"));
+
+            checkedLoggedErrorWhenRefreshReturnsBadHTTPResponse(expectedLoggedError);
+
+            assertEquals(expectedToken, actualToken);
+        }
     }
 
     @Test
-    public void testInvalidWhenClientCredentialsGrantTypeSetWithoutClientId() throws Exception {
-        // GIVEN
+    public void testVerifySuccess() throws Exception {
+        mockSetup();
         Processor processor = new NoOpProcessor();
         TestRunner runner = TestRunners.newTestRunner(processor);
 
-        runner.addControllerService("testSubject", testSubject);
-
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
-
-        // WHEN
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
-
-        // THEN
-        runner.assertNotValid(testSubject);
-    }
-
-    @Test
-    public void testValidWhenClientCredentialsGrantTypeSetWithClientId() throws Exception {
-        // GIVEN
-        Processor processor = new NoOpProcessor();
-        TestRunner runner = TestRunners.newTestRunner(processor);
-
-        runner.addControllerService("testSubject", testSubject);
-
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
-
-        // WHEN
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_ID, CLIENT_ID);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_SECRET, CLIENT_SECRET);
-
-        // THEN
-        runner.assertValid(testSubject);
-    }
-
-    @Test
-    public void testInvalidWhenClientAuthenticationStrategyIsInvalid() throws Exception {
-        // GIVEN
-        Processor processor = new NoOpProcessor();
-        TestRunner runner = TestRunners.newTestRunner(processor);
-
-        runner.addControllerService("testSubject", testSubject);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_ID, CLIENT_ID);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_SECRET, CLIENT_SECRET);
-
-        // WHEN
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY, "UNKNOWN");
-
-        // THEN
-        runner.assertNotValid(testSubject);
-    }
-
-    @Test
-    public void testInvalidWhenRefreshTokenGrantTypeSetWithoutRefreshToken() throws Exception {
-        // GIVEN
-        Processor processor = new NoOpProcessor();
-        TestRunner runner = TestRunners.newTestRunner(processor);
-
-        runner.addControllerService("testSubject", testSubject);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.REFRESH_TOKEN_GRANT_TYPE);
-
-        // THEN
-        runner.assertNotValid(testSubject);
-    }
-
-    @Test
-    public void testValidWhenRefreshTokenGrantTypeSetWithRefreshToken() throws Exception {
-        // GIVEN
-        Processor processor = new NoOpProcessor();
-        TestRunner runner = TestRunners.newTestRunner(processor);
-
-        runner.addControllerService("testSubject", testSubject);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.REFRESH_TOKEN_GRANT_TYPE);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.REFRESH_TOKEN, "refresh_token");
-
-        // THEN
-        runner.assertValid(testSubject);
-    }
-
-    @Test
-    public void testAcquireNewTokenWhenGrantTypeIsRefreshToken() throws Exception {
-        // GIVEN
-        String refreshToken = "refresh_token_123";
-        String accessToken = "access_token_123";
-
-        Processor processor = new NoOpProcessor();
-        TestRunner runner = TestRunners.newTestRunner(processor);
-
-        runner.addControllerService("testSubject", testSubject);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.REFRESH_TOKEN_GRANT_TYPE);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.REFRESH_TOKEN, refreshToken);
-
-        runner.enableControllerService(testSubject);
-
-        Response response = buildResponse(HTTP_OK, "{\"access_token\":\"" + accessToken + "\"}");
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
-
-        // WHEN
-        String actualAccessToken = testSubject.getAccessDetails().getAccessToken();
-
-        // THEN
-        verify(mockHttpClient, atLeast(1)).newCall(requestCaptor.capture());
-        FormBody capturedRequestBody = (FormBody) requestCaptor.getValue().body();
-
-        assertEquals("grant_type", capturedRequestBody.encodedName(0));
-        assertEquals("refresh_token", capturedRequestBody.encodedValue(0));
-
-        assertEquals("refresh_token", capturedRequestBody.encodedName(1));
-        assertEquals("refresh_token_123", capturedRequestBody.encodedValue(1));
-
-        assertEquals(accessToken, actualAccessToken);
-    }
-
-    @Test
-    public void testValidWhenClientAuthenticationStrategyIsValid() throws Exception {
-        // GIVEN
-        Processor processor = new NoOpProcessor();
-        TestRunner runner = TestRunners.newTestRunner(processor);
-
-        runner.addControllerService("testSubject", testSubject);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL, AUTHORIZATION_SERVER_URL);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.GRANT_TYPE, StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_ID, CLIENT_ID);
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_SECRET, CLIENT_SECRET);
-
-        // WHEN
-        runner.setProperty(testSubject, StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY, ClientAuthenticationStrategy.REQUEST_BODY.getValue());
-
-        // THEN
-        runner.assertValid(testSubject);
-    }
-
-    @Test
-    public void testAcquireNewToken() throws Exception {
         String accessTokenValue = "access_token_value";
 
         // GIVEN
@@ -281,36 +648,10 @@ public class StandardOauth2AccessTokenProviderTest {
 
         when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
 
-        // WHEN
-        String actual = testSubject.getAccessDetails().getAccessToken();
-
-        // THEN
-        assertEquals(accessTokenValue, actual);
-    }
-
-    @Test
-    public void testVerifySuccess() throws Exception {
-        Processor processor = new NoOpProcessor();
-        TestRunner runner = TestRunners.newTestRunner(processor);
-        runner.addControllerService("testSubject", testSubject);
-
-        Map<PropertyDescriptor, String> properties = ((MockControllerServiceLookup) runner.getProcessContext().getControllerServiceLookup())
-                .getControllerServices().get("testSubject").getProperties();
-
-        String accessTokenValue = "access_token_value";
-
-        // GIVEN
-        Response response = buildResponse(
-                HTTP_OK,
-                "{ \"access_token\":\"" + accessTokenValue + "\" }"
-        );
-
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
-
         final List<ConfigVerificationResult> results = ((VerifiableControllerService) testSubject).verify(
-                new MockConfigurationContext(testSubject, properties, runner.getProcessContext().getControllerServiceLookup(), null),
-                runner.getLogger(),
-                Collections.emptyMap()
+            mockContext,
+            runner.getLogger(),
+            Collections.emptyMap()
         );
 
         assertNotNull(results);
@@ -320,19 +661,15 @@ public class StandardOauth2AccessTokenProviderTest {
 
     @Test
     public void testVerifyError() throws Exception {
+        mockSetup();
         Processor processor = new NoOpProcessor();
         TestRunner runner = TestRunners.newTestRunner(processor);
-        runner.addControllerService("testSubject", testSubject);
-
-        Map<PropertyDescriptor, String> properties = ((MockControllerServiceLookup) runner.getProcessContext().getControllerServiceLookup())
-                .getControllerServices().get("testSubject").getProperties();
-
         when(mockHttpClient.newCall(any(Request.class)).execute()).thenThrow(new IOException());
 
         final List<ConfigVerificationResult> results = ((VerifiableControllerService) testSubject).verify(
-                new MockConfigurationContext(testSubject, properties, runner.getProcessContext().getControllerServiceLookup(), null),
-                runner.getLogger(),
-                Collections.emptyMap()
+            mockContext,
+            runner.getLogger(),
+            Collections.emptyMap()
         );
 
         assertNotNull(results);
@@ -341,297 +678,41 @@ public class StandardOauth2AccessTokenProviderTest {
     }
 
     @Test
-    public void testRefreshToken() throws Exception {
-        // GIVEN
-        String firstToken = "first_token";
-        String expectedToken = "second_token";
+    void testMigrateProperties() {
+        testSubject = new StandardOauth2AccessTokenProvider();
 
-        Response response1 = buildResponse(
-                HTTP_OK,
-            "{ \"access_token\":\"" + firstToken + "\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("authorization-server-url", StandardOauth2AccessTokenProvider.AUTHORIZATION_SERVER_URL.getName()),
+                Map.entry("client-authentication-strategy", StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY.getName()),
+                Map.entry("grant-type", StandardOauth2AccessTokenProvider.GRANT_TYPE.getName()),
+                Map.entry("service-user-name", StandardOauth2AccessTokenProvider.USERNAME.getName()),
+                Map.entry("service-password", StandardOauth2AccessTokenProvider.PASSWORD.getName()),
+                Map.entry("refresh-token", StandardOauth2AccessTokenProvider.REFRESH_TOKEN.getName()),
+                Map.entry("client-id", StandardOauth2AccessTokenProvider.CLIENT_ID.getName()),
+                Map.entry("client-secret", StandardOauth2AccessTokenProvider.CLIENT_SECRET.getName()),
+                Map.entry("Client secret", StandardOauth2AccessTokenProvider.CLIENT_SECRET.getName()),
+                Map.entry("scope", StandardOauth2AccessTokenProvider.SCOPE.getName()),
+                Map.entry("resource", StandardOauth2AccessTokenProvider.RESOURCE.getName()),
+                Map.entry("audience", StandardOauth2AccessTokenProvider.AUDIENCE.getName()),
+                Map.entry("refresh-window", StandardOauth2AccessTokenProvider.REFRESH_WINDOW.getName()),
+                Map.entry("ssl-context-service", StandardOauth2AccessTokenProvider.SSL_CONTEXT_SERVICE.getName()),
+                Map.entry(ProxyConfigurationService.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyConfigurationService.PROXY_CONFIGURATION_SERVICE.getName())
         );
 
-        Response response2 = buildResponse(
-                HTTP_OK,
-            "{ \"access_token\":\"" + expectedToken + "\" }"
-        );
+        final Map<String, String> propertyValues = Map.of();
+        final MockPropertyConfiguration configuration = new MockPropertyConfiguration(propertyValues);
+        testSubject.migrateProperties(configuration);
 
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response1, response2);
+        final PropertyMigrationResult result = configuration.toPropertyMigrationResult();
+        final Map<String, String> propertiesRenamed = result.getPropertiesRenamed();
 
-        // WHEN
-        testSubject.getAccessDetails();
-        String actualToken = testSubject.getAccessDetails().getAccessToken();
-
-        // THEN
-        assertEquals(expectedToken, actualToken);
-    }
-
-    @Test
-    public void testKeepPreviousRefreshTokenWhenNewOneIsNotProvided() throws Exception {
-        // GIVEN
-        String refreshTokenBeforeRefresh = "refresh_token";
-
-        Response response1 = buildResponse(
-                HTTP_OK,
-                "{ \"access_token\":\"not_checking_in_this_test\", \"expires_in\":\"0\", \"refresh_token\":\"" + refreshTokenBeforeRefresh + "\" }"
-        );
-
-        Response response2 = buildResponse(
-                HTTP_OK,
-            "{ \"access_token\":\"not_checking_in_this_test_either\" }"
-        );
-
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response1, response2);
-
-        // WHEN
-        testSubject.getAccessDetails();
-        String refreshTokenAfterRefresh = testSubject.getAccessDetails().getRefreshToken();
-
-        // THEN
-        assertEquals(refreshTokenBeforeRefresh, refreshTokenAfterRefresh);
-    }
-
-    @Test
-    public void testOverwritePreviousRefreshTokenWhenNewOneIsProvided() throws Exception {
-        // GIVEN
-        String refreshTokenBeforeRefresh = "refresh_token_before_refresh";
-        String expectedRefreshTokenAfterRefresh = "refresh_token_after_refresh";
-
-        Response response1 = buildResponse(
-                HTTP_OK,
-                "{ \"access_token\":\"not_checking_in_this_test\", \"expires_in\":\"0\", \"refresh_token\":\"" + refreshTokenBeforeRefresh + "\" }"
-        );
-
-        Response response2 = buildResponse(
-                HTTP_OK,
-            "{ \"access_token\":\"not_checking_in_this_test_either\", \"refresh_token\":\"" + expectedRefreshTokenAfterRefresh + "\" }"
-        );
-
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response1, response2);
-
-        // WHEN
-        testSubject.getAccessDetails();
-        String actualRefreshTokenAfterRefresh = testSubject.getAccessDetails().getRefreshToken();
-
-        // THEN
-        assertEquals(expectedRefreshTokenAfterRefresh, actualRefreshTokenAfterRefresh);
-    }
-
-    @Test
-    public void testBasicAuthentication() throws Exception {
-        // GIVEN
-        Response response = buildResponse(HTTP_OK, "{\"access_token\":\"foobar\"}");
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
-        String expected = "Basic " + Base64.getEncoder().withoutPadding().encodeToString((CLIENT_ID + ":" + CLIENT_SECRET).getBytes());
-
-        // WHEN
-        testSubject.getAccessDetails();
-
-        // THEN
-        verify(mockHttpClient, atLeast(1)).newCall(requestCaptor.capture());
-        assertEquals(expected, requestCaptor.getValue().header("Authorization"));
-    }
-
-    @Test
-    public void testRequestBodyFormData() throws Exception {
-        when(mockContext.getProperty(StandardOauth2AccessTokenProvider.GRANT_TYPE).getValue()).thenReturn(StandardOauth2AccessTokenProvider.CLIENT_CREDENTIALS_GRANT_TYPE.getValue());
-        when(mockContext.getProperty(StandardOauth2AccessTokenProvider.CLIENT_AUTHENTICATION_STRATEGY).getValue()).thenReturn(ClientAuthenticationStrategy.REQUEST_BODY.getValue());
-        testSubject.onEnabled(mockContext);
-
-        // GIVEN
-        Response response = buildResponse(HTTP_OK, "{\"access_token\":\"foobar\"}");
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenReturn(response);
-        String expected = "grant_type=client_credentials&client_id=" + CLIENT_ID
-                + "&client_secret=" + CLIENT_SECRET
-                + "&scope=" + SCOPE
-                + "&resource=" + RESOURCE
-                + "&audience=" + AUDIENCE;
-
-        // WHEN
-        testSubject.getAccessDetails();
-
-        // THEN
-        Buffer buffer = new Buffer();
-        verify(mockHttpClient, atLeast(1)).newCall(requestCaptor.capture());
-        requestCaptor.getValue().body().writeTo(buffer);
-        assertEquals(expected, buffer.readString(Charset.defaultCharset()));
-    }
-
-    @Test
-    public void testIOExceptionDuringRefreshAndSubsequentAcquire() throws Exception {
-        // GIVEN
-        String refreshErrorMessage = "refresh_error";
-        String acquireErrorMessage = "acquire_error";
-
-        AtomicInteger callCounter = new AtomicInteger(0);
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
-            callCounter.incrementAndGet();
-
-            if (callCounter.get() == 1) {
-                return buildSuccessfulInitResponse();
-            } else if (callCounter.get() == 2) {
-                throw new IOException(refreshErrorMessage);
-            } else if (callCounter.get() == 3) {
-                throw new IOException(acquireErrorMessage);
-            }
-
-            throw new IllegalStateException("Test improperly defined mock HTTP responses.");
-        });
-
-        // Get a good accessDetails so we can have a refresh a second time
-        testSubject.getAccessDetails();
-
-        // WHEN
-        UncheckedIOException actualException = assertThrows(
-            UncheckedIOException.class,
-            () -> testSubject.getAccessDetails()
-        );
-
-        // THEN
-        checkLoggedDebugWhenRefreshFails();
-
-        checkLoggedRefreshError(new UncheckedIOException("OAuth2 access token request failed", new IOException(refreshErrorMessage)));
-
-        checkError(new UncheckedIOException("OAuth2 access token request failed", new IOException(acquireErrorMessage)), actualException);
-    }
-
-    @Test
-    public void testIOExceptionDuringRefreshSuccessfulSubsequentAcquire() throws Exception {
-        // GIVEN
-        String refreshErrorMessage = "refresh_error";
-        String expectedToken = "expected_token";
-
-        Response successfulAcquireResponse = buildResponse(
-                HTTP_ACCEPTED,
-            "{ \"access_token\":\"" + expectedToken + "\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
-        );
-
-        AtomicInteger callCounter = new AtomicInteger(0);
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
-            callCounter.incrementAndGet();
-
-            if (callCounter.get() == 1) {
-                return buildSuccessfulInitResponse();
-            } else if (callCounter.get() == 2) {
-                throw new IOException(refreshErrorMessage);
-            } else if (callCounter.get() == 3) {
-                return successfulAcquireResponse;
-            }
-
-            throw new IllegalStateException("Test improperly defined mock HTTP responses.");
-        });
-
-        // Get a good accessDetails so we can have a refresh a second time
-        testSubject.getAccessDetails();
-
-        // WHEN
-        String actualToken = testSubject.getAccessDetails().getAccessToken();
-
-        // THEN
-        checkLoggedDebugWhenRefreshFails();
-
-        checkLoggedRefreshError(new UncheckedIOException("OAuth2 access token request failed", new IOException(refreshErrorMessage)));
-
-        assertEquals(expectedToken, actualToken);
-    }
-
-    @Test
-    public void testHTTPErrorDuringRefreshAndSubsequentAcquire() throws Exception {
-        // GIVEN
-        String errorRefreshResponseBody = "{ \"error_response\":\"refresh_error\" }";
-        String errorAcquireResponseBody = "{ \"error_response\":\"acquire_error\" }";
-
-        Response errorRefreshResponse = buildResponse(500, errorRefreshResponseBody);
-        Response errorAcquireResponse = buildResponse(503, errorAcquireResponseBody);
-
-        AtomicInteger callCounter = new AtomicInteger(0);
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
-            callCounter.incrementAndGet();
-
-            if (callCounter.get() == 1) {
-                return buildSuccessfulInitResponse();
-            } else if (callCounter.get() == 2) {
-                return errorRefreshResponse;
-            } else if (callCounter.get() == 3) {
-                return errorAcquireResponse;
-            }
-
-            throw new IllegalStateException("Test improperly defined mock HTTP responses.");
-        });
-
-        List<String> expectedLoggedError = Arrays.asList(
-            String.format("OAuth2 access token request failed [HTTP %d], response:%n%s", 500, errorRefreshResponseBody),
-            String.format("OAuth2 access token request failed [HTTP %d], response:%n%s", 503, errorAcquireResponseBody)
-        );
-
-        // Get a good accessDetails so we can have a refresh a second time
-        testSubject.getAccessDetails();
-
-        // WHEN
-        ProcessException actualException = assertThrows(
-            ProcessException.class,
-            () -> testSubject.getAccessDetails()
-        );
-
-        // THEN
-        checkLoggedDebugWhenRefreshFails();
-
-        checkLoggedRefreshError(new ProcessException("OAuth2 access token request failed [HTTP 500]"));
-
-        checkedLoggedErrorWhenRefreshReturnsBadHTTPResponse(expectedLoggedError);
-
-        checkError(new ProcessException("OAuth2 access token request failed [HTTP 503]"), actualException);
-    }
-
-    @Test
-    public void testHTTPErrorDuringRefreshSuccessfulSubsequentAcquire() throws Exception {
-        // GIVEN
-        String expectedRefreshErrorResponse = "{ \"error_response\":\"refresh_error\" }";
-        String expectedToken = "expected_token";
-
-        Response errorRefreshResponse = buildResponse(500, expectedRefreshErrorResponse);
-        Response successfulAcquireResponse = buildResponse(
-                HTTP_OK,
-            "{ \"access_token\":\"" + expectedToken + "\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
-        );
-
-        AtomicInteger callCounter = new AtomicInteger(0);
-        when(mockHttpClient.newCall(any(Request.class)).execute()).thenAnswer(invocation -> {
-            callCounter.incrementAndGet();
-
-            if (callCounter.get() == 1) {
-                return buildSuccessfulInitResponse();
-            } else if (callCounter.get() == 2) {
-                return errorRefreshResponse;
-            } else if (callCounter.get() == 3) {
-                return successfulAcquireResponse;
-            }
-
-            throw new IllegalStateException("Test improperly defined mock HTTP responses.");
-        });
-
-        List<String> expectedLoggedError = Collections.singletonList(String.format("OAuth2 access token request failed [HTTP %d], response:%n%s", 500, expectedRefreshErrorResponse));
-
-        // Get a good accessDetails so we can have a refresh a second time
-        testSubject.getAccessDetails();
-
-        // WHEN
-        String actualToken = testSubject.getAccessDetails().getAccessToken();
-
-        // THEN
-        checkLoggedDebugWhenRefreshFails();
-
-        checkLoggedRefreshError(new ProcessException("OAuth2 access token request failed [HTTP 500]"));
-
-        checkedLoggedErrorWhenRefreshReturnsBadHTTPResponse(expectedLoggedError);
-
-        assertEquals(expectedToken, actualToken);
+        assertEquals(expectedRenamed, propertiesRenamed);
     }
 
     private Response buildSuccessfulInitResponse() {
         return buildResponse(
                 HTTP_OK,
-            "{ \"access_token\":\"exists_but_value_irrelevant\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
+                "{ \"access_token\":\"exists_but_value_irrelevant\", \"expires_in\":\"0\", \"refresh_token\":\"not_checking_in_this_test\" }"
         );
     }
 

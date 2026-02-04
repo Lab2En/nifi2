@@ -15,34 +15,33 @@
  * limitations under the License.
  */
 
-import { Component, SecurityContext } from '@angular/core';
+import { Component, SecurityContext, inject } from '@angular/core';
 import { NiFiState } from '../../../state';
 import { Store } from '@ngrx/store';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { HttpParams } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Navigation } from '../navigation/navigation.component';
-import { selectRouteData } from '@nifi/shared';
-import { isDefinedAndNotNull } from 'libs/shared/src';
+import { isDefinedAndNotNull, selectRouteData, SystemTokensService } from '@nifi/shared';
 import { AdvancedUiParams } from '../../../state/shared';
 import { selectDisconnectionAcknowledged } from '../../../state/cluster-summary/cluster-summary.selectors';
 
 @Component({
     selector: 'advanced-ui',
-    standalone: true,
     templateUrl: './advanced-ui.component.html',
     imports: [Navigation],
     styleUrls: ['./advanced-ui.component.scss']
 })
 export class AdvancedUi {
+    private store = inject<Store<NiFiState>>(Store);
+    private domSanitizer = inject(DomSanitizer);
+    protected systemTokensService = inject(SystemTokensService);
+
     frameSource!: SafeResourceUrl | null;
 
     private params: AdvancedUiParams | null = null;
 
-    constructor(
-        private store: Store<NiFiState>,
-        private domSanitizer: DomSanitizer
-    ) {
+    constructor() {
         this.store
             .select(selectRouteData)
             .pipe(takeUntilDestroyed(), isDefinedAndNotNull())

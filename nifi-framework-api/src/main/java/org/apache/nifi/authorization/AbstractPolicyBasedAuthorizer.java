@@ -28,13 +28,6 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.stream.XMLOutputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,6 +38,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
 
 /**
  * An Authorizer that provides management of users, groups, and policies.
@@ -382,7 +382,7 @@ public abstract class AbstractPolicyBasedAuthorizer implements ManagedAuthorizer
      */
     @Override
     public final void inheritFingerprint(final String fingerprint) throws AuthorizationAccessException {
-        if (fingerprint == null || fingerprint.trim().isEmpty()) {
+        if (fingerprint == null || fingerprint.isBlank()) {
             return;
         }
 
@@ -402,7 +402,7 @@ public abstract class AbstractPolicyBasedAuthorizer implements ManagedAuthorizer
 
     @Override
     public void forciblyInheritFingerprint(final String fingerprint) throws AuthorizationAccessException {
-        if (fingerprint == null || fingerprint.trim().isEmpty()) {
+        if (fingerprint == null || fingerprint.isBlank()) {
             logger.info("Inheriting Empty Policies, Users & Groups. Will backup existing Policies, Users & Groups first.");
             backupPoliciesUsersAndGroups();
             purgePoliciesUsersAndGroups();
@@ -762,7 +762,7 @@ public abstract class AbstractPolicyBasedAuthorizer implements ManagedAuthorizer
             if (writer != null) {
                 try {
                     writer.close();
-                } catch (XMLStreamException e) {
+                } catch (XMLStreamException ignored) {
                     // nothing to do here
                 }
             }

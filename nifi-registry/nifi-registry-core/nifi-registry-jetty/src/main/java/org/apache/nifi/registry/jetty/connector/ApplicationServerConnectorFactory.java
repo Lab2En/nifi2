@@ -29,7 +29,6 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
-import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -39,6 +38,7 @@ import java.security.KeyStore;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.net.ssl.SSLContext;
 
 /**
  * Registry Application extension of Standard Jetty Server Connector Factory
@@ -228,6 +228,6 @@ public class ApplicationServerConnectorFactory extends StandardServerConnectorFa
             throw new IllegalStateException("Invalid port configuration: Both nifi.registry.web.https.port and nifi.registry.web.http.port specified");
         }
 
-        return ObjectUtils.defaultIfNull(httpsPort, httpPort);
+        return ObjectUtils.getIfNull(httpsPort, httpPort);
     }
 }

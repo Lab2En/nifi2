@@ -20,6 +20,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ParameterContextListing } from './parameter-context-listing.component';
 import { provideMockStore } from '@ngrx/store/testing';
 import { initialState } from '../../state/parameter-context-listing/parameter-context-listing.reducer';
+import { parameterContextListingFeatureKey } from '../../state/parameter-context-listing';
+import { parameterContextsFeatureKey } from '../../state';
 
 describe('ParameterContextListing', () => {
     let component: ParameterContextListing;
@@ -27,8 +29,16 @@ describe('ParameterContextListing', () => {
 
     beforeEach(() => {
         TestBed.configureTestingModule({
-            declarations: [ParameterContextListing],
-            providers: [provideMockStore({ initialState })]
+            imports: [ParameterContextListing],
+            providers: [
+                provideMockStore({
+                    initialState: {
+                        [parameterContextsFeatureKey]: {
+                            [parameterContextListingFeatureKey]: initialState
+                        }
+                    }
+                })
+            ]
         });
         fixture = TestBed.createComponent(ParameterContextListing);
         component = fixture.componentInstance;

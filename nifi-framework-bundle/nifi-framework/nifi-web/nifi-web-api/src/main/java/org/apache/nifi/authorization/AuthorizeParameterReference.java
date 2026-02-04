@@ -19,14 +19,14 @@ package org.apache.nifi.authorization;
 import org.apache.nifi.authorization.resource.Authorizable;
 import org.apache.nifi.authorization.user.NiFiUser;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.flow.VersionedParameter;
+import org.apache.nifi.flow.VersionedParameterContext;
 import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.parameter.ExpressionLanguageAgnosticParameterParser;
 import org.apache.nifi.parameter.ParameterContext;
 import org.apache.nifi.parameter.ParameterDescriptor;
 import org.apache.nifi.parameter.ParameterParser;
 import org.apache.nifi.parameter.ParameterTokenList;
-import org.apache.nifi.flow.VersionedParameter;
-import org.apache.nifi.flow.VersionedParameterContext;
 import org.apache.nifi.web.NiFiServiceFacade;
 import org.apache.nifi.web.api.dto.ControllerServiceDTO;
 import org.apache.nifi.web.api.dto.FlowSnippetDTO;
@@ -55,6 +55,26 @@ public class AuthorizeParameterReference {
                 referencesParameter = true;
                 break;
             }
+        }
+
+        if (referencesParameter) {
+            parameterContextAuthorizable.authorize(authorizer, RequestAction.READ, user);
+        }
+    }
+
+    public static void authorizeParameterReferences(final String annotationData, final Authorizer authorizer, final Authorizable parameterContextAuthorizable, final NiFiUser user) {
+        if (annotationData == null || parameterContextAuthorizable == null) {
+            return;
+        }
+
+        final ParameterParser parameterParser = new ExpressionLanguageAgnosticParameterParser();
+
+        boolean referencesParameter = false;
+
+        // Check if any Parameter is referenced. If so, user must have READ policy on the Parameter Context
+        ParameterTokenList tokenList = parameterParser.parseTokens(annotationData);
+        if (!tokenList.toReferenceList().isEmpty()) {
+            referencesParameter = true;
         }
 
         if (referencesParameter) {

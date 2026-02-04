@@ -15,13 +15,12 @@
  * limitations under the License.
  */
 
-import { Component, Inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { GroupComponentsDialogRequest } from '../../../../../state/flow';
 import { Store } from '@ngrx/store';
 import { CanvasState } from '../../../../../state';
 import { groupComponents } from '../../../../../state/flow/flow.actions';
-import { ComponentType, SelectOption } from 'libs/shared/src';
 import { selectSaving } from '../../../../../state/flow/flow.selectors';
 import { AsyncPipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
@@ -31,13 +30,12 @@ import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
 import { NifiSpinnerDirective } from '../../../../../../../ui/common/spinner/nifi-spinner.directive';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { TextTip, NifiTooltipDirective } from '@nifi/shared';
+import { ComponentType, SelectOption, TextTip, NifiTooltipDirective } from '@nifi/shared';
 import { MatIconModule } from '@angular/material/icon';
 import { Client } from '../../../../../../../service/client.service';
 
 @Component({
     selector: 'group-components',
-    standalone: true,
     imports: [
         AsyncPipe,
         MatButtonModule,
@@ -55,6 +53,11 @@ import { Client } from '../../../../../../../service/client.service';
     styleUrls: ['./group-components.component.scss']
 })
 export class GroupComponents {
+    private dialogRequest = inject<GroupComponentsDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private store = inject<Store<CanvasState>>(Store);
+    private client = inject(Client);
+
     saving$ = this.store.select(selectSaving);
 
     protected readonly TextTip = TextTip;
@@ -62,19 +65,16 @@ export class GroupComponents {
     createProcessGroupForm: FormGroup;
     parameterContextsOptions: SelectOption[] = [];
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) private dialogRequest: GroupComponentsDialogRequest,
-        private formBuilder: FormBuilder,
-        private store: Store<CanvasState>,
-        private client: Client
-    ) {
+    constructor() {
+        const dialogRequest = this.dialogRequest;
+
         this.parameterContextsOptions.push({
             text: 'No parameter context',
             value: null
         });
 
         dialogRequest.parameterContexts.forEach((parameterContext) => {
-            if (parameterContext.permissions.canRead) {
+            if (parameterContext.permissions.canRead && parameterContext.component) {
                 this.parameterContextsOptions.push({
                     text: parameterContext.component.name,
                     value: parameterContext.id,

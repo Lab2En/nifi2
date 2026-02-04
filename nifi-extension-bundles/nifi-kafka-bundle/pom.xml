@@ -16,9 +16,9 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.apache.nifi</groupId>
-        <artifactId>nifi-standard-services-api-bom</artifactId>
-        <version>2.1.0-SNAPSHOT</version>
-        <relativePath>../nifi-standard-services-api-bom</relativePath>
+        <artifactId>nifi-standard-shared-bom</artifactId>
+        <version>2.8.0-SNAPSHOT</version>
+        <relativePath>../nifi-standard-shared-bundle/nifi-standard-shared-bom</relativePath>
     </parent>
     <artifactId>nifi-kafka-bundle</artifactId>
     <packaging>pom</packaging>
@@ -26,6 +26,7 @@
     <properties>
         <skip.integration.tests>false</skip.integration.tests>
         <skip.unit.tests>false</skip.unit.tests>
+        <kafka-clients.version>4.1.1</kafka-clients.version>
     </properties>
 
     <modules>
@@ -37,6 +38,9 @@
         <module>nifi-kafka-processors</module>
         <module>nifi-kafka-service-api-nar</module>
         <module>nifi-kafka-service-api</module>
+        <module>nifi-kafka-service-aws</module>
+        <module>nifi-kafka-service-aws-nar</module>
+        <module>nifi-kafka-service-shared</module>
         <module>nifi-kafka-shared</module>
     </modules>
 

@@ -17,10 +17,10 @@
 
 package org.apache.nifi.provenance.authorization;
 
-import java.util.Optional;
-
 import org.apache.nifi.provenance.PlaceholderProvenanceEvent;
 import org.apache.nifi.provenance.ProvenanceEventRecord;
+
+import java.util.Optional;
 
 /**
  * An interface for transforming a Provenance Event for which the user is not authorized to access
@@ -32,11 +32,11 @@ public interface EventTransformer {
     /**
      * An EventTransformer that transforms any event into an Empty Optional
      */
-    public static final EventTransformer EMPTY_TRANSFORMER = event -> Optional.empty();
+    EventTransformer EMPTY_TRANSFORMER = event -> Optional.empty();
 
     /**
      * An EventTransformer that transforms any event into a Placeholder event
      */
-    public static final EventTransformer PLACEHOLDER_TRANSFORMER = event -> Optional.of(new PlaceholderProvenanceEvent(event));
+    EventTransformer PLACEHOLDER_TRANSFORMER = event -> Optional.of(new PlaceholderProvenanceEvent(event));
 
 }

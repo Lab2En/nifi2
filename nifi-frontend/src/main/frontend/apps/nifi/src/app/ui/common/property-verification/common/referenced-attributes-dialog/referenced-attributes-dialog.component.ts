@@ -15,8 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import {
     MAT_DIALOG_DATA,
     MatDialogActions,
@@ -27,7 +26,6 @@ import {
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Observable } from 'rxjs';
 import { MatButton, MatIconButton } from '@angular/material/button';
-import { NifiSpinnerDirective } from '../../../spinner/nifi-spinner.directive';
 import { NifiTooltipDirective, TextTip, MapTable, CloseOnEscapeDialog, MapTableEntry } from '@nifi/shared';
 
 export interface ReferencedAttributesDialogData {
@@ -36,16 +34,13 @@ export interface ReferencedAttributesDialogData {
 
 @Component({
     selector: 'referenced-attributes-dialog',
-    standalone: true,
     imports: [
-        CommonModule,
         MatDialogTitle,
         ReactiveFormsModule,
         MatDialogContent,
         MatDialogActions,
         MatButton,
         MatDialogClose,
-        NifiSpinnerDirective,
         MapTable,
         NifiTooltipDirective,
         MatIconButton
@@ -54,16 +49,18 @@ export interface ReferencedAttributesDialogData {
     styleUrl: './referenced-attributes-dialog.component.scss'
 })
 export class ReferencedAttributesDialog extends CloseOnEscapeDialog {
+    private formBuilder = inject(FormBuilder);
+    private data = inject<ReferencedAttributesDialogData>(MAT_DIALOG_DATA);
+
     referencedAttributesForm: FormGroup;
 
     @Input() createNew!: (existingEntries: string[]) => Observable<MapTableEntry>;
     @Output() verify = new EventEmitter<any>();
 
-    constructor(
-        private formBuilder: FormBuilder,
-        @Inject(MAT_DIALOG_DATA) private data: ReferencedAttributesDialogData
-    ) {
+    constructor() {
         super();
+        const data = this.data;
+
         const attributes: MapTableEntry[] = data.attributes || [];
         this.referencedAttributesForm = this.formBuilder.group({
             attributes: new FormControl(attributes)

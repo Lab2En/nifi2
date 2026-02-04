@@ -16,20 +16,6 @@
  */
 package org.apache.nifi.amqp.processors;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeoutException;
-
 import com.rabbitmq.client.AMQP.Basic.RecoverOk;
 import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.AMQP.Exchange.BindOk;
@@ -59,6 +45,20 @@ import com.rabbitmq.client.ReturnListener;
 import com.rabbitmq.client.ShutdownListener;
 import com.rabbitmq.client.ShutdownSignalException;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeoutException;
+
 /**
  * Implementation of {@link Channel} to be used during testing
  */
@@ -86,7 +86,7 @@ class TestChannel implements Channel {
         if (this.routingKeyToQueueMappings != null) {
             for (List<String> queues : routingKeyToQueueMappings.values()) {
                 for (String queue : queues) {
-                    this.enqueuedMessages.put(queue, new ArrayBlockingQueue<GetResponse>(100));
+                    this.enqueuedMessages.put(queue, new ArrayBlockingQueue<>(100));
                 }
             }
         }
@@ -148,7 +148,7 @@ class TestChannel implements Channel {
     }
 
     @Override
-    public void close(int closeCode, String closeMessage) throws IOException, TimeoutException {
+    public void close(int closeCode, String closeMessage) {
         throw new UnsupportedOperationException("This method is not currently supported as it is not used by current API in testing");
 
     }
@@ -285,14 +285,11 @@ class TestChannel implements Channel {
             final byte[] body) {
         // NO ROUTE. Invoke return listener async
         for (final ReturnListener listener : returnListeners) {
-            this.executorService.execute(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        listener.handleReturn(-9, "Rejecting", exchange, routingKey, props, body);
-                    } catch (Exception e) {
-                        throw new IllegalStateException("Failed to send return message", e);
-                    }
+            this.executorService.execute(() -> {
+                try {
+                    listener.handleReturn(-9, "Rejecting", exchange, routingKey, props, body);
+                } catch (Exception e) {
+                    throw new IllegalStateException("Failed to send return message", e);
                 }
             });
         }
@@ -509,7 +506,7 @@ class TestChannel implements Channel {
     }
 
     @Override
-    public String basicConsume(String queue, Consumer callback) throws IOException {
+    public String basicConsume(String queue, Consumer callback) {
         throw new UnsupportedOperationException("This method is not currently supported as it is not used by current API in testing");
     }
 

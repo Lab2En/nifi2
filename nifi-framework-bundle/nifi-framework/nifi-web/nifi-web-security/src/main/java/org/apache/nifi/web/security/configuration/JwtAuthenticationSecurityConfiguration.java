@@ -16,17 +16,19 @@
  */
 package org.apache.nifi.web.security.configuration;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.apache.nifi.authorization.Authorizer;
 import org.apache.nifi.util.NiFiProperties;
-import org.apache.nifi.web.security.jwt.converter.StandardJwtAuthenticationConverter;
+import org.apache.nifi.web.security.NiFiWebAuthenticationDetails;
 import org.apache.nifi.web.security.StandardAuthenticationEntryPoint;
+import org.apache.nifi.web.security.jwt.converter.StandardJwtAuthenticationConverter;
 import org.apache.nifi.web.security.jwt.jws.StandardJwsSignerProvider;
+import org.apache.nifi.web.security.jwt.key.StandardVerificationKeySelector;
 import org.apache.nifi.web.security.jwt.key.command.KeyExpirationCommand;
 import org.apache.nifi.web.security.jwt.key.command.KeyGenerationCommand;
-import org.apache.nifi.web.security.jwt.key.StandardVerificationKeySelector;
 import org.apache.nifi.web.security.jwt.key.service.VerificationKeyService;
-import org.apache.nifi.web.security.jwt.provider.IssuerProvider;
 import org.apache.nifi.web.security.jwt.provider.BearerTokenProvider;
+import org.apache.nifi.web.security.jwt.provider.IssuerProvider;
 import org.apache.nifi.web.security.jwt.provider.StandardBearerTokenProvider;
 import org.apache.nifi.web.security.jwt.provider.StandardIssuerProvider;
 import org.apache.nifi.web.security.jwt.resolver.StandardBearerTokenResolver;
@@ -37,7 +39,8 @@ import org.apache.nifi.web.security.jwt.revocation.command.RevocationExpirationC
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.security.authentication.AuthenticationDetailsSource;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
@@ -45,6 +48,7 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthen
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 
+import java.security.KeyPairGenerator;
 import java.time.Duration;
 
 /**
@@ -54,6 +58,8 @@ import java.time.Duration;
 public class JwtAuthenticationSecurityConfiguration {
 
     private final NiFiProperties niFiProperties;
+
+    private final TaskScheduler taskScheduler;
 
     private final Authorizer authorizer;
 
@@ -70,6 +76,7 @@ public class JwtAuthenticationSecurityConfiguration {
     @Autowired
     public JwtAuthenticationSecurityConfiguration(
             final NiFiProperties niFiProperties,
+            final TaskScheduler taskScheduler,
             final Authorizer authorizer,
             final JwtDecoder jwtDecoder,
             final JwtRevocationService jwtRevocationService,
@@ -77,6 +84,7 @@ public class JwtAuthenticationSecurityConfiguration {
             final VerificationKeyService verificationKeyService
     ) {
         this.niFiProperties = niFiProperties;
+        this.taskScheduler = taskScheduler;
         this.authorizer = authorizer;
         this.jwtDecoder = jwtDecoder;
         this.jwtRevocationService = jwtRevocationService;
@@ -92,8 +100,10 @@ public class JwtAuthenticationSecurityConfiguration {
      * @return Bearer Token Authentication Filter
      */
     @Bean
-    public BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter(final AuthenticationManager authenticationManager) {
+    public BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter(final AuthenticationManager authenticationManager,
+        final AuthenticationDetailsSource<HttpServletRequest, NiFiWebAuthenticationDetails> authenticationDetailsSource) {
         final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter = new BearerTokenAuthenticationFilter(authenticationManager);
+        bearerTokenAuthenticationFilter.setAuthenticationDetailsSource(authenticationDetailsSource);
         bearerTokenAuthenticationFilter.setBearerTokenResolver(bearerTokenResolver());
         bearerTokenAuthenticationFilter.setAuthenticationEntryPoint(authenticationEntryPoint());
         return bearerTokenAuthenticationFilter;
@@ -180,12 +190,13 @@ public class JwtAuthenticationSecurityConfiguration {
     /**
      * Key Generation Command responsible for rotating JSON Web Signature key pairs based on configuration
      *
+     * @param keyPairGenerator Key Pair Generator for JSON Web Signatures
      * @return Key Generation Command scheduled according to application properties
      */
     @Bean
-    public KeyGenerationCommand keyGenerationCommand() {
-        final KeyGenerationCommand command = new KeyGenerationCommand(jwsSignerProvider(), verificationKeySelector);
-        commandScheduler().scheduleAtFixedRate(command, keyRotationPeriod);
+    public KeyGenerationCommand keyGenerationCommand(final KeyPairGenerator keyPairGenerator) {
+        final KeyGenerationCommand command = new KeyGenerationCommand(jwsSignerProvider(), verificationKeySelector, keyPairGenerator);
+        taskScheduler.scheduleAtFixedRate(command, keyRotationPeriod);
         return command;
     }
 
@@ -197,7 +208,7 @@ public class JwtAuthenticationSecurityConfiguration {
     @Bean
     public KeyExpirationCommand keyExpirationCommand() {
         final KeyExpirationCommand command = new KeyExpirationCommand(verificationKeyService);
-        commandScheduler().scheduleAtFixedRate(command, keyRotationPeriod);
+        taskScheduler.scheduleAtFixedRate(command, keyRotationPeriod);
         return command;
     }
 
@@ -209,19 +220,7 @@ public class JwtAuthenticationSecurityConfiguration {
     @Bean
     public RevocationExpirationCommand revocationExpirationCommand() {
         final RevocationExpirationCommand command = new RevocationExpirationCommand(jwtRevocationService);
-        commandScheduler().scheduleAtFixedRate(command, keyRotationPeriod);
+        taskScheduler.scheduleAtFixedRate(command, keyRotationPeriod);
         return command;
-    }
-
-    /**
-     * Command Scheduler responsible for running commands in background thread
-     *
-     * @return Thread Pool Task Scheduler with named threads
-     */
-    @Bean
-    public ThreadPoolTaskScheduler commandScheduler() {
-        final ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setThreadNamePrefix(JwtAuthenticationSecurityConfiguration.class.getSimpleName());
-        return scheduler;
     }
 }

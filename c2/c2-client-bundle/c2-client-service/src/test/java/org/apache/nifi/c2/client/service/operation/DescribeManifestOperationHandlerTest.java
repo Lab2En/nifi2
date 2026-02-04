@@ -16,9 +16,6 @@
  */
 package org.apache.nifi.c2.client.service.operation;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.when;
-
 import org.apache.nifi.c2.client.service.C2HeartbeatFactory;
 import org.apache.nifi.c2.client.service.model.RuntimeInfoWrapper;
 import org.apache.nifi.c2.protocol.api.AgentInfo;
@@ -35,6 +32,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.apache.nifi.c2.protocol.api.RunStatus.RUNNING;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class DescribeManifestOperationHandlerTest {
@@ -58,7 +59,7 @@ public class DescribeManifestOperationHandlerTest {
     void testDescribeManifestOperationHandlerPopulatesAckSuccessfully() {
         RuntimeManifest manifest = new RuntimeManifest();
         manifest.setIdentifier("manifestId");
-        RuntimeInfoWrapper runtimeInfoWrapper = new RuntimeInfoWrapper(null, manifest, null, null, null);
+        RuntimeInfoWrapper runtimeInfoWrapper = new RuntimeInfoWrapper(null, manifest, null, null, null, RUNNING);
 
         C2Heartbeat heartbeat = new C2Heartbeat();
         AgentInfo agentInfo = new AgentInfo();

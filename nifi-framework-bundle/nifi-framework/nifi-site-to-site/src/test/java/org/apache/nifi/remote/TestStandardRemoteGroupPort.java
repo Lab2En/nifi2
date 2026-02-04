@@ -22,7 +22,6 @@ import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.SiteToSiteAttributes;
-import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.groups.RemoteProcessGroup;
 import org.apache.nifi.processor.Processor;
 import org.apache.nifi.processor.Relationship;
@@ -58,8 +57,8 @@ import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -76,7 +75,6 @@ public class TestStandardRemoteGroupPort {
     private SiteToSiteClient siteToSiteClient;
     private Transaction transaction;
     private EventReporter eventReporter;
-    private ProcessGroup processGroup;
     private static final String REMOTE_CLUSTER_URL = "http://node0.example.com:8080/nifi";
     private StandardRemoteGroupPort port;
     private SharedSessionState sessionState;
@@ -98,7 +96,6 @@ public class TestStandardRemoteGroupPort {
     private void setupMock(final SiteToSiteTransportProtocol protocol,
             final TransferDirection direction,
            final SiteToSiteClientConfig siteToSiteClientConfig) throws Exception {
-        processGroup = null;
         remoteGroup = mock(RemoteProcessGroup.class);
         scheduler = null;
         siteToSiteClient = mock(SiteToSiteClient.class);
@@ -106,18 +103,10 @@ public class TestStandardRemoteGroupPort {
 
         eventReporter = mock(EventReporter.class);
 
-        final ConnectableType connectableType;
-        switch (direction) {
-            case SEND:
-                connectableType = ConnectableType.REMOTE_INPUT_PORT;
-                break;
-            case RECEIVE:
-                connectableType = ConnectableType.OUTPUT_PORT;
-                break;
-            default:
-                connectableType = null;
-                break;
-        }
+        final ConnectableType connectableType = switch (direction) {
+            case SEND -> ConnectableType.REMOTE_INPUT_PORT;
+            case RECEIVE -> ConnectableType.OUTPUT_PORT;
+        };
 
         port = spy(new StandardRemoteGroupPort(ID, ID, NAME, remoteGroup, direction, connectableType, null, scheduler));
 
@@ -343,8 +332,7 @@ public class TestStandardRemoteGroupPort {
 
         // Execute onTrigger while offering new flow files.
         final List<MockFlowFile> flowFiles = new ArrayList<>();
-        for (int i = 0; i < expectedNumberOfPackets.length; i++) {
-            int numOfPackets = expectedNumberOfPackets[i];
+        for (int numOfPackets : expectedNumberOfPackets) {
             int startF = flowFiles.size();
             int endF = startF + numOfPackets;
             IntStream.range(startF, endF).forEach(f -> {
@@ -377,11 +365,10 @@ public class TestStandardRemoteGroupPort {
             final List<DataPacket> dataPackets = sentPackets.get(i);
             assertEquals(expectedNumberOfPackets[i], dataPackets.size());
 
-            for (int p = 0; p < dataPackets.size(); p++) {
+            for (DataPacket dataPacket : dataPackets) {
                 final FlowFile flowFile = flowFiles.get(f);
 
                 // Assert sent packet
-                final DataPacket dataPacket = dataPackets.get(p);
                 assertEquals(flowFile.getSize(), dataPacket.getSize());
 
                 // Assert provenance events (SEND and DROP)

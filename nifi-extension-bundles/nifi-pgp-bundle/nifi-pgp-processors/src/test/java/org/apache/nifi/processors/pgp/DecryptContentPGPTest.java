@@ -17,8 +17,8 @@
 package org.apache.nifi.processors.pgp;
 
 import org.apache.nifi.pgp.service.api.PGPPrivateKeyService;
-import org.apache.nifi.pgp.util.PGPSecretKeyGenerator;
 import org.apache.nifi.pgp.util.PGPOperationUtils;
+import org.apache.nifi.pgp.util.PGPSecretKeyGenerator;
 import org.apache.nifi.processors.pgp.attributes.DecryptionStrategy;
 import org.apache.nifi.processors.pgp.exception.PGPDecryptionException;
 import org.apache.nifi.processors.pgp.exception.PGPProcessException;
@@ -48,9 +48,9 @@ import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.PBESecretKeyDecryptor;
 import org.bouncycastle.openpgp.operator.PGPDataEncryptorBuilder;
+import org.bouncycastle.openpgp.operator.bc.BcPBEKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
-import org.bouncycastle.openpgp.operator.jcajce.JcePBEKeyEncryptionMethodGenerator;
 import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyDecryptorBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -437,14 +437,14 @@ public class DecryptContentPGPTest {
     private byte[] getPasswordBasedEncryptedData(final int encryptionAlgorithm, final byte[] contents, final boolean integrityEnabled) throws IOException, PGPException {
         final PGPDataEncryptorBuilder builder = new BcPGPDataEncryptorBuilder(encryptionAlgorithm).setWithIntegrityPacket(integrityEnabled);
         final PGPEncryptedDataGenerator generator = new PGPEncryptedDataGenerator(builder);
-        generator.addMethod(new JcePBEKeyEncryptionMethodGenerator(PASSPHRASE.toCharArray()));
+        generator.addMethod(new BcPBEKeyEncryptionMethodGenerator(PASSPHRASE.toCharArray()));
         return getEncryptedData(generator, contents);
     }
 
     private byte[] getPasswordBasedAndPublicKeyEncryptedData(final byte[] contents, final PGPPublicKey publicKey) throws IOException, PGPException {
         final PGPDataEncryptorBuilder builder = new BcPGPDataEncryptorBuilder(ENCRYPTION_ALGORITHM).setWithIntegrityPacket(INTEGRITY_ENABLED);
         final PGPEncryptedDataGenerator generator = new PGPEncryptedDataGenerator(builder);
-        generator.addMethod(new JcePBEKeyEncryptionMethodGenerator(PASSPHRASE.toCharArray()));
+        generator.addMethod(new BcPBEKeyEncryptionMethodGenerator(PASSPHRASE.toCharArray()));
         generator.addMethod(new BcPublicKeyKeyEncryptionMethodGenerator(publicKey));
         return getEncryptedData(generator, contents);
     }

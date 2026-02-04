@@ -17,7 +17,10 @@
 
 package org.apache.nifi.minifi.c2.command;
 
-import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.sortedPropertiesByKey;
+import org.apache.nifi.c2.client.service.operation.OperandPropertiesProvider;
+import org.apache.nifi.minifi.commons.api.MiNiFiProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -27,11 +30,10 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
-import org.apache.nifi.c2.client.service.operation.OperandPropertiesProvider;
-import org.apache.nifi.minifi.commons.api.MiNiFiProperties;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import static org.apache.nifi.minifi.commons.api.MiNiFiProperties.sortedPropertiesByKey;
 
 public class UpdatePropertiesPropertyProvider implements OperandPropertiesProvider {
 
@@ -48,7 +50,7 @@ public class UpdatePropertiesPropertyProvider implements OperandPropertiesProvid
     public Map<String, Object> getProperties() {
         Map<String, String> bootstrapProperties = getBootstrapProperties();
 
-        LinkedHashSet<UpdatableProperty> updatableProperties = sortedPropertiesByKey().values()
+        Set<UpdatableProperty> updatableProperties = sortedPropertiesByKey().values()
             .stream()
             .filter(property -> !property.isSensitive())
             .filter(MiNiFiProperties::isModifiable)

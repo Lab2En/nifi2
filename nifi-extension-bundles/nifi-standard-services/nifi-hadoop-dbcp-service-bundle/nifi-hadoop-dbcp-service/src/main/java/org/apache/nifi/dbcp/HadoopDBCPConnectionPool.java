@@ -35,7 +35,6 @@ import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.resource.ResourceCardinality;
 import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.controller.ConfigurationContext;
-import org.apache.nifi.controller.ControllerServiceInitializationContext;
 import org.apache.nifi.dbcp.utils.DBCPProperties;
 import org.apache.nifi.dbcp.utils.DataSourceConfiguration;
 import org.apache.nifi.expression.ExpressionLanguageScope;
@@ -43,17 +42,16 @@ import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
-import javax.security.auth.login.LoginException;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.security.auth.login.LoginException;
 
 import static org.apache.nifi.dbcp.utils.DBCPProperties.DATABASE_URL;
 import static org.apache.nifi.dbcp.utils.DBCPProperties.DB_DRIVERNAME;
@@ -104,8 +102,7 @@ public class HadoopDBCPConnectionPool extends AbstractDBCPConnectionPool {
             .build();
 
     public static final PropertyDescriptor HADOOP_CONFIGURATION_RESOURCES = new PropertyDescriptor.Builder()
-            .name("hadoop-config-resources")
-            .displayName("Hadoop Configuration Resources")
+            .name("Hadoop Configuration Resources")
             .description("A file, or comma separated list of files, which contain the Hadoop configuration (core-site.xml, etc.). Without this, Hadoop "
                     + "will search the classpath, or will revert to a default configuration. Note that to enable authentication with Kerberos, "
                     + "the appropriate properties must be set in the configuration files.")
@@ -115,7 +112,24 @@ public class HadoopDBCPConnectionPool extends AbstractDBCPConnectionPool {
             .dynamicallyModifiesClasspath(true)
             .build();
 
-    private List<PropertyDescriptor> properties;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        DATABASE_URL,
+        DB_DRIVERNAME,
+        DB_DRIVER_LOCATION,
+        HADOOP_CONFIGURATION_RESOURCES,
+        KERBEROS_USER_SERVICE,
+        DB_USER,
+        DB_PASSWORD,
+        MAX_WAIT_TIME,
+        MAX_TOTAL_CONNECTIONS,
+        VALIDATION_QUERY,
+        MIN_IDLE,
+        MAX_IDLE,
+        MAX_CONN_LIFETIME,
+        EVICTION_RUN_PERIOD,
+        MIN_EVICTABLE_IDLE_TIME,
+        SOFT_MIN_EVICTABLE_IDLE_TIME
+    );
 
     private volatile Boolean foundHadoopDependencies;
 
@@ -123,38 +137,28 @@ public class HadoopDBCPConnectionPool extends AbstractDBCPConnectionPool {
     private final AtomicReference<ValidationResources> validationResourceHolder = new AtomicReference<>(null);
 
     @Override
-    protected void init(final ControllerServiceInitializationContext context) {
-        properties = Arrays.asList(
-                DATABASE_URL,
-                DB_DRIVERNAME,
-                DB_DRIVER_LOCATION,
-                HADOOP_CONFIGURATION_RESOURCES,
-                KERBEROS_USER_SERVICE,
-                DB_USER,
-                DB_PASSWORD,
-                MAX_WAIT_TIME,
-                MAX_TOTAL_CONNECTIONS,
-                VALIDATION_QUERY,
-                MIN_IDLE,
-                MAX_IDLE,
-                MAX_CONN_LIFETIME,
-                EVICTION_RUN_PERIOD,
-                MIN_EVICTABLE_IDLE_TIME,
-                SOFT_MIN_EVICTABLE_IDLE_TIME
-        );
-    }
-
-    @Override
     public void migrateProperties(final PropertyConfiguration config) {
         config.removeProperty("Kerberos Principal");
         config.removeProperty("Kerberos Password");
         config.removeProperty("Kerberos Keytab");
         config.removeProperty("kerberos-credentials-service");
+        config.renameProperty("hadoop-config-resources", HADOOP_CONFIGURATION_RESOURCES.getName());
+        DBCPProperties.OLD_DB_DRIVER_LOCATION_PROPERTY_NAMES.forEach(oldPropertyName ->
+                config.renameProperty(oldPropertyName, DB_DRIVER_LOCATION.getName())
+        );
+        config.renameProperty(DBCPProperties.OLD_VALIDATION_QUERY_PROPERTY_NAME, VALIDATION_QUERY.getName());
+        config.renameProperty(DBCPProperties.OLD_MIN_IDLE_PROPERTY_NAME, MIN_IDLE.getName());
+        config.renameProperty(DBCPProperties.OLD_MAX_IDLE_PROPERTY_NAME, MAX_IDLE.getName());
+        config.renameProperty(DBCPProperties.OLD_MAX_CONN_LIFETIME_PROPERTY_NAME, MAX_CONN_LIFETIME.getName());
+        config.renameProperty(DBCPProperties.OLD_EVICTION_RUN_PERIOD_PROPERTY_NAME, EVICTION_RUN_PERIOD.getName());
+        config.renameProperty(DBCPProperties.OLD_MIN_EVICTABLE_IDLE_TIME_PROPERTY_NAME, MIN_EVICTABLE_IDLE_TIME.getName());
+        config.renameProperty(DBCPProperties.OLD_SOFT_MIN_EVICTABLE_IDLE_TIME_PROPERTY_NAME, SOFT_MIN_EVICTABLE_IDLE_TIME.getName());
+        config.renameProperty(DBCPProperties.OLD_KERBEROS_USER_SERVICE_PROPERTY_NAME, KERBEROS_USER_SERVICE.getName());
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -257,6 +261,7 @@ public class HadoopDBCPConnectionPool extends AbstractDBCPConnectionPool {
      * @throws SQLException if there is an error while closing open connections
      */
     @OnDisabled
+    @Override
     public void shutdown() throws SQLException {
         validationResourceHolder.set(null);
         foundHadoopDependencies = null;

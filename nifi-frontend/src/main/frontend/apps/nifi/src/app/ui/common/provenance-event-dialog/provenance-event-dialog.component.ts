@@ -15,22 +15,21 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { FormsModule } from '@angular/forms';
 import { MatInputModule } from '@angular/material/input';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatButtonModule } from '@angular/material/button';
-import { AsyncPipe, NgForOf, NgIf, NgTemplateOutlet } from '@angular/common';
+import { NgForOf, NgIf, NgTemplateOutlet } from '@angular/common';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { CopyDirective, NiFiCommon } from '@nifi/shared';
 import { MatTabsModule } from '@angular/material/tabs';
 import { Attribute, ProvenanceEventDialogRequest } from '../../../state/shared';
-import { TabbedDialog } from '../tabbed-dialog/tabbed-dialog.component';
+import { TabbedDialog, TABBED_DIALOG_ID } from '../tabbed-dialog/tabbed-dialog.component';
 
 @Component({
     selector: 'provenance-event-dialog',
-    standalone: true,
     templateUrl: './provenance-event-dialog.component.html',
     styleUrls: ['./provenance-event-dialog.component.scss'],
     imports: [
@@ -39,16 +38,24 @@ import { TabbedDialog } from '../tabbed-dialog/tabbed-dialog.component';
         MatCheckboxModule,
         MatButtonModule,
         NgIf,
-        AsyncPipe,
         NgForOf,
         MatDatepickerModule,
         MatTabsModule,
         NgTemplateOutlet,
         FormsModule,
         CopyDirective
+    ],
+    providers: [
+        {
+            provide: TABBED_DIALOG_ID,
+            useValue: 'edit-provenance-event-selected-index'
+        }
     ]
 })
 export class ProvenanceEventDialog extends TabbedDialog {
+    request = inject<ProvenanceEventDialogRequest>(MAT_DIALOG_DATA);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() contentViewerAvailable!: boolean;
 
     @Output() downloadContent: EventEmitter<string> = new EventEmitter<string>();
@@ -57,11 +64,8 @@ export class ProvenanceEventDialog extends TabbedDialog {
 
     onlyShowModifiedAttributes = false;
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: ProvenanceEventDialogRequest,
-        private nifiCommon: NiFiCommon
-    ) {
-        super('edit-provenance-event-selected-index');
+    constructor() {
+        super();
     }
 
     formatDurationValue(duration: number): string {

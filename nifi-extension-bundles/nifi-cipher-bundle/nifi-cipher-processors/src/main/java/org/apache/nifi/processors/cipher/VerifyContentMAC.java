@@ -17,30 +17,6 @@
 
 package org.apache.nifi.processors.cipher;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.nifi.processors.cipher.VerifyContentMAC.Encoding.BASE64;
-import static org.apache.nifi.processors.cipher.VerifyContentMAC.Encoding.HEXADECIMAL;
-import static org.apache.nifi.processors.cipher.VerifyContentMAC.Encoding.UTF8;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.security.InvalidKeyException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Function;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -53,13 +29,35 @@ import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.bouncycastle.util.encoders.Hex;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.InvalidKeyException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.nifi.processors.cipher.VerifyContentMAC.Encoding.BASE64;
+import static org.apache.nifi.processors.cipher.VerifyContentMAC.Encoding.HEXADECIMAL;
+import static org.apache.nifi.processors.cipher.VerifyContentMAC.Encoding.UTF8;
 
 @SupportsBatching
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
@@ -76,8 +74,7 @@ public class VerifyContentMAC extends AbstractProcessor {
     protected static final String HMAC_SHA512 = "HmacSHA512";
 
     protected static final PropertyDescriptor MAC_ALGORITHM = new PropertyDescriptor.Builder()
-            .name("mac-algorithm")
-            .displayName("Message Authentication Code Algorithm")
+            .name("Message Authentication Code Algorithm")
             .description("Hashed Message Authentication Code Function")
             .allowableValues(HMAC_SHA256, HMAC_SHA512)
             .required(true)
@@ -85,8 +82,7 @@ public class VerifyContentMAC extends AbstractProcessor {
             .build();
 
     protected static final PropertyDescriptor MAC_ENCODING = new PropertyDescriptor.Builder()
-            .name("message-authentication-code-encoding")
-            .displayName("Message Authentication Code Encoding")
+            .name("Message Authentication Code Encoding")
             .description("Encoding of the Message Authentication Code")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -95,8 +91,7 @@ public class VerifyContentMAC extends AbstractProcessor {
             .build();
 
     protected static final PropertyDescriptor MAC = new PropertyDescriptor.Builder()
-            .name("message-authentication-code")
-            .displayName("Message Authentication Code")
+            .name("Message Authentication Code")
             .description("The MAC to compare with the calculated value")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -104,8 +99,7 @@ public class VerifyContentMAC extends AbstractProcessor {
             .build();
 
     protected static final PropertyDescriptor SECRET_KEY_ENCODING = new PropertyDescriptor.Builder()
-            .name("secret-key-encoding")
-            .displayName("Secret Key Encoding")
+            .name("Secret Key Encoding")
             .description("Encoding of the Secret Key")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -114,8 +108,7 @@ public class VerifyContentMAC extends AbstractProcessor {
             .build();
 
     protected static final PropertyDescriptor SECRET_KEY = new PropertyDescriptor.Builder()
-            .name("secret-key")
-            .displayName("Secret Key")
+            .name("Secret Key")
             .description("Secret key to calculate the hash")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -135,16 +128,20 @@ public class VerifyContentMAC extends AbstractProcessor {
     protected static final String MAC_CALCULATED_ATTRIBUTE = "mac.calculated";
     protected static final String MAC_ALGORITHM_ATTRIBUTE = "mac.algorithm";
     protected static final String MAC_ENCODING_ATTRIBUTE = "mac.encoding";
-    private static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(
-            Arrays.asList(
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
                     MAC_ALGORITHM,
                     MAC_ENCODING,
                     MAC,
                     SECRET_KEY_ENCODING,
                     SECRET_KEY
-            )
     );
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(SUCCESS, FAILURE)));
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
+
     private static final int BUFFER_SIZE = 512000;
 
     private SecretKeySpec secretKeySpec;
@@ -196,8 +193,17 @@ public class VerifyContentMAC extends AbstractProcessor {
     }
 
     @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("mac-algorithm", MAC_ALGORITHM.getName());
+        config.renameProperty("message-authentication-code-encoding", MAC_ENCODING.getName());
+        config.renameProperty("message-authentication-code", MAC.getName());
+        config.renameProperty("secret-key-encoding", SECRET_KEY_ENCODING.getName());
+        config.renameProperty("secret-key", SECRET_KEY.getName());
+    }
+
+    @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -256,7 +262,7 @@ public class VerifyContentMAC extends AbstractProcessor {
     }
 
     enum Encoding {
-        HEXADECIMAL(Hex::toHexString, Hex::decode),
+        HEXADECIMAL(HexFormat.of()::formatHex, HexFormat.of()::parseHex),
         BASE64(value -> Base64.getEncoder().encodeToString(value), value -> Base64.getDecoder().decode(value)),
         UTF8(value -> new String(value, UTF_8), value -> value.getBytes(UTF_8));
 

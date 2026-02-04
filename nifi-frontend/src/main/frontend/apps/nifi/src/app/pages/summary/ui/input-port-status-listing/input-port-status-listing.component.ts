@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import {
     selectInputPortIdFromRoute,
     selectInputPortStatusSnapshots,
@@ -34,17 +34,23 @@ import {
     selectClusterSearchResults,
     selectClusterSummary
 } from '../../../../state/cluster-summary/cluster-summary.selectors';
-import { ComponentType, isDefinedAndNotNull } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull } from '@nifi/shared';
 import { map } from 'rxjs';
 import { NodeSearchResult } from '../../../../state/cluster-summary';
 import * as ClusterStatusActions from '../../state/component-cluster-status/component-cluster-status.actions';
+import { AsyncPipe } from '@angular/common';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
+import { PortStatusTable } from '../common/port-status-table/port-status-table.component';
 
 @Component({
     selector: 'input-port-status-listing',
     templateUrl: './input-port-status-listing.component.html',
+    imports: [AsyncPipe, NgxSkeletonLoaderComponent, PortStatusTable],
     styleUrls: ['./input-port-status-listing.component.scss']
 })
 export class InputPortStatusListing {
+    private store = inject<Store<SummaryListingState>>(Store);
+
     portStatusSnapshots$ = this.store.select(selectInputPortStatusSnapshots);
     loadedTimestamp$ = this.store.select(selectSummaryListingLoadedTimestamp);
     summaryListingStatus$ = this.store.select(selectSummaryListingStatus);
@@ -59,8 +65,6 @@ export class InputPortStatusListing {
         map((results) => results.nodeResults)
     );
     selectedClusterNode$ = this.store.select(selectSelectedClusterNode);
-
-    constructor(private store: Store<SummaryListingState>) {}
 
     isInitialLoading(loadedTimestamp: string): boolean {
         return loadedTimestamp == initialState.loadedTimestamp;

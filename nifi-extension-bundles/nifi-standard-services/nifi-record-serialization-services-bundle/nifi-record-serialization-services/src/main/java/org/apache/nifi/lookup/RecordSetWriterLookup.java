@@ -59,7 +59,6 @@ public class RecordSetWriterLookup extends AbstractControllerService implements 
 
     static final PropertyDescriptor SERVICE_TO_USE = new PropertyDescriptor.Builder()
         .name("Service to Use")
-        .displayName("Service to Use")
         .description("Specifies the name of the user-defined property whose associated Controller Service should be used.")
         .required(true)
         .defaultValue("${recordsetwriter.name}")
@@ -67,6 +66,9 @@ public class RecordSetWriterLookup extends AbstractControllerService implements 
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            SERVICE_TO_USE
+    );
 
     private volatile Map<String, RecordSetWriterFactory> recordSetWriterFactoryMap;
     private volatile PropertyValue serviceToUseValue;
@@ -82,7 +84,7 @@ public class RecordSetWriterLookup extends AbstractControllerService implements 
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return Collections.singletonList(SERVICE_TO_USE);
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -156,7 +158,7 @@ public class RecordSetWriterLookup extends AbstractControllerService implements 
 
     private RecordSetWriterFactory getRecordSetWriterFactory(Map<String, String> variables) {
         final String serviceName = serviceToUseValue.evaluateAttributeExpressions(variables).getValue();
-        if (serviceName.trim().isEmpty()) {
+        if (serviceName.isBlank()) {
             throw new ProcessException("Unable to determine which Record Writer to use: after evaluating the property value against supplied variables, got an empty value");
         }
 

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { FormBuilder, FormControl, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatInputModule } from '@angular/material/input';
@@ -28,7 +28,6 @@ import { Observable } from 'rxjs';
 import { Client } from '../../../../../../../service/client.service';
 import { NifiSpinnerDirective } from '../../../../../../../ui/common/spinner/nifi-spinner.directive';
 import { EditComponentDialogRequest } from '../../../../../state/flow';
-import { ErrorBanner } from '../../../../../../../ui/common/error-banner/error-banner.component';
 import { CanvasUtils } from '../../../../../service/canvas-utils.service';
 import { CopyDirective, NifiTooltipDirective, TextTip } from '@nifi/shared';
 import { CloseOnEscapeDialog } from '@nifi/shared';
@@ -36,7 +35,6 @@ import { ErrorContextKey } from '../../../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../../../ui/common/context-error-banner/context-error-banner.component';
 
 @Component({
-    standalone: true,
     templateUrl: './edit-remote-process-group.component.html',
     imports: [
         ReactiveFormsModule,
@@ -49,7 +47,6 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
         AsyncPipe,
         NifiSpinnerDirective,
         FormsModule,
-        ErrorBanner,
         NifiTooltipDirective,
         ContextErrorBanner,
         CopyDirective
@@ -57,6 +54,11 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
     styleUrls: ['./edit-remote-process-group.component.scss']
 })
 export class EditRemoteProcessGroup extends CloseOnEscapeDialog {
+    request = inject<EditComponentDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private canvasUtils = inject(CanvasUtils);
+    private client = inject(Client);
+
     @Input() saving$!: Observable<boolean>;
     @Output() editRemoteProcessGroup: EventEmitter<any> = new EventEmitter<any>();
 
@@ -65,13 +67,10 @@ export class EditRemoteProcessGroup extends CloseOnEscapeDialog {
     editRemoteProcessGroupForm: FormGroup;
     readonly: boolean;
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: EditComponentDialogRequest,
-        private formBuilder: FormBuilder,
-        private canvasUtils: CanvasUtils,
-        private client: Client
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         this.readonly =
             !request.entity.permissions.canWrite ||
             !this.canvasUtils.remoteProcessGroupSupportsModification(request.entity);
@@ -80,10 +79,10 @@ export class EditRemoteProcessGroup extends CloseOnEscapeDialog {
             urls: new FormControl(request.entity.component.targetUris, Validators.required),
             transportProtocol: new FormControl(request.entity.component.transportProtocol, Validators.required),
             localNetworkInterface: new FormControl(request.entity.component.localNetworkInterface),
-            httpProxyServerHostname: new FormControl(request.entity.component.httpProxyServerHostname),
-            httpProxyServerPort: new FormControl(request.entity.component.httpProxyServerPort),
-            httpProxyUser: new FormControl(request.entity.component.httpProxyUser),
-            httpProxyPassword: new FormControl(request.entity.component.httpProxyPassword),
+            httpProxyServerHostname: new FormControl(request.entity.component.proxyHost),
+            httpProxyServerPort: new FormControl(request.entity.component.proxyPort),
+            httpProxyUser: new FormControl(request.entity.component.proxyUser),
+            httpProxyPassword: new FormControl(request.entity.component.proxyPassword),
             communicationsTimeout: new FormControl(request.entity.component.communicationsTimeout, Validators.required),
             yieldDuration: new FormControl(request.entity.component.yieldDuration, Validators.required)
         });

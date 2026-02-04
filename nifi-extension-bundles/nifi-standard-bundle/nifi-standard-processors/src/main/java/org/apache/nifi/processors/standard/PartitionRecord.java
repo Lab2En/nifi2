@@ -34,6 +34,7 @@ import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.FragmentAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -127,21 +128,19 @@ public class PartitionRecord extends AbstractProcessor {
     private final RecordPathCache recordPathCache = new RecordPathCache(25);
 
     static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
-        .name("record-reader")
-        .displayName("Record Reader")
+        .name("Record Reader")
         .description("Specifies the Controller Service to use for reading incoming data")
         .identifiesControllerService(RecordReaderFactory.class)
         .required(true)
         .build();
     static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
-        .name("record-writer")
-        .displayName("Record Writer")
+        .name("Record Writer")
         .description("Specifies the Controller Service to use for writing out the records")
         .identifiesControllerService(RecordSetWriterFactory.class)
         .required(true)
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             RECORD_READER,
             RECORD_WRITER
     );
@@ -168,7 +167,7 @@ public class PartitionRecord extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -324,6 +323,12 @@ public class PartitionRecord extends AbstractProcessor {
         session.transfer(flowFile, REL_ORIGINAL);
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("record-reader", RECORD_READER.getName());
+        config.renameProperty("record-writer", RECORD_WRITER.getName());
+    }
+
     private RecordPath getRecordPath(final ProcessContext context, final PropertyDescriptor prop, final FlowFile flowFile) {
         final String pathText = context.getProperty(prop).evaluateAttributeExpressions(flowFile).getValue();
         return recordPathCache.getCompiled(pathText);
@@ -412,7 +417,7 @@ public class PartitionRecord extends AbstractProcessor {
                 }
 
                 // There exists a single value that is scalar. Create attribute using the property name as the attribute name
-                final String attributeValue = DataTypeUtils.toString(value, (String) null);
+                final String attributeValue = DataTypeUtils.toString(value, null);
                 attributes.put(entry.getKey(), attributeValue);
             }
 

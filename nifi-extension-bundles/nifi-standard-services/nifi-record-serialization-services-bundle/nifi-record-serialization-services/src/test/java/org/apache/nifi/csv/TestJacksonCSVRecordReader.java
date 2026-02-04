@@ -17,13 +17,6 @@
 
 package org.apache.nifi.csv;
 
-import java.io.ByteArrayInputStream;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.DuplicateHeaderMode;
 import org.apache.commons.text.StringEscapeUtils;
@@ -38,6 +31,14 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -51,17 +52,17 @@ public class TestJacksonCSVRecordReader {
         .setSkipHeaderRecord(true)
         .setTrim(true)
         .setQuote('"')
-        .build();
+        .get();
     private final CSVFormat formatWithNullRecordSeparator = CSVFormat.DEFAULT.builder()
         .setHeader()
         .setSkipHeaderRecord(true)
         .setTrim(true)
         .setQuote('"')
         .setRecordSeparator(null)
-        .build();
+        .get();
     private final CSVFormat trimmed4180 = CSVFormat.RFC4180.builder()
         .setTrim(true)
-        .build();
+        .get();
     private final CSVFormat customFormat = CSVFormat.DEFAULT.builder()
         .setHeader()
         .setSkipHeaderRecord(true)
@@ -70,7 +71,7 @@ public class TestJacksonCSVRecordReader {
         .setDelimiter(',')
         .setEscape('\\')
         .setDuplicateHeaderMode(DuplicateHeaderMode.DISALLOW)
-        .build();
+        .get();
 
 
     private List<RecordField> getDefaultFields() {
@@ -671,7 +672,7 @@ public class TestJacksonCSVRecordReader {
     @Test
     public void testMultipleRecordsDelimitedWithSpecialChar() throws IOException, MalformedRecordException {
         final char delimiter = StringEscapeUtils.unescapeJava("\u0001").charAt(0);
-        final CSVFormat format = customFormat.builder().setDelimiter(delimiter).build();
+        final CSVFormat format = customFormat.builder().setDelimiter(delimiter).get();
 
         final List<RecordField> fields = getDefaultFields();
         fields.replaceAll(f -> f.getFieldName().equals("balance") ? new RecordField("balance", doubleDataType) : f);
@@ -695,7 +696,7 @@ public class TestJacksonCSVRecordReader {
 
     @Test
     public void testMultipleRecordsEscapedWithChar() throws IOException {
-        final CSVFormat format = customFormat.builder().setEscape('\\').build();
+        final CSVFormat format = customFormat.builder().setEscape('\\').get();
         final List<RecordField> fields = getDefaultFields();
         fields.replaceAll(f -> f.getFieldName().equals("balance") ? new RecordField("balance", doubleDataType) : f);
 

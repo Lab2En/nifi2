@@ -18,7 +18,6 @@ package org.apache.nifi.remote.protocol.socket;
 
 import org.apache.nifi.remote.Peer;
 import org.apache.nifi.remote.PeerDescription;
-import org.apache.nifi.remote.StandardVersionNegotiator;
 import org.apache.nifi.remote.cluster.ClusterNodeInformation;
 import org.apache.nifi.remote.cluster.NodeInformation;
 import org.apache.nifi.remote.io.socket.SocketCommunicationsSession;
@@ -29,8 +28,8 @@ import org.apache.nifi.remote.protocol.HandshakeProperty;
 import org.apache.nifi.remote.protocol.Response;
 import org.apache.nifi.remote.protocol.ResponseCode;
 import org.apache.nifi.util.NiFiProperties;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -90,9 +89,7 @@ public class TestSocketFlowFileServerProtocol {
     }
 
     private SocketFlowFileServerProtocol getDefaultSocketFlowFileServerProtocol() {
-        final StandardVersionNegotiator versionNegotiator = new StandardVersionNegotiator(5, 4, 3, 2, 1);
-        final SocketFlowFileServerProtocol protocol = spy(new SocketFlowFileServerProtocol());
-        return protocol;
+        return spy(new SocketFlowFileServerProtocol());
     }
 
     @Test
@@ -172,8 +169,7 @@ public class TestSocketFlowFileServerProtocol {
             final int numPeers = dis.readInt();
             assertEquals(nodeInfoList.size(), numPeers);
 
-            for (int i = 0; i < nodeInfoList.size(); i++) {
-                final NodeInformation node = nodeInfoList.get(i);
+            for (final NodeInformation node : nodeInfoList) {
                 assertEquals(node.getSiteToSiteHostname(), dis.readUTF());
                 assertEquals(node.getSiteToSitePort().intValue(), dis.readInt());
                 assertEquals(node.isSiteToSiteSecure(), dis.readBoolean());

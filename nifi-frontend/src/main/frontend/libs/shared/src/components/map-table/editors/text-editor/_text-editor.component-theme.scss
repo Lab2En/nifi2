@@ -21,12 +21,5 @@
 @mixin generate-theme() {
     .text-editor {
         @include mat.button-density(-1);
-
-        .editor {
-            &.blank {
-                border-color: var(--mdc-outlined-text-field-disabled-label-text-color);
-                cursor: not-allowed !important;
-            }
-        }
     }
 }

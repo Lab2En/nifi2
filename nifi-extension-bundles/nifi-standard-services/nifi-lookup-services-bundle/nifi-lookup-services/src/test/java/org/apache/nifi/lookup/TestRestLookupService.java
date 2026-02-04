@@ -16,20 +16,23 @@
  */
 package org.apache.nifi.lookup;
 
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.RecordedRequest;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import mockwebserver3.RecordedRequest;
 import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
+import org.apache.nifi.proxy.ProxyConfigurationService;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.serialization.RecordReader;
 import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.util.MockPropertyConfiguration;
 import org.apache.nifi.util.NoOpProcessor;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Answers;
@@ -38,7 +41,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -96,8 +98,9 @@ class TestRestLookupService {
     private RestLookupService restLookupService;
 
     @BeforeEach
-    void setRunner() throws InitializationException {
+    void setRunner() throws InitializationException, IOException {
         mockWebServer = new MockWebServer();
+        mockWebServer.start();
 
         runner = TestRunners.newTestRunner(NoOpProcessor.class);
 
@@ -116,7 +119,7 @@ class TestRestLookupService {
 
     @AfterEach
     void shutdownServer() throws IOException {
-        mockWebServer.shutdown();
+        mockWebServer.close();
     }
 
     @Test
@@ -133,7 +136,9 @@ class TestRestLookupService {
         runner.enableControllerService(restLookupService);
 
         when(recordReaderFactory.createRecordReader(any(), any(), anyLong(), any())).thenReturn(recordReader);
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HTTP_OK));
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(HTTP_OK)
+                .build());
 
         final Optional<Record> recordFound = restLookupService.lookup(Collections.emptyMap());
         assertFalse(recordFound.isPresent());
@@ -147,7 +152,9 @@ class TestRestLookupService {
 
         when(recordReaderFactory.createRecordReader(any(), any(), anyLong(), any())).thenReturn(recordReader);
         when(recordReader.nextRecord()).thenReturn(record);
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HTTP_OK));
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(HTTP_OK)
+                .build());
 
         final Optional<Record> recordFound = restLookupService.lookup(Collections.emptyMap());
         assertTrue(recordFound.isPresent());
@@ -161,7 +168,9 @@ class TestRestLookupService {
 
         when(recordReaderFactory.createRecordReader(any(), any(), anyLong(), any())).thenReturn(recordReader);
         when(recordReader.nextRecord()).thenReturn(record);
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HTTP_OK));
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(HTTP_OK)
+                .build());
 
         final Map<String, Object> coordinates = new LinkedHashMap<>();
         coordinates.put(RestLookupService.METHOD_KEY, POST_METHOD);
@@ -182,9 +191,11 @@ class TestRestLookupService {
         when(recordReaderFactory.createRecordReader(any(), any(), anyLong(), any())).thenReturn(recordReader);
         when(recordReader.nextRecord()).thenReturn(record);
 
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HTTP_NOT_FOUND)
-                .setHeader("Content-type", "application/json")
-                .setBody("{\"error\": { \"code\": 404 } }"));
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(HTTP_NOT_FOUND)
+                .addHeader("Content-type", "application/json")
+                .body("{\"error\": { \"code\": 404 } }")
+                .build());
 
         final Optional<Record> recordFound = restLookupService.lookup(Collections.emptyMap());
         assertTrue(recordFound.isPresent());
@@ -194,7 +205,9 @@ class TestRestLookupService {
     void testLookupResponseHandlingStrategyEvaluated() {
         runner.setProperty(restLookupService, RestLookupService.RESPONSE_HANDLING_STRATEGY, ResponseHandlingStrategy.EVALUATED);
         runner.enableControllerService(restLookupService);
-        mockWebServer.enqueue(new MockResponse().setResponseCode(HTTP_NOT_FOUND));
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(HTTP_NOT_FOUND)
+                .build());
 
         final LookupFailureException exception = assertThrows(LookupFailureException.class, () -> restLookupService.lookup(Collections.emptyMap()));
         assertInstanceOf(IOException.class, exception.getCause());
@@ -217,33 +230,61 @@ class TestRestLookupService {
 
         when(recordReaderFactory.createRecordReader(any(), any(), anyLong(), any())).thenReturn(recordReader);
         when(recordReader.nextRecord()).thenReturn(record);
-        mockWebServer.enqueue(new MockResponse());
+        mockWebServer.enqueue(new MockResponse.Builder().build());
 
         final Optional<Record> recordFound = restLookupService.lookup(Collections.emptyMap());
         assertTrue(recordFound.isPresent());
 
         RecordedRequest recordedRequest = mockWebServer.takeRequest();
 
-        String actualAuthorizationHeader = recordedRequest.getHeader("Authorization");
+        String actualAuthorizationHeader = recordedRequest.getHeaders().get("Authorization");
         assertEquals("Bearer " + accessToken, actualAuthorizationHeader);
 
+    }
+
+    @Test
+    void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("rest-lookup-url", RestLookupService.URL.getName()),
+                Map.entry("rest-lookup-record-reader", RestLookupService.RECORD_READER.getName()),
+                Map.entry("rest-lookup-record-path", RestLookupService.RECORD_PATH.getName()),
+                Map.entry("rest-lookup-ssl-context-service", RestLookupService.SSL_CONTEXT_SERVICE.getName()),
+                Map.entry("rest-lookup-authentication-strategy", RestLookupService.AUTHENTICATION_STRATEGY.getName()),
+                Map.entry("rest-lookup-oauth2-access-token-provider", RestLookupService.OAUTH2_ACCESS_TOKEN_PROVIDER.getName()),
+                Map.entry("rest-lookup-basic-auth-username", RestLookupService.PROP_BASIC_AUTH_USERNAME.getName()),
+                Map.entry("rest-lookup-basic-auth-password", RestLookupService.PROP_BASIC_AUTH_PASSWORD.getName()),
+                Map.entry("rest-lookup-digest-auth", RestLookupService.PROP_DIGEST_AUTH.getName()),
+                Map.entry("rest-lookup-connection-timeout", RestLookupService.PROP_CONNECT_TIMEOUT.getName()),
+                Map.entry("rest-lookup-read-timeout", RestLookupService.PROP_READ_TIMEOUT.getName()),
+                Map.entry("rest-lookup-response-handling-strategy", RestLookupService.RESPONSE_HANDLING_STRATEGY.getName()),
+                Map.entry(ProxyConfigurationService.OBSOLETE_PROXY_CONFIGURATION_SERVICE, RestLookupService.PROXY_CONFIGURATION_SERVICE.getName())
+        );
+
+        final Map<String, String> propertyValues = Map.of();
+        final MockPropertyConfiguration configuration = new MockPropertyConfiguration(propertyValues);
+        restLookupService.migrateProperties(configuration);
+
+        final PropertyMigrationResult result = configuration.toPropertyMigrationResult();
+        final Map<String, String> propertiesRenamed = result.getPropertiesRenamed();
+
+        assertEquals(expectedRenamed, propertiesRenamed);
     }
 
     private void assertRecordedRequestFound() throws InterruptedException {
         final RecordedRequest request = mockWebServer.takeRequest();
 
         assertEquals(GET_METHOD, request.getMethod());
-        assertEquals(ROOT_PATH, request.getPath());
+        assertEquals(ROOT_PATH, request.getTarget());
     }
 
     private void assertPostRecordedRequestFound() throws InterruptedException {
         final RecordedRequest request = mockWebServer.takeRequest();
 
         assertEquals(POST_METHOD, request.getMethod());
-        assertEquals(ROOT_PATH, request.getPath());
-        assertEquals(APPLICATION_JSON, request.getHeader(CONTENT_TYPE_HEADER));
+        assertEquals(ROOT_PATH, request.getTarget());
+        assertEquals(APPLICATION_JSON, request.getHeaders().get(CONTENT_TYPE_HEADER));
 
-        final String body = request.getBody().readString(StandardCharsets.UTF_8);
+        final String body = request.getBody().utf8();
         assertEquals(POST_BODY, body);
     }
 }

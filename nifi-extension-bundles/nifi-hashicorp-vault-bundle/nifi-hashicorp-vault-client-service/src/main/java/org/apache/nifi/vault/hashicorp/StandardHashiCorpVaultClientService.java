@@ -38,11 +38,8 @@ import org.springframework.core.env.PropertySource;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-
 
 @Tags({"hashicorp", "vault", "client"})
 @CapabilityDescription("A controller service for interacting with HashiCorp Vault.")
@@ -58,15 +55,15 @@ import java.util.Map;
 )
 public class StandardHashiCorpVaultClientService extends AbstractControllerService implements HashiCorpVaultClientService {
 
-    private static List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(Arrays.asList(
-            CONFIGURATION_STRATEGY,
-            VAULT_URI,
-            VAULT_AUTHENTICATION,
-            SSL_CONTEXT_SERVICE,
-            VAULT_PROPERTIES_FILES,
-            CONNECTION_TIMEOUT,
-            READ_TIMEOUT
-    ));
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        CONFIGURATION_STRATEGY,
+        VAULT_URI,
+        VAULT_AUTHENTICATION,
+        SSL_CONTEXT_SERVICE,
+        VAULT_PROPERTIES_FILES,
+        CONNECTION_TIMEOUT,
+        READ_TIMEOUT
+    );
 
     private HashiCorpVaultCommunicationService communicationService;
 
@@ -83,7 +80,7 @@ public class StandardHashiCorpVaultClientService extends AbstractControllerServi
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -140,6 +137,13 @@ public class StandardHashiCorpVaultClientService extends AbstractControllerServi
 
     @OnDisabled
     public void onDisabled() {
+        if (communicationService instanceof AutoCloseable autoCloseableCommunicationService) {
+            try {
+                autoCloseableCommunicationService.close();
+            } catch (final Exception e) {
+                getLogger().warn("Error closing HashiCorp Vault communication service", e);
+            }
+        }
         communicationService = null;
     }
 

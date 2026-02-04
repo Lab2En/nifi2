@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { ConfigurationAnalysisResponse, PropertyVerificationState } from './index';
 import { Store } from '@ngrx/store';
@@ -33,22 +33,19 @@ import {
     selectPropertyVerificationRequestContext
 } from './property-verification.selectors';
 import { PropertyVerificationProgress } from '../../ui/common/property-verification/common/property-verification-progress/property-verification-progress.component';
-import { isDefinedAndNotNull, MEDIUM_DIALOG, SMALL_DIALOG } from 'libs/shared/src';
 import { ReferencedAttributesDialog } from '../../ui/common/property-verification/common/referenced-attributes-dialog/referenced-attributes-dialog.component';
 import { PropertyTableHelperService } from '../../service/property-table-helper.service';
-import { MapTableHelperService, MapTableEntry } from '@nifi/shared';
+import { isDefinedAndNotNull, MEDIUM_DIALOG, SMALL_DIALOG, MapTableHelperService, MapTableEntry } from '@nifi/shared';
 
 @Injectable()
 export class PropertyVerificationEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<PropertyVerificationState>,
-        private dialog: MatDialog,
-        private errorHelper: ErrorHelper,
-        private propertyVerificationService: PropertyVerificationService,
-        private propertyTableHelperService: PropertyTableHelperService,
-        private mapTableHelperService: MapTableHelperService
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<PropertyVerificationState>>(Store);
+    private dialog = inject(MatDialog);
+    private errorHelper = inject(ErrorHelper);
+    private propertyVerificationService = inject(PropertyVerificationService);
+    private propertyTableHelperService = inject(PropertyTableHelperService);
+    private mapTableHelperService = inject(MapTableHelperService);
 
     verifyProperties$ = createEffect(() =>
         this.actions$.pipe(
@@ -151,7 +148,8 @@ export class PropertyVerificationEffects {
                                     attributes: response.configurationAnalysis.referencedAttributes
                                 }
                             },
-                            uri: response.requestContext.entity.uri
+                            componentType: response.requestContext.componentType,
+                            componentId: response.requestContext.entity.id
                         })
                         .pipe(
                             map((response) => {
@@ -238,7 +236,11 @@ export class PropertyVerificationEffects {
             switchMap(([, requestContext, verifyRequest]) => {
                 return from(
                     this.propertyVerificationService
-                        .getPropertyVerificationRequest(verifyRequest.requestId, requestContext.entity.uri)
+                        .getPropertyVerificationRequest(
+                            requestContext.componentType,
+                            requestContext.entity.id,
+                            verifyRequest.requestId
+                        )
                         .pipe(
                             map((response) => VerificationActions.pollPropertyVerificationSuccess({ response })),
                             catchError((errorResponse: HttpErrorResponse) => {
@@ -274,8 +276,9 @@ export class PropertyVerificationEffects {
             switchMap(([, requestContext, verifyRequest]) =>
                 from(
                     this.propertyVerificationService.deletePropertyVerificationRequest(
-                        verifyRequest.requestId,
-                        requestContext.entity.uri
+                        requestContext.componentType,
+                        requestContext.entity.id,
+                        verifyRequest.requestId
                     )
                 ).pipe(
                     map(() => VerificationActions.propertyVerificationComplete()),

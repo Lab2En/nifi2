@@ -20,11 +20,17 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { EditPort } from './edit-port.component';
 import { EditComponentDialogRequest } from '../../../../../state/flow';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType } from '@nifi/shared';
 import { provideMockStore } from '@ngrx/store/testing';
 import { initialState } from '../../../../../state/flow/flow.reducer';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ClusterConnectionService } from '../../../../../../../service/cluster-connection.service';
+import { initialState as initialErrorState } from '../../../../../../../state/error/error.reducer';
+import { errorFeatureKey } from '../../../../../../../state/error';
+import { initialState as initialCurrentUserState } from '../../../../../../../state/current-user/current-user.reducer';
+import { currentUserFeatureKey } from '../../../../../../../state/current-user';
+import { canvasFeatureKey } from '../../../../../state';
+import { flowFeatureKey } from '../../../../../state/flow';
 
 describe('EditPort', () => {
     let component: EditPort;
@@ -99,7 +105,15 @@ describe('EditPort', () => {
             imports: [EditPort, NoopAnimationsModule],
             providers: [
                 { provide: MAT_DIALOG_DATA, useValue: data },
-                provideMockStore({ initialState }),
+                provideMockStore({
+                    initialState: {
+                        [errorFeatureKey]: initialErrorState,
+                        [currentUserFeatureKey]: initialCurrentUserState,
+                        [canvasFeatureKey]: {
+                            [flowFeatureKey]: initialState
+                        }
+                    }
+                }),
                 {
                     provide: ClusterConnectionService,
                     useValue: {

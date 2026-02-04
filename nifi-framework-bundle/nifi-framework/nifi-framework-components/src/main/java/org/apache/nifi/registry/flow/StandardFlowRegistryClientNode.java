@@ -22,8 +22,12 @@ import org.apache.nifi.authorization.Resource;
 import org.apache.nifi.authorization.resource.Authorizable;
 import org.apache.nifi.authorization.resource.ResourceFactory;
 import org.apache.nifi.authorization.resource.ResourceType;
+import org.apache.nifi.bundle.Bundle;
 import org.apache.nifi.bundle.BundleCoordinate;
+import org.apache.nifi.components.ConfigVerificationResult;
+import org.apache.nifi.components.ConfigVerificationResult.Outcome;
 import org.apache.nifi.components.ConfigurableComponent;
+import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.validation.ValidationStatus;
 import org.apache.nifi.components.validation.ValidationTrigger;
@@ -40,7 +44,9 @@ import org.apache.nifi.flow.VersionedFlowCoordinates;
 import org.apache.nifi.flow.VersionedParameterContext;
 import org.apache.nifi.flow.VersionedProcessGroup;
 import org.apache.nifi.groups.ProcessGroup;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.nar.ExtensionManager;
+import org.apache.nifi.nar.InstanceClassLoader;
 import org.apache.nifi.nar.NarCloseable;
 import org.apache.nifi.parameter.ParameterContext;
 import org.apache.nifi.parameter.ParameterLookup;
@@ -56,6 +62,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -99,7 +106,7 @@ public final class StandardFlowRegistryClientNode extends AbstractComponentNode 
 
     @Override
     public Resource getResource() {
-        return ResourceFactory.getComponentResource(ResourceType.Controller, getIdentifier(), getName());
+        return ResourceFactory.getComponentResource(ResourceType.RegistryClient, getIdentifier(), getName());
     }
 
     @Override
@@ -161,7 +168,7 @@ public final class StandardFlowRegistryClientNode extends AbstractComponentNode 
 
     @Override
     public boolean isValidationNecessary() {
-        return getValidationStatus() != ValidationStatus.VALID;
+        return true;
     }
 
     @Override
@@ -186,7 +193,7 @@ public final class StandardFlowRegistryClientNode extends AbstractComponentNode 
 
     @Override
     public boolean isStorageLocationApplicable(final String location) {
-        try (final NarCloseable narCloseable = NarCloseable.withComponentNarLoader(getExtensionManager(), client.getClass(), getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(getExtensionManager(), client.getClass(), getIdentifier())) {
             return client.get().getComponent().isStorageLocationApplicable(getConfigurationContext(), location);
         }
     }
@@ -294,6 +301,69 @@ public final class StandardFlowRegistryClientNode extends AbstractComponentNode 
         client.set(component);
     }
 
+    @Override
+    public List<ConfigVerificationResult> verifyConfiguration(final Map<String, String> properties, final Map<String, String> variables,
+                                                               final ComponentLog logger, final ExtensionManager extensionManager) {
+        final List<ConfigVerificationResult> results = new ArrayList<>();
+
+        try {
+            final Map<PropertyDescriptor, String> propertyValues = new LinkedHashMap<>(getRawPropertyValues());
+            if (properties != null) {
+                for (final Map.Entry<String, String> entry : properties.entrySet()) {
+                    final PropertyDescriptor descriptor = getPropertyDescriptor(entry.getKey());
+                    propertyValues.put(descriptor, entry.getValue());
+                }
+            }
+
+            final FlowRegistryClientConfigurationContext configurationContext =
+                    new StandardFlowRegistryClientConfigurationContext(null, propertyValues, this, serviceProvider);
+
+            results.addAll(super.verifyConfig(propertyValues, getAnnotationData(), null));
+            if (!results.isEmpty() && results.stream().anyMatch(result -> result.getOutcome() == Outcome.FAILED)) {
+                return results;
+            }
+
+            final ConfigurableComponent configurableComponent = client.get().getComponent();
+            if (configurableComponent instanceof VerifiableFlowRegistryClient verifiableClient) {
+                final boolean classpathDifferent = isClasspathDifferent(propertyValues);
+                final Map<String, String> verificationVariables = variables == null ? Collections.emptyMap() : variables;
+
+                if (classpathDifferent) {
+                    final Bundle bundle = extensionManager.getBundle(getBundleCoordinate());
+                    final Set<URL> classpathUrls = getAdditionalClasspathResources(propertyValues.keySet(),
+                            descriptor -> configurationContext.getProperty(descriptor).getValue());
+                    final ClassLoader currentClassLoader = Thread.currentThread().getContextClassLoader();
+                    final String isolationKey = getClassLoaderIsolationKey(configurationContext);
+
+                    try (final InstanceClassLoader detectedClassLoader = extensionManager.createInstanceClassLoader(
+                            getComponentType(), getIdentifier(), bundle, classpathUrls, false, isolationKey)) {
+                        Thread.currentThread().setContextClassLoader(detectedClassLoader);
+                        results.addAll(verifiableClient.verify(configurationContext, logger, verificationVariables));
+                    } finally {
+                        Thread.currentThread().setContextClassLoader(currentClassLoader);
+                    }
+                } else {
+                    try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager,
+                            configurableComponent.getClass(), getIdentifier())) {
+                        results.addAll(verifiableClient.verify(configurationContext, logger, verificationVariables));
+                    }
+                }
+            } else {
+                getLogger().debug("{} does not support verification. Skipping additional verification beyond validation.", this);
+            }
+        } catch (final Throwable t) {
+            getLogger().error("Failed to perform verification of Flow Registry Client configuration for {}", this, t);
+
+            results.add(new ConfigVerificationResult.Builder()
+                    .verificationStepName("Perform Verification")
+                    .outcome(Outcome.FAILED)
+                    .explanation("Encountered unexpected failure when attempting to perform verification: " + t)
+                    .build());
+        }
+
+        return results;
+    }
+
     private <T> T execute(final FlowRegistryClientAction<T> action) throws FlowRegistryException, IOException {
         final ValidationStatus validationStatus = getValidationStatus();
 
@@ -310,7 +380,7 @@ public final class StandardFlowRegistryClientNode extends AbstractComponentNode 
             throw new FlowRegistryInvalidException(validationProblems);
         }
 
-        try (final NarCloseable narCloseable = NarCloseable.withComponentNarLoader(getExtensionManager(), client.getClass(), getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(getExtensionManager(), client.getClass(), getIdentifier())) {
             return action.execute();
         }
     }

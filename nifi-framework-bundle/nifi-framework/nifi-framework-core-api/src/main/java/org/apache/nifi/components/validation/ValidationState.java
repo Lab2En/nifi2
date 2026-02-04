@@ -17,9 +17,9 @@
 
 package org.apache.nifi.components.validation;
 
-import java.util.Collection;
-
 import org.apache.nifi.components.ValidationResult;
+
+import java.util.Collection;
 
 public class ValidationState {
     private final ValidationStatus status;
@@ -38,6 +38,7 @@ public class ValidationState {
         return validationErrors;
     }
 
+    @Override
     public String toString() {
         return status.toString();
     }

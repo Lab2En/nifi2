@@ -16,15 +16,6 @@
  */
 package org.apache.nifi.processors.smb;
 
-import static java.util.Arrays.fill;
-import static org.apache.nifi.processors.smb.ListSmb.SMB_CLIENT_PROVIDER_SERVICE;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.DOMAIN;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.HOSTNAME;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.PASSWORD;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.PORT;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.SHARE;
-import static org.apache.nifi.services.smb.SmbjClientProviderService.USERNAME;
-
 import org.apache.nifi.services.smb.SmbjClientProviderService;
 import org.apache.nifi.util.TestRunner;
 import org.junit.jupiter.api.AfterEach;
@@ -37,14 +28,23 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.utility.DockerImageName;
 
+import static java.util.Arrays.fill;
+import static org.apache.nifi.processors.smb.ListSmb.SMB_CLIENT_PROVIDER_SERVICE;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.DOMAIN;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.HOSTNAME;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.PASSWORD;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.PORT;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.SHARE;
+import static org.apache.nifi.services.smb.SmbjClientProviderService.USERNAME;
+
 public class SambaTestContainers {
 
-    protected final static Logger LOGGER = LoggerFactory.getLogger(SambaTestContainers.class);
+    protected static final Logger LOGGER = LoggerFactory.getLogger(SambaTestContainers.class);
 
-    protected final static Integer DEFAULT_SAMBA_PORT = 445;
+    protected static final Integer DEFAULT_SAMBA_PORT = 445;
 
     protected enum AccessMode {
-        READ_ONLY, READ_WRITE;
+        READ_ONLY, READ_WRITE
     }
 
     protected final GenericContainer<?> sambaContainer = new GenericContainer<>(DockerImageName.parse("dperson/samba"))
@@ -107,7 +107,7 @@ public class SambaTestContainers {
     }
 
     protected void writeFile(final String path, final String content, final AccessMode accessMode) {
-        final int fileMode = accessMode == AccessMode.READ_ONLY ? 0100644 : 0100666;
+        final int fileMode = Integer.decode(accessMode == AccessMode.READ_ONLY ? "0100644" : "0100666");
         sambaContainer.copyFileToContainer(Transferable.of(content, fileMode), getContainerPath(path));
     }
 

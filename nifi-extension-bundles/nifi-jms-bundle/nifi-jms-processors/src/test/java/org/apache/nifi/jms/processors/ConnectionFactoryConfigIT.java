@@ -16,6 +16,8 @@
  */
 package org.apache.nifi.jms.processors;
 
+import jakarta.jms.Connection;
+import jakarta.jms.JMSException;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.nifi.jms.cf.JMSConnectionFactoryProperties;
 import org.apache.nifi.jms.cf.JMSConnectionFactoryProvider;
@@ -28,9 +30,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import jakarta.jms.Connection;
-import jakarta.jms.JMSException;
 
 /**
  * Tests for the different Connection Factory configurations of {@link PublishJMS} and {@link ConsumeJMS}:
@@ -168,9 +167,9 @@ public class ConnectionFactoryConfigIT {
 
     private void assertResult() {
         publisher.assertAllFlowFilesTransferred(PublishJMS.REL_SUCCESS, 1);
-        publisher.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS).get(0).assertContentEquals(TEST_MESSAGE);
+        publisher.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS).getFirst().assertContentEquals(TEST_MESSAGE);
 
         consumer.assertAllFlowFilesTransferred(ConsumeJMS.REL_SUCCESS, 1);
-        consumer.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS).get(0).assertContentEquals(TEST_MESSAGE);
+        consumer.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS).getFirst().assertContentEquals(TEST_MESSAGE);
     }
 }

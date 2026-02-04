@@ -34,6 +34,8 @@ import org.apache.nifi.controller.DecommissionTask;
 import org.apache.nifi.controller.FlowController;
 import org.apache.nifi.controller.StandardFlowService;
 import org.apache.nifi.controller.flow.FlowManager;
+import org.apache.nifi.controller.metrics.ComponentMetricReporter;
+import org.apache.nifi.controller.metrics.DefaultComponentMetricReporter;
 import org.apache.nifi.controller.repository.FlowFileEventRepository;
 import org.apache.nifi.controller.repository.metrics.RingBufferEventRepository;
 import org.apache.nifi.controller.state.manager.StandardStateManagerProvider;
@@ -66,11 +68,11 @@ import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.net.ssl.SSLContext;
 import java.io.BufferedWriter;
 import java.io.OutputStreamWriter;
 import java.util.List;
 import java.util.Set;
+import javax.net.ssl.SSLContext;
 
 public class HeadlessNiFiServer implements NiFiServer {
 
@@ -85,12 +87,7 @@ public class HeadlessNiFiServer implements NiFiServer {
     private DiagnosticsFactory diagnosticsFactory;
     private NarAutoLoader narAutoLoader;
 
-    /**
-     * Default constructor
-     */
-    public HeadlessNiFiServer() {
-    }
-
+    @Override
     public void start() {
         try {
 
@@ -103,7 +100,7 @@ public class HeadlessNiFiServer implements NiFiServer {
             ExtensionManagerHolder.init(extensionManager);
 
             // Enrich the flow xml using the Extension Manager mapping
-            final FlowParser flowParser = new FlowParser();
+            new FlowParser();
             logger.info("Loading Flow...");
 
             FlowFileEventRepository flowFileEventRepository = new RingBufferEventRepository(5);
@@ -139,6 +136,7 @@ public class HeadlessNiFiServer implements NiFiServer {
             final FrameworkSslContextProvider sslContextProvider = new FrameworkSslContextProvider(props);
             final SSLContext sslContext = sslContextProvider.loadSslContext().orElse(null);
             final StateManagerProvider stateManagerProvider = StandardStateManagerProvider.create(props, sslContext, extensionManager, ParameterLookup.EMPTY);
+            final ComponentMetricReporter componentMetricReporter = new DefaultComponentMetricReporter();
 
             flowController = FlowController.createStandaloneInstance(
                     flowFileEventRepository,
@@ -146,6 +144,7 @@ public class HeadlessNiFiServer implements NiFiServer {
                     props,
                     authorizer,
                     auditService,
+                    componentMetricReporter,
                     encryptor,
                     bulletinRepository,
                     extensionManager,
@@ -254,6 +253,7 @@ public class HeadlessNiFiServer implements NiFiServer {
         return null;
     }
 
+    @Override
     public void stop() {
         try {
             flowService.stop(false);

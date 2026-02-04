@@ -16,10 +16,6 @@
  */
 package org.apache.nifi.processors.email;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -27,7 +23,10 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.springframework.integration.mail.ImapMailReceiver;
+import org.springframework.integration.mail.inbound.ImapMailReceiver;
+
+import java.util.List;
+import java.util.stream.Stream;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
 @CapabilityDescription("Consumes messages from Email Server using IMAP protocol. "
@@ -52,14 +51,13 @@ public class ConsumeIMAP extends AbstractEmailProcessor<ImapMailReceiver> {
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .build();
 
-    static final List<PropertyDescriptor> DESCRIPTORS;
-
-    static {
-        List<PropertyDescriptor> descriptors = new ArrayList<>(SHARED_DESCRIPTORS);
-        descriptors.add(SHOULD_MARK_READ);
-        descriptors.add(USE_SSL);
-        DESCRIPTORS = Collections.unmodifiableList(descriptors);
-    }
+    static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                    SHOULD_MARK_READ,
+                    USE_SSL
+            )
+    ).toList();
 
     @Override
     protected ImapMailReceiver buildMessageReceiver(ProcessContext processContext) {
@@ -77,6 +75,6 @@ public class ConsumeIMAP extends AbstractEmailProcessor<ImapMailReceiver> {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 }

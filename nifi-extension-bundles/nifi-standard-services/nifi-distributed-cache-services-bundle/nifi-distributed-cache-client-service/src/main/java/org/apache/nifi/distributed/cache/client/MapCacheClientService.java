@@ -36,7 +36,6 @@ import org.apache.nifi.remote.VersionNegotiatorFactory;
 import org.apache.nifi.ssl.SSLContextProvider;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,13 +54,13 @@ public class MapCacheClientService extends AbstractControllerService implements 
 
     public static final PropertyDescriptor HOSTNAME = new PropertyDescriptor.Builder()
         .name("Server Hostname")
-        .description("The name of the server that is running the DistributedMapCacheServer service")
+        .description("The name of the server that is running the MapCacheServer service")
         .required(true)
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .build();
     public static final PropertyDescriptor PORT = new PropertyDescriptor.Builder()
         .name("Server Port")
-        .description("The port on the remote server that is to be used when communicating with the DistributedMapCacheServer service")
+        .description("The port on the remote server that is to be used when communicating with the MapCacheServer service")
         .required(true)
         .addValidator(StandardValidators.PORT_VALIDATOR)
         .defaultValue("4557")
@@ -82,6 +81,13 @@ public class MapCacheClientService extends AbstractControllerService implements 
         .defaultValue("30 secs")
         .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        HOSTNAME,
+        PORT,
+        SSL_CONTEXT_SERVICE,
+        COMMUNICATIONS_TIMEOUT
+    );
+
     private volatile NettyMapCacheClient cacheClient = null;
 
     /**
@@ -91,12 +97,7 @@ public class MapCacheClientService extends AbstractControllerService implements 
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> descriptors = new ArrayList<>();
-        descriptors.add(HOSTNAME);
-        descriptors.add(PORT);
-        descriptors.add(SSL_CONTEXT_SERVICE);
-        descriptors.add(COMMUNICATIONS_TIMEOUT);
-        return descriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled

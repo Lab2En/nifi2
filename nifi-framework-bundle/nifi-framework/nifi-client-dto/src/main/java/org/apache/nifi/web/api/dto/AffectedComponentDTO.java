@@ -18,8 +18,8 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
+
 import java.util.Collection;
 
 @XmlType(name = "affectedComponent")
@@ -60,9 +60,9 @@ public class AffectedComponentDTO {
     }
 
     @Schema(description = "The type of this component",
-        allowableValues = COMPONENT_TYPE_PROCESSOR + "," + COMPONENT_TYPE_CONTROLLER_SERVICE + ", "
-            + COMPONENT_TYPE_INPUT_PORT + ", " + COMPONENT_TYPE_OUTPUT_PORT + ", "
-            + COMPONENT_TYPE_REMOTE_INPUT_PORT + ", " + COMPONENT_TYPE_REMOTE_OUTPUT_PORT + ", " + COMPONENT_TYPE_STATELESS_GROUP)
+        allowableValues = {COMPONENT_TYPE_PROCESSOR, COMPONENT_TYPE_CONTROLLER_SERVICE,
+                COMPONENT_TYPE_INPUT_PORT, COMPONENT_TYPE_OUTPUT_PORT,
+                COMPONENT_TYPE_REMOTE_INPUT_PORT, COMPONENT_TYPE_REMOTE_OUTPUT_PORT, COMPONENT_TYPE_STATELESS_GROUP})
     public String getReferenceType() {
         return referenceType;
     }

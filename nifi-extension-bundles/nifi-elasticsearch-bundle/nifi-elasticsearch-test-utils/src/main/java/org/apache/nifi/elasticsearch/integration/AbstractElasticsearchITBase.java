@@ -22,6 +22,7 @@ import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -34,7 +35,6 @@ import org.elasticsearch.client.ResponseException;
 import org.elasticsearch.client.RestClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
-import org.testcontainers.shaded.org.apache.commons.lang3.RandomStringUtils;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.BufferedReader;
@@ -52,13 +52,13 @@ import static org.apache.http.auth.AuthScope.ANY;
 public abstract class AbstractElasticsearchITBase {
     // default Elasticsearch version should (ideally) match that in the nifi-elasticsearch-bundle#pom.xml for the integration-tests profile
     protected static final DockerImageName IMAGE = DockerImageName
-            .parse(System.getProperty("elasticsearch.docker.image", "docker.elastic.co/elasticsearch/elasticsearch:8.15.1"));
-    protected static final String ELASTIC_USER_PASSWORD = System.getProperty("elasticsearch.elastic_user.password", RandomStringUtils.randomAlphanumeric(10, 20));
+            .parse(System.getProperty("elasticsearch.docker.image", "docker.elastic.co/elasticsearch/elasticsearch:9.2.4"));
+    protected static final String ELASTIC_USER_PASSWORD = System.getProperty("elasticsearch.elastic_user.password", RandomStringUtils.insecure().nextAlphanumeric(10, 20));
     private static final int PORT = 9200;
     protected static final ElasticsearchContainer ELASTICSEARCH_CONTAINER = new ElasticsearchContainer(IMAGE)
             .withPassword(ELASTIC_USER_PASSWORD)
             .withEnv("xpack.security.enabled", "true")
-            // enable API Keys for integration-tests (6.x & 7.x don't enable SSL and therefore API Keys by default, so use a trial license and explicitly enable API Keys)
+            // enable API Keys for integration-tests (7.x doesn't enable SSL and therefore API Keys by default, so use a trial license and explicitly enable API Keys)
             .withEnv("xpack.license.self_generated.type", "trial")
             .withEnv("xpack.security.authc.api_key.enabled", "true")
             // use a "special address" to ensure the publish_host is in the bind_host list, otherwise the Sniffer won't work
@@ -70,7 +70,7 @@ public abstract class AbstractElasticsearchITBase {
             .withEnv("http.port", String.valueOf(PORT))
             .withExposedPorts(PORT)
             .withCreateContainerCmdModifier(cmd -> cmd.withHostConfig(
-                    new HostConfig().withPortBindings(new PortBinding(Ports.Binding.bindPort(PORT), new ExposedPort(PORT)))
+                new HostConfig().withPortBindings(new PortBinding(Ports.Binding.bindPort(PORT), new ExposedPort(PORT)))
             ));
     protected static final String CLIENT_SERVICE_NAME = "Client Service";
     protected static final String INDEX = "messages";
@@ -79,14 +79,9 @@ public abstract class AbstractElasticsearchITBase {
 
     protected static final boolean ENABLE_TEST_CONTAINERS = "true".equalsIgnoreCase(System.getProperty("elasticsearch.testcontainers.enabled"));
     protected static String elasticsearchHost;
-    protected static void startTestcontainer() {
+    protected static void startTestContainer() {
         if (ENABLE_TEST_CONTAINERS) {
-            if (getElasticMajorVersion() == 6) {
-                // disable system call filter check to allow Elasticsearch 6 to run on aarch64 machines (e.g. Mac M1/2)
-                ELASTICSEARCH_CONTAINER.withEnv("bootstrap.system_call_filter", "false").start();
-            } else {
-                ELASTICSEARCH_CONTAINER.start();
-            }
+            ELASTICSEARCH_CONTAINER.start();
             elasticsearchHost = String.format("http://%s", ELASTICSEARCH_CONTAINER.getHttpHostAddress());
         } else {
             elasticsearchHost = System.getProperty("elasticsearch.endpoint", "http://localhost:9200");
@@ -99,7 +94,7 @@ public abstract class AbstractElasticsearchITBase {
 
     static RestClient testDataManagementClient;
 
-    protected static void stopTestcontainer() {
+    protected static void stopTestContainer() {
         if (ENABLE_TEST_CONTAINERS) {
             ELASTICSEARCH_CONTAINER.stop();
         }
@@ -107,10 +102,12 @@ public abstract class AbstractElasticsearchITBase {
 
     @BeforeAll
     static void beforeAll() throws IOException {
-        startTestcontainer();
-        type = getElasticMajorVersion() == 6 ? "_doc" : "";
+        startTestContainer();
+        if (type == null) {
+            type = "";
+        }
         System.out.printf("%n%n%n%n%n%n%n%n%n%n%n%n%n%n%nTYPE: %s%nIMAGE: %s:%s%n%n%n%n%n%n%n%n%n%n%n%n%n%n%n%n",
-                type, IMAGE.getRepository(), IMAGE.getVersionPart());
+            type, IMAGE.getRepository(), IMAGE.getVersionPart());
 
         setupTestData();
     }
@@ -186,7 +183,7 @@ public abstract class AbstractElasticsearchITBase {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(Files.newInputStream(Paths.get(scriptPath))))) {
             String line = reader.readLine();
             while (line != null) {
-                if (!line.trim().isEmpty() && !line.trim().startsWith("#")) {
+                if (!line.isBlank() && !line.trim().startsWith("#")) {
                     final String verb = line.substring(0, line.indexOf(":"));
                     final String path = line.substring(verb.length() + 1, line.indexOf(":", verb.length() + 1));
                     final int loc = verb.length() + path.length() + 2;
@@ -201,17 +198,7 @@ public abstract class AbstractElasticsearchITBase {
         return actions;
     }
 
-    private static final class SetupAction {
-        private final String verb;
-        private final String path;
-        private final String json;
-
-        public SetupAction(final String verb, final String path, final String json) {
-            this.verb = verb;
-            this.path = path;
-            this.json = json;
-        }
-
+    private record SetupAction(String verb, String path, String json) {
         @Override
         public String toString() {
             return "SetupAction{" +

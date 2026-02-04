@@ -31,6 +31,7 @@ import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.mongodb.MongoDBClientService;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
@@ -43,12 +44,11 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @Tags({"mongo", "gridfs", "put", "file", "store"})
@@ -56,8 +56,7 @@ import java.util.Set;
 public class PutGridFS extends AbstractGridFSProcessor {
 
     static final PropertyDescriptor PROPERTIES_PREFIX = new PropertyDescriptor.Builder()
-        .name("putgridfs-properties-prefix")
-        .displayName("File Properties Prefix")
+        .name("File Properties Prefix")
         .description("Attributes that have this prefix will be added to the file stored in GridFS as metadata.")
         .required(false)
         .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -73,8 +72,7 @@ public class PutGridFS extends AbstractGridFSProcessor {
             "must be unique.");
 
     static final PropertyDescriptor ENFORCE_UNIQUENESS = new PropertyDescriptor.Builder()
-        .name("putgridfs-enforce-uniqueness")
-        .displayName("Enforce Uniqueness")
+        .name("Enforce Uniqueness")
         .description("When enabled, this option will ensure that uniqueness is enforced on the bucket. It will do so by creating a MongoDB index " +
                 "that matches your selection. It should ideally be configured once when the bucket is created for the first time because " +
                 "it could take a long time to build on an existing bucket wit a lot of data.")
@@ -83,8 +81,7 @@ public class PutGridFS extends AbstractGridFSProcessor {
         .required(true)
         .build();
     static final PropertyDescriptor HASH_ATTRIBUTE = new PropertyDescriptor.Builder()
-        .name("putgridfs-hash-attribute")
-        .displayName("Hash Attribute")
+        .name("Hash Attribute")
         .description("If uniquness enforcement is enabled and the file hash is part of the constraint, this must be set to an attribute that " +
                 "exists on all incoming flowfiles.")
         .defaultValue("hash.value")
@@ -92,8 +89,7 @@ public class PutGridFS extends AbstractGridFSProcessor {
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .build();
     static final PropertyDescriptor CHUNK_SIZE = new PropertyDescriptor.Builder()
-        .name("putgridfs-chunk-size")
-        .displayName("Chunk Size")
+        .name("Chunk Size")
         .description("Controls the maximum size of each chunk of a file uploaded into GridFS.")
         .defaultValue("256 KB")
         .required(true)
@@ -102,8 +98,7 @@ public class PutGridFS extends AbstractGridFSProcessor {
         .build();
 
     static final PropertyDescriptor FILE_NAME = new PropertyDescriptor.Builder()
-        .name("gridfs-file-name")
-        .displayName("File Name")
+        .name("File Name")
         .description("The name of the file in the bucket that is the target of this processor. GridFS file names do not " +
                 "include path information because GridFS does not sort files into folders within a bucket.")
         .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -118,24 +113,23 @@ public class PutGridFS extends AbstractGridFSProcessor {
 
     static final String ID_ATTRIBUTE = "gridfs.id";
 
-    static final List<PropertyDescriptor> DESCRIPTORS;
-    static final Set<Relationship> RELATIONSHIP_SET;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                FILE_NAME,
+                PROPERTIES_PREFIX,
+                ENFORCE_UNIQUENESS,
+                HASH_ATTRIBUTE,
+                CHUNK_SIZE
+            )
+    ).toList();
 
-    static {
-        List _temp = new ArrayList<>();
-        _temp.addAll(PARENT_PROPERTIES);
-        _temp.add(FILE_NAME);
-        _temp.add(PROPERTIES_PREFIX);
-        _temp.add(ENFORCE_UNIQUENESS);
-        _temp.add(HASH_ATTRIBUTE);
-        _temp.add(CHUNK_SIZE);
-        DESCRIPTORS = Collections.unmodifiableList(_temp);
-
-        Set _rels = new HashSet();
-        _rels.addAll(PARENT_RELATIONSHIPS);
-        _rels.add(REL_DUPLICATE);
-        RELATIONSHIP_SET = Collections.unmodifiableSet(_rels);
-    }
+    private static final Set<Relationship> RELATIONSHIPS = Stream.concat(
+            getCommonRelationships().stream(),
+            Stream.of(
+                REL_DUPLICATE
+            )
+    ).collect(Collectors.toUnmodifiableSet());
 
     private String uniqueness;
     private String hashAttribute;
@@ -149,12 +143,12 @@ public class PutGridFS extends AbstractGridFSProcessor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return RELATIONSHIP_SET;
+        return RELATIONSHIPS;
     }
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -194,6 +188,16 @@ public class PutGridFS extends AbstractGridFSProcessor {
             getLogger().error("Failed to upload file", ex);
             session.transfer(input, REL_FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("putgridfs-properties-prefix", PROPERTIES_PREFIX.getName());
+        config.renameProperty("putgridfs-enforce-uniqueness", ENFORCE_UNIQUENESS.getName());
+        config.renameProperty("putgridfs-hash-attribute", HASH_ATTRIBUTE.getName());
+        config.renameProperty("putgridfs-chunk-size", CHUNK_SIZE.getName());
+        config.renameProperty("gridfs-file-name", FILE_NAME.getName());
     }
 
     private boolean canUploadFile(ProcessContext context, FlowFile input, String bucketName) {

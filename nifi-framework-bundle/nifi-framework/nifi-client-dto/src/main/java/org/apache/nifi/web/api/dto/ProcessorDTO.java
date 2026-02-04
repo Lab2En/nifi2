@@ -17,8 +17,8 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -49,15 +49,12 @@ public class ProcessorDTO extends ComponentDTO {
     private Boolean executionNodeRestricted;
     private Boolean multipleVersionsAvailable;
     private String inputRequirement;
+    private String physicalState;
 
     private ProcessorConfigDTO config;
 
     private Collection<String> validationErrors;
     private String validationStatus;
-
-    public ProcessorDTO() {
-        super();
-    }
 
     /**
      * The name of this processor.
@@ -105,10 +102,10 @@ public class ProcessorDTO extends ComponentDTO {
     }
 
     /**
-     * @return The state of this processor. Possible states are 'RUNNING', 'STOPPED', and 'DISABLED'
+     * @return The state of this processor. Possible states are 'RUNNING', 'STOPPED', 'DISABLED', and 'RUN_ONCE'
      */
     @Schema(description = "The state of the processor",
-            allowableValues = "RUNNING, STOPPED, DISABLED"
+            allowableValues = {"RUNNING", "STOPPED", "DISABLED", "RUN_ONCE"}
     )
     public String getState() {
         return state;
@@ -236,6 +233,21 @@ public class ProcessorDTO extends ComponentDTO {
     }
 
     /**
+     * @return The physical state of this processor, including transition states such as STARTING and STOPPING
+     */
+    @Schema(description = "The physical state of the processor, including transition states",
+            allowableValues = {"RUNNING", "STOPPED", "DISABLED", "STARTING", "STOPPING", "RUN_ONCE"}
+    )
+    public String getPhysicalState() {
+        return physicalState;
+    }
+
+    public void setPhysicalState(String physicalState) {
+        this.physicalState = physicalState;
+    }
+
+
+    /**
      * @return whether this processor supports batching
      */
     @Schema(description = "Whether the processor supports batching. This makes the run duration settings available."
@@ -296,7 +308,7 @@ public class ProcessorDTO extends ComponentDTO {
 
     @Schema(description = "Indicates whether the Processor is valid, invalid, or still in the process of validating (i.e., it is unknown whether or not the Processor is valid)",
         accessMode = Schema.AccessMode.READ_ONLY,
-        allowableValues = VALID + ", " + INVALID + ", " + VALIDATING)
+        allowableValues = {VALID, INVALID, VALIDATING})
     public String getValidationStatus() {
         return validationStatus;
     }

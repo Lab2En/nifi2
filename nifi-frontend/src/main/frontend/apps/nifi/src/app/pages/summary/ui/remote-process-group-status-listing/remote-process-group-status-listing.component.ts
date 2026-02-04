@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import {
     selectRemoteProcessGroupIdFromRoute,
     selectRemoteProcessGroupStatus,
@@ -31,7 +31,7 @@ import { SummaryListingState } from '../../state/summary-listing';
 import { filter, map, switchMap, take } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { getStatusHistoryAndOpenDialog } from '../../../../state/status-history/status-history.actions';
-import { ComponentType, isDefinedAndNotNull } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull } from '@nifi/shared';
 import { initialState } from '../../state/summary-listing/summary-listing.reducer';
 import * as SummaryListingActions from '../../state/summary-listing/summary-listing.actions';
 import { loadClusterSummary } from '../../../../state/cluster-summary/cluster-summary.actions';
@@ -42,13 +42,19 @@ import {
 } from '../../../../state/cluster-summary/cluster-summary.selectors';
 import * as ClusterStatusActions from '../../state/component-cluster-status/component-cluster-status.actions';
 import { NodeSearchResult } from '../../../../state/cluster-summary';
+import { AsyncPipe } from '@angular/common';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
+import { RemoteProcessGroupStatusTable } from './remote-process-group-status-table/remote-process-group-status-table.component';
 
 @Component({
     selector: 'remote-process-group-status-listing',
     templateUrl: './remote-process-group-status-listing.component.html',
+    imports: [AsyncPipe, NgxSkeletonLoaderComponent, RemoteProcessGroupStatusTable],
     styleUrls: ['./remote-process-group-status-listing.component.scss']
 })
 export class RemoteProcessGroupStatusListing {
+    private store = inject<Store<SummaryListingState>>(Store);
+
     loadedTimestamp$ = this.store.select(selectSummaryListingLoadedTimestamp);
     summaryListingStatus$ = this.store.select(selectSummaryListingStatus);
     currentUser$ = this.store.select(selectCurrentUser);
@@ -64,7 +70,7 @@ export class RemoteProcessGroupStatusListing {
     );
     selectedClusterNode$ = this.store.select(selectSelectedClusterNode);
 
-    constructor(private store: Store<SummaryListingState>) {
+    constructor() {
         this.store
             .select(selectViewStatusHistory)
             .pipe(

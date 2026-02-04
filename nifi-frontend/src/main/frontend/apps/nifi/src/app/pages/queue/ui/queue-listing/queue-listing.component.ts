@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { distinctUntilChanged, filter } from 'rxjs';
 import {
@@ -42,13 +42,20 @@ import { About } from '../../../../state/about';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { selectClusterSummary } from '../../../../state/cluster-summary/cluster-summary.selectors';
 import { loadClusterSummary } from '../../../../state/cluster-summary/cluster-summary.actions';
+import { AsyncPipe } from '@angular/common';
+import { FlowFileTable } from './flowfile-table/flowfile-table.component';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
+import { MatIconButton } from '@angular/material/button';
 
 @Component({
     selector: 'queue-listing',
     templateUrl: './queue-listing.component.html',
+    imports: [AsyncPipe, FlowFileTable, NgxSkeletonLoaderComponent, MatIconButton],
     styleUrls: ['./queue-listing.component.scss']
 })
 export class QueueListing implements OnInit, OnDestroy {
+    private store = inject<Store<NiFiState>>(Store);
+
     status$ = this.store.select(selectStatus);
     selectedConnection$ = this.store.select(selectSelectedConnection);
     loadedTimestamp$ = this.store.select(selectLoadedTimestamp);
@@ -57,7 +64,7 @@ export class QueueListing implements OnInit, OnDestroy {
     about$ = this.store.select(selectAbout);
     clusterSummary$ = this.store.select(selectClusterSummary);
 
-    constructor(private store: Store<NiFiState>) {
+    constructor() {
         this.store
             .select(selectConnectionIdFromRoute)
             .pipe(

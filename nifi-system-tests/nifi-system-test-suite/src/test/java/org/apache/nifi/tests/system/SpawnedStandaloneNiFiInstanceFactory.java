@@ -22,10 +22,10 @@ import org.apache.nifi.bootstrap.command.process.StandardManagementServerAddress
 import org.apache.nifi.bootstrap.command.process.StandardProcessBuilderProvider;
 import org.apache.nifi.bootstrap.configuration.ConfigurationProvider;
 import org.apache.nifi.bootstrap.configuration.StandardConfigurationProvider;
-import org.apache.nifi.registry.security.util.KeystoreType;
 import org.apache.nifi.toolkit.client.NiFiClient;
 import org.apache.nifi.toolkit.client.NiFiClientConfig;
 import org.apache.nifi.toolkit.client.impl.JerseyNiFiClient;
+import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.util.file.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,21 +33,32 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory {
     private static final Logger logger = LoggerFactory.getLogger(SpawnedStandaloneNiFiInstanceFactory.class);
+
+    /**
+     * Environment variable name for JaCoCo agent JAR path.
+     * When set, enables code coverage collection for spawned NiFi instances.
+     */
+    private static final String JACOCO_AGENT_PATH_ENV = "JACOCO_AGENT_PATH";
+
     private final InstanceConfiguration instanceConfig;
 
     public SpawnedStandaloneNiFiInstanceFactory(final InstanceConfiguration instanceConfig) {
@@ -89,6 +100,7 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
         private final InstanceConfiguration instanceConfiguration;
         private File bootstrapConfigFile;
         private Process process;
+        private SSLContext sslContext;
 
         public ProcessNiFiInstance(final InstanceConfiguration instanceConfiguration) {
             this.instanceDirectory = instanceConfiguration.getInstanceDirectory();
@@ -154,6 +166,9 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
             copyContents(bootstrapConfigFile.getParentFile(), destinationConf);
             bootstrapConfigFile = new File(destinationConf, bootstrapConfigFile.getName());
 
+            // Configure JaCoCo agent for code coverage if environment variable is set
+            configureJacocoAgent(bootstrapConfigFile);
+
             final File destinationLib = new File(instanceDirectory, "lib");
             copyContents(new File("target/nifi-lib-assembly/lib"), destinationLib);
 
@@ -182,7 +197,7 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
             if (!destinationCertsDir.exists()) {
                 assertTrue(destinationCertsDir.mkdirs());
             }
-            NiFiSystemKeyStoreProvider.configureKeyStores(destinationCertsDir);
+            sslContext = NiFiSystemKeyStoreProvider.configureKeyStores(destinationCertsDir);
 
             final File flowJsonGz = instanceConfiguration.getFlowJsonGz();
             if (flowJsonGz != null) {
@@ -190,22 +205,28 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
                 Files.copy(flowJsonGz.toPath(), destinationFlowJsonGz.toPath());
             }
 
-            // Write out any Property overrides
+            final Map<String, String> overrides = new HashMap<>();
+            overrides.put(NiFiProperties.SECURITY_KEYSTORE_PASSWD, NiFiSystemKeyStoreProvider.getProtectionParameter());
+            overrides.put(NiFiProperties.SECURITY_KEY_PASSWD, NiFiSystemKeyStoreProvider.getProtectionParameter());
+            overrides.put(NiFiProperties.SECURITY_TRUSTSTORE_PASSWD, NiFiSystemKeyStoreProvider.getProtectionParameter());
+
             final Map<String, String> nifiPropertiesOverrides = instanceConfiguration.getNifiPropertiesOverrides();
-            if (nifiPropertiesOverrides != null && !nifiPropertiesOverrides.isEmpty()) {
-                final File destinationNifiProperties = new File(destinationConf, "nifi.properties");
-                final File sourceNifiProperties = new File(bootstrapConfigFile.getParentFile(), "nifi.properties");
+            if (nifiPropertiesOverrides != null) {
+                overrides.putAll(nifiPropertiesOverrides);
+            }
 
-                final Properties nifiProperties = new Properties();
-                try (final InputStream fis = new FileInputStream(sourceNifiProperties)) {
-                    nifiProperties.load(fis);
-                }
+            final File destinationNifiProperties = new File(destinationConf, "nifi.properties");
+            final File sourceNifiProperties = new File(bootstrapConfigFile.getParentFile(), "nifi.properties");
 
-                nifiPropertiesOverrides.forEach(nifiProperties::setProperty);
+            final Properties nifiProperties = new Properties();
+            try (final InputStream fis = new FileInputStream(sourceNifiProperties)) {
+                nifiProperties.load(fis);
+            }
 
-                try (final OutputStream fos = new FileOutputStream(destinationNifiProperties)) {
-                    nifiProperties.store(fos, null);
-                }
+            overrides.forEach(nifiProperties::setProperty);
+
+            try (final OutputStream fos = new FileOutputStream(destinationNifiProperties)) {
+                nifiProperties.store(fos, null);
             }
         }
 
@@ -229,6 +250,56 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
 
                 Files.copy(sourceFile.toPath(), destinationFile.toPath());
             }
+        }
+
+        /**
+         * Configures JaCoCo agent for code coverage collection if JACOCO_AGENT_PATH environment variable is set.
+         * Appends JaCoCo agent JVM argument to the bootstrap configuration file with a unique destfile
+         * based on the instance directory name.
+         *
+         * @param bootstrapConfig The bootstrap configuration file to modify
+         * @throws IOException if unable to write to the bootstrap configuration file
+         */
+        private void configureJacocoAgent(final File bootstrapConfig) throws IOException {
+            final String jacocoAgentPath = System.getenv(JACOCO_AGENT_PATH_ENV);
+            if (jacocoAgentPath == null || jacocoAgentPath.isBlank()) {
+                return;
+            }
+
+            final File jacocoAgentFile = new File(jacocoAgentPath);
+            if (!jacocoAgentFile.exists()) {
+                logger.warn("JaCoCo agent path specified but file not found: {}", jacocoAgentPath);
+                return;
+            }
+
+            // Create coverage output directory in instance directory
+            final File coverageDir = new File(instanceDirectory, "coverage");
+            if (!coverageDir.exists()) {
+                assertTrue(coverageDir.mkdirs());
+            }
+
+            // Use instance directory name to create unique coverage file
+            final String instanceName = instanceDirectory.getName();
+            final File coverageFile = new File(coverageDir, "jacoco.exec");
+
+            // Build JaCoCo agent argument with options:
+            // - destfile: unique file per instance to avoid conflicts
+            // - output=file: write coverage on JVM exit
+            // - append=true: append to existing coverage data if file exists
+            final String jacocoArg = String.format(
+                    "-javaagent:%s=destfile=%s,output=file,append=true",
+                    jacocoAgentFile.getAbsolutePath(),
+                    coverageFile.getAbsolutePath()
+            );
+
+            // Append JaCoCo agent argument to bootstrap.conf
+            try (final FileWriter writer = new FileWriter(bootstrapConfig, true)) {
+                writer.write(System.lineSeparator());
+                writer.write("# JaCoCo agent for code coverage (auto-configured)" + System.lineSeparator());
+                writer.write("java.arg.jacoco=" + jacocoArg + System.lineSeparator());
+            }
+
+            logger.info("Configured JaCoCo agent for NiFi instance [{}]: destfile={}", instanceName, coverageFile.getAbsolutePath());
         }
 
         @Override
@@ -260,9 +331,10 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
                         }
 
                         try {
-                            Thread.sleep(1000L);
-                        } catch (InterruptedException ex) {
-                            logger.debug("NiFi Startup sleep interrupted", ex);
+                            TimeUnit.SECONDS.sleep(1);
+                        } catch (InterruptedException interrupted) {
+                            logger.warn("NiFi Startup sleep interrupted", interrupted);
+                            break;
                         }
                     }
                 }
@@ -272,7 +344,7 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
         @Override
         public void stop() {
             if (process == null) {
-                logger.info("NiFi Shutdown Ignored (runNiFi==null) [{}]", instanceDirectory.getName());
+                logger.debug("NiFi Shutdown request ignored [{}]", instanceDirectory.getName());
                 return;
             }
 
@@ -322,6 +394,11 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
         }
 
         @Override
+        public Optional<SSLContext> getSslContext() {
+            return Optional.of(sslContext);
+        }
+
+        @Override
         public Properties getProperties() throws IOException {
             final File nifiPropsFile = new File(configDir, "nifi.properties");
             final Properties nifiProps = new Properties();
@@ -361,9 +438,12 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
 
         @Override
         public void quarantineTroubleshootingInfo(final File destinationDir, final Throwable cause) throws IOException {
-            final String[] dirsToCopy = new String[] {"conf", "logs"};
+            final String[] dirsToCopy = new String[] {"conf", "logs", "coverage"};
             for (final String dirToCopy : dirsToCopy) {
-                copyContents(new File(getInstanceDirectory(), dirToCopy), new File(destinationDir, dirToCopy));
+                final File sourceDir = new File(getInstanceDirectory(), dirToCopy);
+                if (sourceDir.exists()) {
+                    copyContents(sourceDir, new File(destinationDir, dirToCopy));
+                }
             }
 
             if (process == null) {
@@ -378,41 +458,19 @@ public class SpawnedStandaloneNiFiInstanceFactory implements NiFiInstanceFactory
 
         public NiFiClient createClient() throws IOException {
             final Properties nifiProperties = getProperties();
-            final String httpPort = nifiProperties.getProperty("nifi.web.http.port");
             final String httpsPort = nifiProperties.getProperty("nifi.web.https.port");
-            final String webPort = (httpsPort == null || httpsPort.trim().isEmpty()) ? httpPort : httpsPort;
-
-            final String keystoreType = nifiProperties.getProperty("nifi.security.keystoreType");
-            final String truststoreType = nifiProperties.getProperty("nifi.security.truststoreType");
+            final String baseUrl = "https://localhost:%s".formatted(httpsPort);
 
             final NiFiClientConfig clientConfig = new NiFiClientConfig.Builder()
-                    .baseUrl("http://localhost:" + webPort)
-                    .connectTimeout(30000)
+                    .baseUrl(baseUrl)
+                    .connectTimeout(15000)
                     .readTimeout(30000)
-                    .keystoreFilename(getAbsolutePath(nifiProperties.getProperty("nifi.security.keystore")))
-                    .keystorePassword(nifiProperties.getProperty("nifi.security.keystorePasswd"))
-                    .keystoreType(keystoreType == null ? null : KeystoreType.valueOf(keystoreType))
-                    .truststoreFilename(getAbsolutePath(nifiProperties.getProperty("nifi.security.truststore")))
-                    .truststorePassword(nifiProperties.getProperty("nifi.security.truststorePasswd"))
-                    .truststoreType(truststoreType == null ? null : KeystoreType.valueOf(truststoreType))
+                    .sslContext(sslContext)
                     .build();
 
             return new JerseyNiFiClient.Builder()
                     .config(clientConfig)
                     .build();
-        }
-
-        private String getAbsolutePath(final String filename) {
-            if (filename == null) {
-                return null;
-            }
-
-            final File file = new File(filename);
-            if (file.isAbsolute()) {
-                return file.getAbsolutePath();
-            }
-
-            return new File(instanceDirectory, file.getPath()).getAbsolutePath();
         }
     }
 }

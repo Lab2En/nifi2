@@ -31,11 +31,20 @@ import com.slack.api.bolt.response.Response;
 import com.slack.api.bolt.socket_mode.SocketModeApp;
 import com.slack.api.model.User;
 import com.slack.api.model.event.AppMentionEvent;
+import com.slack.api.model.event.FileChangeEvent;
+import com.slack.api.model.event.FileCreatedEvent;
+import com.slack.api.model.event.FileDeletedEvent;
+import com.slack.api.model.event.FilePublicEvent;
 import com.slack.api.model.event.FileSharedEvent;
+import com.slack.api.model.event.FileUnsharedEvent;
 import com.slack.api.model.event.MemberJoinedChannelEvent;
+import com.slack.api.model.event.MessageChangedEvent;
 import com.slack.api.model.event.MessageChannelJoinEvent;
+import com.slack.api.model.event.MessageDeletedEvent;
 import com.slack.api.model.event.MessageEvent;
 import com.slack.api.model.event.MessageFileShareEvent;
+import com.slack.api.model.event.ReactionAddedEvent;
+import com.slack.api.model.event.ReactionRemovedEvent;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.PrimaryNodeOnly;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -60,8 +69,6 @@ import org.apache.nifi.processors.slack.consume.UserDetailsLookup;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -71,12 +78,12 @@ import java.util.concurrent.TransferQueue;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-
 @PrimaryNodeOnly
 @DefaultSettings(yieldDuration = "250 millis")
 @InputRequirement(InputRequirement.Requirement.INPUT_FORBIDDEN)
 @WritesAttributes({
-    @WritesAttribute(attribute = "mime.type", description = "Set to application/json, as the output will always be in JSON format")
+    @WritesAttribute(attribute = "mime.type", description = "Set to application/json, as the output will always be in JSON format"),
+    @WritesAttribute(attribute = "slack.event.type", description = "Set to the type of Slack event that occurred")
 })
 @SeeAlso({ConsumeSlack.class})
 @Tags({"slack", "real-time", "event", "message", "command", "listen", "receive", "social media", "team", "text", "unstructured"})
@@ -86,10 +93,10 @@ import java.util.regex.Pattern;
     "See Usage / Additional Details for more information about how to configure this Processor and enable it to retrieve messages and commands from Slack.")
 public class ListenSlack extends AbstractProcessor {
 
-    private static final ObjectMapper objectMapper;
+    private static final ObjectMapper OBJECT_MAPPER;
     static {
-        objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
+        OBJECT_MAPPER = new ObjectMapper();
+        OBJECT_MAPPER.registerModule(new JavaTimeModule());
     }
 
     static final AllowableValue RECEIVE_MESSAGE_EVENTS = new AllowableValue("Receive Message Events", "Receive Message Events",
@@ -126,7 +133,7 @@ public class ListenSlack extends AbstractProcessor {
         .allowableValues(RECEIVE_MENTION_EVENTS, RECEIVE_MESSAGE_EVENTS, RECEIVE_COMMANDS, RECEIVE_JOINED_CHANNEL_EVENTS)
         .build();
 
-    final PropertyDescriptor RESOLVE_USER_DETAILS = new PropertyDescriptor.Builder()
+    static final PropertyDescriptor RESOLVE_USER_DETAILS = new PropertyDescriptor.Builder()
         .name("Resolve User Details")
         .description("Specifies whether the Processor should lookup details about the Slack User who sent the received message. " +
             "If true, the output JSON will contain an additional field named 'userDetails'. " +
@@ -144,6 +151,17 @@ public class ListenSlack extends AbstractProcessor {
         .description("All FlowFiles that are created will be sent to this Relationship.")
         .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            APP_TOKEN,
+            BOT_TOKEN,
+            EVENT_TYPE,
+            RESOLVE_USER_DETAILS
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
+
     private final TransferQueue<EventWrapper> eventTransferQueue = new LinkedTransferQueue<>();
     private volatile SocketModeApp socketModeApp;
     private volatile UserDetailsLookup userDetailsLookup;
@@ -151,16 +169,12 @@ public class ListenSlack extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return Arrays.asList(
-            APP_TOKEN,
-            BOT_TOKEN,
-            EVENT_TYPE,
-            RESOLVE_USER_DETAILS);
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public Set<Relationship> getRelationships() {
-        return Collections.singleton(REL_SUCCESS);
+        return RELATIONSHIPS;
     }
 
 
@@ -177,9 +191,21 @@ public class ListenSlack extends AbstractProcessor {
 
         // Register the event types that make sense
         if (context.getProperty(EVENT_TYPE).getValue().equals(RECEIVE_MESSAGE_EVENTS.getValue())) {
+            // Handle basic message events
             slackApp.event(MessageEvent.class, this::handleEvent);
+            slackApp.event(MessageChangedEvent.class, this::handleEvent);
+            slackApp.event(MessageDeletedEvent.class, this::handleEvent);
             slackApp.event(MessageFileShareEvent.class, this::handleEvent);
+            // Handle file events
             slackApp.event(FileSharedEvent.class, this::handleEvent);
+            slackApp.event(FileChangeEvent.class, this::handleEvent);
+            slackApp.event(FileCreatedEvent.class, this::handleEvent);
+            slackApp.event(FileDeletedEvent.class, this::handleEvent);
+            slackApp.event(FilePublicEvent.class, this::handleEvent);
+            slackApp.event(FileUnsharedEvent.class, this::handleEvent);
+            // Handle message reaction events
+            slackApp.event(ReactionAddedEvent.class, this::handleEvent);
+            slackApp.event(ReactionRemovedEvent.class, this::handleEvent);
         } else if (context.getProperty(EVENT_TYPE).getValue().equals(RECEIVE_MENTION_EVENTS.getValue())) {
             slackApp.event(AppMentionEvent.class, this::handleEvent);
             // When there's an AppMention, we'll also get a MessageEvent. We need to handle this event, or we'll get warnings in the logs
@@ -244,23 +270,24 @@ public class ListenSlack extends AbstractProcessor {
         }
 
         final Object messageEvent = eventWrapper.getEvent();
+        final String eventType = messageEvent.getClass().getSimpleName();
 
         FlowFile flowFile = session.create();
         try (final OutputStream out = session.write(flowFile);
-             final JsonGenerator generator = objectMapper.createGenerator(out)) {
+             final JsonGenerator generator = OBJECT_MAPPER.createGenerator(out)) {
 
             // If we need to resolve user details, we need a way to inject it into the JSON. Since we have an object model at this point,
             // we serialize it to a string, then deserialize it back into a JsonNode, and then inject it into the JSON.
             if (context.getProperty(RESOLVE_USER_DETAILS).asBoolean()) {
-                final String stringRepresentation = objectMapper.writeValueAsString(messageEvent);
-                final JsonNode jsonNode = objectMapper.readTree(stringRepresentation);
+                final String stringRepresentation = OBJECT_MAPPER.writeValueAsString(messageEvent);
+                final JsonNode jsonNode = OBJECT_MAPPER.readTree(stringRepresentation);
                 if (jsonNode.hasNonNull("user")) {
                     final String userId = jsonNode.get("user").asText();
                     final User userDetails = userDetailsLookup.getUserDetails(userId);
                     if (userDetails != null) {
                         final ObjectNode objectNode = (ObjectNode) jsonNode;
-                        final String userDetailsJson = objectMapper.writeValueAsString(userDetails);
-                        final JsonNode userDetailsNode = objectMapper.readTree(userDetailsJson);
+                        final String userDetailsJson = OBJECT_MAPPER.writeValueAsString(userDetails);
+                        final JsonNode userDetailsNode = OBJECT_MAPPER.readTree(userDetailsJson);
                         objectNode.set("userDetails", userDetailsNode);
                     }
                 }
@@ -276,6 +303,7 @@ public class ListenSlack extends AbstractProcessor {
         }
 
         flowFile = session.putAttribute(flowFile, CoreAttributes.MIME_TYPE.key(), "application/json");
+        flowFile = session.putAttribute(flowFile, "slack.event.type", eventType);
         session.getProvenanceReporter().receive(flowFile, socketModeApp.getClient().getWssUri().toString());
         session.transfer(flowFile, REL_SUCCESS);
 

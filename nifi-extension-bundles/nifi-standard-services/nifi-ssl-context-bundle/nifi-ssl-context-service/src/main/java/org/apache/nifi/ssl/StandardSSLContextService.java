@@ -31,6 +31,7 @@ import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
@@ -44,12 +45,6 @@ import org.apache.nifi.security.util.TlsConfiguration;
 import org.apache.nifi.security.util.TlsPlatform;
 import org.apache.nifi.util.StringUtils;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509ExtendedTrustManager;
-import javax.net.ssl.X509TrustManager;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -67,6 +62,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509ExtendedKeyManager;
+import javax.net.ssl.X509ExtendedTrustManager;
+import javax.net.ssl.X509TrustManager;
 
 @Tags({"ssl", "secure", "certificate", "keystore", "truststore", "jks", "p12", "pkcs12", "pkcs", "tls"})
 @CapabilityDescription("Standard implementation of the SSLContextService. Provides the ability to configure "
@@ -122,8 +123,7 @@ public class StandardSSLContextService extends AbstractControllerService impleme
             .sensitive(true)
             .build();
     static final PropertyDescriptor KEY_PASSWORD = new PropertyDescriptor.Builder()
-            .name("key-password")
-            .displayName("Key Password")
+            .name("Key Password")
             .description("The password for the key. If this is not specified, but the Keystore Filename, Password, and Type are specified, "
                     + "then the Keystore Password will be assumed to be the same as the Key Password.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -131,8 +131,7 @@ public class StandardSSLContextService extends AbstractControllerService impleme
             .required(false)
             .build();
     public static final PropertyDescriptor SSL_ALGORITHM = new PropertyDescriptor.Builder()
-            .name("SSL Protocol")
-            .displayName("TLS Protocol")
+            .name("TLS Protocol")
             .defaultValue(TLS_PROTOCOL)
             .required(false)
             .allowableValues(getProtocolAllowableValues())
@@ -141,7 +140,7 @@ public class StandardSSLContextService extends AbstractControllerService impleme
             .sensitive(false)
             .build();
 
-    private static final List<PropertyDescriptor> properties = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             KEYSTORE,
             KEYSTORE_PASSWORD,
             KEY_PASSWORD,
@@ -184,8 +183,14 @@ public class StandardSSLContextService extends AbstractControllerService impleme
     }
 
     @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("key-password", KEY_PASSWORD.getName());
+        config.renameProperty("SSL Protocol", SSL_ALGORITHM.getName());
+    }
+
+    @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override

@@ -42,14 +42,14 @@ import org.apache.nifi.processors.standard.ftp.commands.CommandMapFactory;
 import org.apache.nifi.processors.standard.ftp.filesystem.VirtualFileSystemFactory;
 import org.apache.nifi.ssl.SSLContextProvider;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.SSLSocketFactory;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSocketFactory;
 
 public class NifiFtpServer implements org.apache.nifi.processors.standard.ftp.FtpServer {
 
@@ -227,7 +227,6 @@ public class NifiFtpServer implements org.apache.nifi.processors.standard.ftp.Ft
 
     private static class StandardSslConfiguration implements SslConfiguration {
         private final SSLContext sslContext;
-
         private final SSLParameters sslParameters;
 
         private StandardSslConfiguration(final SSLContext sslContext) {
@@ -263,6 +262,11 @@ public class NifiFtpServer implements org.apache.nifi.processors.standard.ftp.Ft
         @Override
         public ClientAuth getClientAuth() {
             return ClientAuth.WANT;
+        }
+
+        @Override
+        public String getEnabledProtocol() {
+            return sslContext.getProtocol();
         }
     }
 }

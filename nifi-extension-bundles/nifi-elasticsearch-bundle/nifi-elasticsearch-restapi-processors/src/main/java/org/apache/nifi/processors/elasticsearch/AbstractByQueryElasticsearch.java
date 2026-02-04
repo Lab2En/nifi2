@@ -23,9 +23,11 @@ import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.elasticsearch.ElasticSearchClientService;
 import org.apache.nifi.elasticsearch.ElasticsearchException;
+import org.apache.nifi.elasticsearch.ElasticsearchRequestOptions;
 import org.apache.nifi.elasticsearch.OperationResponse;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -71,7 +73,7 @@ public abstract class AbstractByQueryElasticsearch extends AbstractProcessor imp
 
     abstract OperationResponse performOperation(final ElasticSearchClientService clientService, final String query,
                                                 final String index, final String type,
-                                                final Map<String, String> requestParameters);
+                                                final ElasticsearchRequestOptions elasticsearchRequestOptions);
 
     @Override
     public Set<Relationship> getRelationships() {
@@ -131,7 +133,8 @@ public abstract class AbstractByQueryElasticsearch extends AbstractProcessor imp
                     ? context.getProperty(QUERY_ATTRIBUTE).evaluateAttributeExpressions(input).getValue()
                     : null;
 
-            final OperationResponse or = performOperation(clientService.get(), query, index, type, getDynamicProperties(context, input));
+            final OperationResponse or = performOperation(clientService.get(), query, index, type,
+                    new ElasticsearchRequestOptions(getRequestParametersFromDynamicProperties(context, input), getRequestHeadersFromDynamicProperties(context, input)));
 
             if (input == null) {
                 input = session.create();
@@ -163,5 +166,10 @@ public abstract class AbstractByQueryElasticsearch extends AbstractProcessor imp
             }
             context.yield();
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        ElasticsearchRestProcessor.super.migrateProperties(config);
     }
 }

@@ -18,7 +18,9 @@ package org.apache.nifi.kafka.processors.producer.convert;
 
 import org.apache.nifi.kafka.processors.producer.common.ProducerUtils;
 import org.apache.nifi.kafka.processors.producer.header.HeadersFactory;
+import org.apache.nifi.kafka.processors.producer.key.KeyFactory;
 import org.apache.nifi.kafka.service.api.record.KafkaRecord;
+import org.apache.nifi.kafka.shared.attribute.KafkaFlowFileAttribute;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -34,10 +36,12 @@ import java.util.Map;
 public class FlowFileStreamKafkaRecordConverter implements KafkaRecordConverter {
     final int maxMessageSize;
     final HeadersFactory headersFactory;
+    final KeyFactory keyFactory;
 
-    public FlowFileStreamKafkaRecordConverter(final int maxMessageSize, final HeadersFactory headersFactory) {
+    public FlowFileStreamKafkaRecordConverter(final int maxMessageSize, final HeadersFactory headersFactory, final KeyFactory keyFactory) {
         this.maxMessageSize = maxMessageSize;
         this.headersFactory = headersFactory;
+        this.keyFactory = keyFactory;
     }
 
     @Override
@@ -45,12 +49,16 @@ public class FlowFileStreamKafkaRecordConverter implements KafkaRecordConverter 
         ProducerUtils.checkMessageSize(maxMessageSize, inputLength);
 
         final byte[] recordBytes;
-        try (final ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            in.transferTo(baos);
-            recordBytes = baos.toByteArray();
+        if (Boolean.TRUE.toString().equals(attributes.get(KafkaFlowFileAttribute.KAFKA_TOMBSTONE)) && inputLength == 0) {
+            recordBytes = null;
+        } else {
+            try (final ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                in.transferTo(baos);
+                recordBytes = baos.toByteArray();
+            }
         }
 
-        final KafkaRecord kafkaRecord = new KafkaRecord(null, null, null, null, recordBytes, headersFactory.getHeaders(attributes));
+        final KafkaRecord kafkaRecord = new KafkaRecord(null, null, null, keyFactory.getKey(attributes, null), recordBytes, headersFactory.getHeaders(attributes));
         return List.of(kafkaRecord).iterator();
     }
 }

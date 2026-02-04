@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy, OnInit, TemplateRef, ViewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit, TemplateRef, ViewChild, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
 import {
@@ -38,8 +38,7 @@ import {
 import { distinctUntilChanged } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, FormGroup, Validators } from '@angular/forms';
-import { NiFiCommon, TextTip } from '@nifi/shared';
-import { ComponentType, isDefinedAndNotNull, SelectOption } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull, NiFiCommon, SelectOption, TextTip } from '@nifi/shared';
 import { RequiredPermission } from '../../../../state/shared';
 import { AccessPolicyEntity, Action, PolicyStatus } from '../../state/shared';
 import { loadExtensionTypesForPolicies } from '../../../../state/extension-types/extension-types.actions';
@@ -53,9 +52,14 @@ import { ErrorContextKey } from '../../../../state/error';
 @Component({
     selector: 'global-access-policies',
     templateUrl: './global-access-policies.component.html',
-    styleUrls: ['./global-access-policies.component.scss']
+    styleUrls: ['./global-access-policies.component.scss'],
+    standalone: false
 })
 export class GlobalAccessPolicies implements OnInit, OnDestroy {
+    private store = inject<Store<AccessPoliciesState>>(Store);
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+
     flowConfiguration$ = this.store.select(selectFlowConfiguration);
     accessPolicyState$ = this.store.select(selectAccessPolicyState);
     currentUser$ = this.store.select(selectCurrentUser);
@@ -75,11 +79,7 @@ export class GlobalAccessPolicies implements OnInit, OnDestroy {
     @ViewChild('inheritedFromController') inheritedFromController!: TemplateRef<any>;
     @ViewChild('inheritedFromNoRestrictions') inheritedFromNoRestrictions!: TemplateRef<any>;
 
-    constructor(
-        private store: Store<AccessPoliciesState>,
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         this.resourceOptions = this.nifiCommon.getAllPolicyTypeListing();
 
         this.policyForm = this.formBuilder.group({

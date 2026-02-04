@@ -16,9 +16,9 @@
  */
 package org.apache.nifi.processors.groovyx.util;
 
-import java.lang.reflect.InvocationTargetException;
-import java.io.StringWriter;
 import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 
 /**
  * Class with helper to return simplified human readable error message with one main `at` code position.
@@ -97,9 +97,7 @@ public class Throwables {
                 String cl = trace[i].getClassName();
                 if (cl.startsWith("java.") || cl.startsWith("javax.") || cl.startsWith("org.omg.") || cl.startsWith("org.w3c.") || cl.startsWith("org.xml.") || cl.startsWith("groovy.lang.") || cl
                         .startsWith("groovy.util.") || cl.startsWith("org.codehaus.") || cl.startsWith("com.springsource.") || cl.startsWith("org.springframework.") || cl.startsWith("org.apache.")
-                        || cl.startsWith("sun.") || cl.startsWith("com.sun.") || cl.startsWith("org.junit.") || cl.startsWith("junit.framework.")
-
-                        ) {
+                        || cl.startsWith("sun.") || cl.startsWith("com.sun.") || cl.startsWith("org.junit.") || cl.startsWith("junit.framework.")) {
                     //skip standard classes
                 } else {
                     traceIndex = i;
@@ -120,7 +118,7 @@ public class Throwables {
         msg = msg.trim();
         //append dot at the end if no others
         if (msg.length() > 0 && ".!:,;?".indexOf(msg.substring(msg.length() - 1)) == -1) {
-            msg += ".";
+            msg += "."; // NOPMD
         }
 
         //exception class name without package
@@ -139,12 +137,12 @@ public class Throwables {
                 if (newlen < msg.length()) {
                     msg = msg.substring(0, newlen);
                 }
-                msg = msg + ".." + msgSuffix;
+                msg = msg + ".." + msgSuffix; // NOPMD
             } else if (msg.length() > maxlen) {
                 msg = msg.substring(0, maxlen);
             }
         } else {
-            msg = msg + msgSuffix;
+            msg = msg + msgSuffix; // NOPMD
         }
 
         return msg;

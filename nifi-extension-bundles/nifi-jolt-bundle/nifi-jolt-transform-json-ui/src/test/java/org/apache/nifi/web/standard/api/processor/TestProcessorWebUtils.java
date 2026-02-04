@@ -16,28 +16,26 @@
  */
 package org.apache.nifi.web.standard.api.processor;
 
-
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.core.CacheControl;
+import jakarta.ws.rs.core.Response;
 import org.apache.nifi.web.ComponentDetails;
 import org.apache.nifi.web.HttpServletRequestContext;
 import org.apache.nifi.web.NiFiWebConfigurationContext;
 import org.apache.nifi.web.NiFiWebRequestContext;
 import org.junit.jupiter.api.Test;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.ws.rs.core.CacheControl;
-import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
 
 public class TestProcessorWebUtils {
 
@@ -64,7 +62,7 @@ public class TestProcessorWebUtils {
         Method method = ProcessorWebUtils.class.getDeclaredMethod("getRequestContext", String.class, HttpServletRequest.class);
         method.setAccessible(true);
         NiFiWebRequestContext requestContext = (NiFiWebRequestContext) method.invoke(null, "1", mock(HttpServletRequest.class));
-        assertTrue(requestContext instanceof HttpServletRequestContext);
+        assertInstanceOf(HttpServletRequestContext.class, requestContext);
         assertEquals("1", requestContext.getId());
 
     }

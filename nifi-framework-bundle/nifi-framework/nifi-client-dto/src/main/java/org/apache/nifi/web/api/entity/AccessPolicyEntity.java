@@ -17,11 +17,11 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
+import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 import org.apache.nifi.web.api.dto.AccessPolicyDTO;
 import org.apache.nifi.web.api.dto.util.TimeAdapter;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
-import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 import java.util.Date;
 
 /**
@@ -38,10 +38,12 @@ public class AccessPolicyEntity extends ComponentEntity implements Permissible<A
      *
      * @return The {@link AccessPolicyDTO} object
      */
+    @Override
     public AccessPolicyDTO getComponent() {
         return component;
     }
 
+    @Override
     public void setComponent(AccessPolicyDTO component) {
         this.component = component;
     }

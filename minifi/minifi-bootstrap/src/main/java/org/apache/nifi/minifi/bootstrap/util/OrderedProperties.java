@@ -17,6 +17,8 @@
 
 package org.apache.nifi.minifi.bootstrap.util;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
@@ -34,11 +36,10 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
 
 public class OrderedProperties extends Properties {
     private final Map<String, String> textBeforeMap = new HashMap<>();
-    private final LinkedHashSet<Object> orderedKeys = new LinkedHashSet<>();
+    private final Set<Object> orderedKeys = new LinkedHashSet<>();
 
     @Override
     public synchronized Object put(Object key, Object value) {

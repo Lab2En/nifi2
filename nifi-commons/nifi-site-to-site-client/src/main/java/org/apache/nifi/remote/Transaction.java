@@ -16,10 +16,10 @@
  */
 package org.apache.nifi.remote;
 
+import org.apache.nifi.remote.protocol.DataPacket;
+
 import java.io.IOException;
 import java.util.Map;
-
-import org.apache.nifi.remote.protocol.DataPacket;
 
 /**
  * <p>
@@ -194,7 +194,7 @@ public interface Transaction {
      */
     Communicant getCommunicant();
 
-    public enum TransactionState {
+    enum TransactionState {
 
         /**
          * Transaction has been started but no data has been sent or received.

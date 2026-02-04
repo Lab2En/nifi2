@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { CanvasState } from '../../../../../state';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -23,8 +23,6 @@ import { Store } from '@ngrx/store';
 import { updateComponent } from '../../../../../state/flow/flow.actions';
 import { Client } from '../../../../../../../service/client.service';
 import { EditComponentDialogRequest } from '../../../../../state/flow';
-import { ComponentType } from 'libs/shared/src';
-import { ErrorBanner } from '../../../../../../../ui/common/error-banner/error-banner.component';
 import { MatInputModule } from '@angular/material/input';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatButtonModule } from '@angular/material/button';
@@ -33,16 +31,14 @@ import { selectSaving } from '../../../../../state/flow/flow.selectors';
 import { NifiSpinnerDirective } from '../../../../../../../ui/common/spinner/nifi-spinner.directive';
 import { ClusterConnectionService } from '../../../../../../../service/cluster-connection.service';
 import { CanvasUtils } from '../../../../../service/canvas-utils.service';
-import { NifiTooltipDirective, TextTip, CloseOnEscapeDialog } from '@nifi/shared';
+import { ComponentType, NifiTooltipDirective, TextTip, CloseOnEscapeDialog } from '@nifi/shared';
 import { ErrorContextKey } from '../../../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../../../ui/common/context-error-banner/context-error-banner.component';
 @Component({
     selector: 'edit-port',
-    standalone: true,
     templateUrl: './edit-port.component.html',
     imports: [
         ReactiveFormsModule,
-        ErrorBanner,
         MatDialogModule,
         MatInputModule,
         MatCheckboxModule,
@@ -55,21 +51,23 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
     styleUrls: ['./edit-port.component.scss']
 })
 export class EditPort extends CloseOnEscapeDialog {
+    request = inject<EditComponentDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private store = inject<Store<CanvasState>>(Store);
+    private canvasUtils = inject(CanvasUtils);
+    private client = inject(Client);
+    private clusterConnectionService = inject(ClusterConnectionService);
+
     saving$ = this.store.select(selectSaving);
 
     editPortForm: FormGroup;
     readonly: boolean;
     portTypeLabel: string;
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: EditComponentDialogRequest,
-        private formBuilder: FormBuilder,
-        private store: Store<CanvasState>,
-        private canvasUtils: CanvasUtils,
-        private client: Client,
-        private clusterConnectionService: ClusterConnectionService
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         this.readonly =
             !request.entity.permissions.canWrite || !this.canvasUtils.runnableSupportsModification(request.entity);
 

@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.jms.processors;
 
+import jakarta.jms.Session;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
@@ -53,13 +54,10 @@ import org.springframework.jms.connection.SingleConnectionFactory;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.jms.support.JmsHeaders;
 
-import jakarta.jms.Session;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -109,9 +107,9 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
 
     public static final String JMS_MESSAGETYPE = "jms.messagetype";
 
-    private final static String COUNTER_PARSE_FAILURES = "Parse Failures";
-    private final static String COUNTER_RECORDS_RECEIVED = "Records Received";
-    private final static String COUNTER_RECORDS_PROCESSED = "Records Processed";
+    private static final String COUNTER_PARSE_FAILURES = "Parse Failures";
+    private static final String COUNTER_RECORDS_RECEIVED = "Records Received";
+    private static final String COUNTER_RECORDS_PROCESSED = "Records Processed";
 
     static final AllowableValue AUTO_ACK = new AllowableValue(String.valueOf(Session.AUTO_ACKNOWLEDGE),
             "AUTO_ACKNOWLEDGE (" + Session.AUTO_ACKNOWLEDGE + ")",
@@ -131,7 +129,6 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
 
     static final PropertyDescriptor MESSAGE_SELECTOR = new PropertyDescriptor.Builder()
             .name("Message Selector")
-            .displayName("Message Selector")
             .description("The JMS Message Selector to filter the messages that the processor will receive")
             .required(false)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -148,8 +145,7 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
             .build();
 
     static final PropertyDescriptor DURABLE_SUBSCRIBER = new PropertyDescriptor.Builder()
-            .name("Durable subscription")
-            .displayName("Durable Subscription")
+            .name("Durable Subscription")
             .description("If destination is Topic if present then make it the consumer durable. " +
                          "@see https://jakarta.ee/specifications/platform/9/apidocs/jakarta/jms/session#createDurableConsumer-jakarta.jms.Topic-java.lang.String-")
             .required(false)
@@ -159,8 +155,7 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     static final PropertyDescriptor SHARED_SUBSCRIBER = new PropertyDescriptor.Builder()
-            .name("Shared subscription")
-            .displayName("Shared Subscription")
+            .name("Shared Subscription")
             .description("If destination is Topic if present then make it the consumer shared. " +
                          "@see https://jakarta.ee/specifications/platform/9/apidocs/jakarta/jms/session#createSharedConsumer-jakarta.jms.Topic-java.lang.String-")
             .required(false)
@@ -204,12 +199,11 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
             .build();
 
     static final PropertyDescriptor OUTPUT_STRATEGY = new PropertyDescriptor.Builder()
-            .name("output-strategy")
-            .displayName("Output Strategy")
+            .name("Output Strategy")
             .description("The format used to output the JMS message into a FlowFile record.")
             .dependsOn(RECORD_READER)
             .required(true)
-            .defaultValue(OutputStrategy.USE_VALUE.getValue())
+            .defaultValue(OutputStrategy.USE_VALUE)
             .allowableValues(OutputStrategy.class)
             .build();
 
@@ -225,54 +219,51 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
             .autoTerminateDefault(true) // to make sure flow are still valid after upgrades
             .build();
 
-    private final static Set<Relationship> relationships;
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_PARSE_FAILURE
+    );
 
-    private final static List<PropertyDescriptor> propertyDescriptors;
+    private static final PropertyDescriptor CHARSET_WITH_EL_VALIDATOR_PROPERTY = new PropertyDescriptor.Builder()
+            .fromPropertyDescriptor(CHARSET)
+            .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR_WITH_EVALUATION)
+            .build();
 
-    static {
-        List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
+    private static final List<PropertyDescriptor> OTHER_PROPERTIES = Stream.concat(
+            JNDI_JMS_CF_PROPERTIES.stream(),
+            JMS_CF_PROPERTIES.stream()
+    ).toList();
 
-        _propertyDescriptors.add(CF_SERVICE);
-        _propertyDescriptors.add(DESTINATION);
-        _propertyDescriptors.add(DESTINATION_TYPE);
-        _propertyDescriptors.add(MESSAGE_SELECTOR);
-        _propertyDescriptors.add(USER);
-        _propertyDescriptors.add(PASSWORD);
-        _propertyDescriptors.add(CLIENT_ID);
-
-        // change the validator on CHARSET property
-        PropertyDescriptor charsetWithELValidatorProperty = new PropertyDescriptor.Builder()
-                .fromPropertyDescriptor(CHARSET)
-                .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR_WITH_EVALUATION)
-                .build();
-        _propertyDescriptors.add(charsetWithELValidatorProperty);
-
-        _propertyDescriptors.add(ACKNOWLEDGEMENT_MODE);
-        _propertyDescriptors.add(DURABLE_SUBSCRIBER);
-        _propertyDescriptors.add(SHARED_SUBSCRIBER);
-        _propertyDescriptors.add(SUBSCRIPTION_NAME);
-        _propertyDescriptors.add(TIMEOUT);
-        _propertyDescriptors.add(MAX_BATCH_SIZE);
-        _propertyDescriptors.add(ERROR_QUEUE);
-
-        _propertyDescriptors.add(RECORD_READER);
-        _propertyDescriptors.add(RECORD_WRITER);
-        _propertyDescriptors.add(OUTPUT_STRATEGY);
-
-        _propertyDescriptors.addAll(JNDI_JMS_CF_PROPERTIES);
-        _propertyDescriptors.addAll(JMS_CF_PROPERTIES);
-
-        propertyDescriptors = Collections.unmodifiableList(_propertyDescriptors);
-
-        Set<Relationship> _relationships = new HashSet<>();
-        _relationships.add(REL_SUCCESS);
-        _relationships.add(REL_PARSE_FAILURE);
-        relationships = Collections.unmodifiableSet(_relationships);
-    }
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            Stream.of(
+                    CF_SERVICE,
+                    DESTINATION,
+                    DESTINATION_TYPE,
+                    MESSAGE_SELECTOR,
+                    USER,
+                    PASSWORD,
+                    CLIENT_ID,
+                    CHARSET_WITH_EL_VALIDATOR_PROPERTY,
+                    ACKNOWLEDGEMENT_MODE,
+                    DURABLE_SUBSCRIBER,
+                    SHARED_SUBSCRIBER,
+                    SUBSCRIPTION_NAME,
+                    TIMEOUT,
+                    MAX_BATCH_SIZE,
+                    ERROR_QUEUE,
+                    RECORD_READER,
+                    RECORD_WRITER,
+                    OUTPUT_STRATEGY
+            ),
+            OTHER_PROPERTIES.stream()
+    ).toList();
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         super.migrateProperties(config);
+        config.renameProperty("Durable subscription", DURABLE_SUBSCRIBER.getName());
+        config.renameProperty("Shared subscription", SHARED_SUBSCRIBER.getName());
+        config.renameProperty("output-strategy", OUTPUT_STRATEGY.getName());
 
         if (!config.hasProperty(MAX_BATCH_SIZE)) {
             if (config.isPropertySet(BASE_RECORD_READER)) {
@@ -386,8 +377,8 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
 
         int batchSize = context.getProperty(MAX_BATCH_SIZE).asInteger();
         final RecordReaderFactory readerFactory = context.getProperty(RECORD_READER).asControllerService(RecordReaderFactory.class);
-        final RecordSetWriterFactory writerFactory = context.getProperty(RECORD_WRITER).asControllerService(RecordSetWriterFactory.class);
-        final OutputStrategy outputStrategy = OutputStrategy.valueOf(context.getProperty(OUTPUT_STRATEGY).getValue());
+        final RecordSetWriterFactory writerFactory = readerFactory == null ? null : context.getProperty(RECORD_WRITER).asControllerService(RecordSetWriterFactory.class);
+        final OutputStrategy outputStrategy = readerFactory == null ? null : context.getProperty(OUTPUT_STRATEGY).asAllowableValue(OutputStrategy.class);
 
         final FlowFileWriter<JMSResponse> flowFileWriter = new RecordWriter<>(
                 readerFactory,
@@ -477,12 +468,12 @@ public class ConsumeJMS extends AbstractJMSProcessor<JMSConsumer> {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     /**

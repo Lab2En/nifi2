@@ -42,6 +42,7 @@ import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -185,12 +186,12 @@ public class ExecuteStreamCommand extends AbstractProcessor {
             .build();
     private final AtomicReference<Set<Relationship>> relationships = new AtomicReference<>();
 
-    private final static Set<Relationship> OUTPUT_STREAM_RELATIONSHIP_SET = Set.of(
+    private static final Set<Relationship> OUTPUT_STREAM_RELATIONSHIP_SET = Set.of(
             OUTPUT_STREAM_RELATIONSHIP,
             ORIGINAL_RELATIONSHIP,
             NONZERO_STATUS_RELATIONSHIP
     );
-    private final static Set<Relationship> ATTRIBUTE_RELATIONSHIP_SET = Set.of(ORIGINAL_RELATIONSHIP);
+    private static final Set<Relationship> ATTRIBUTE_RELATIONSHIP_SET = Set.of(ORIGINAL_RELATIONSHIP);
 
     private static final Pattern COMMAND_ARGUMENT_PATTERN = Pattern.compile("command\\.argument\\.(?<commandIndex>[0-9]+)$");
 
@@ -200,7 +201,7 @@ public class ExecuteStreamCommand extends AbstractProcessor {
     static final AllowableValue DYNAMIC_PROPERTY_ARGUMENTS_STRATEGY = new AllowableValue("Dynamic Property Arguments", "Dynamic Property Arguments",
             "Arguments to be supplied to the executable are taken from dynamic properties with pattern of 'command.argument.<commandIndex>'");
 
-   static final PropertyDescriptor WORKING_DIR = new PropertyDescriptor.Builder()
+    static final PropertyDescriptor WORKING_DIR = new PropertyDescriptor.Builder()
             .name("Working Directory")
             .description("The directory to use as the current working directory when executing the command")
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -218,8 +219,7 @@ public class ExecuteStreamCommand extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor ARGUMENTS_STRATEGY = new PropertyDescriptor.Builder()
-            .name("argumentsStrategy")
-            .displayName("Command Arguments Strategy")
+            .name("Command Arguments Strategy")
             .description("Strategy for configuring arguments to be supplied to the command.")
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
             .required(false)
@@ -246,7 +246,7 @@ public class ExecuteStreamCommand extends AbstractProcessor {
                 return result;
             }).build();
 
-   static final PropertyDescriptor ARG_DELIMITER = new PropertyDescriptor.Builder()
+    static final PropertyDescriptor ARG_DELIMITER = new PropertyDescriptor.Builder()
             .name("Argument Delimiter")
             .description("Delimiter to use to separate arguments for a command [default: ;]. Must be a single character")
             .dependsOn(ARGUMENTS_STRATEGY, COMMAND_ARGUMENTS_PROPERTY_STRATEGY)
@@ -281,13 +281,12 @@ public class ExecuteStreamCommand extends AbstractProcessor {
 
     static final PropertyDescriptor MIME_TYPE = new PropertyDescriptor.Builder()
             .name("Output MIME Type")
-            .displayName("Output MIME Type")
             .description("Specifies the value to set for the \"mime.type\" attribute. This property is ignored if 'Output Destination Attribute' is set.")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             WORKING_DIR,
             EXECUTION_COMMAND,
             ARGUMENTS_STRATEGY,
@@ -328,7 +327,7 @@ public class ExecuteStreamCommand extends AbstractProcessor {
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -360,8 +359,8 @@ public class ExecuteStreamCommand extends AbstractProcessor {
             return;
         }
 
-        final ArrayList<String> args = new ArrayList<>();
-        final ArrayList<String> argumentAttributeValue = new ArrayList<>();
+        final List<String> args = new ArrayList<>();
+        final List<String> argumentAttributeValue = new ArrayList<>();
         final boolean putToAttribute = context.getProperty(PUT_OUTPUT_IN_ATTRIBUTE).isSet();
         final PropertyValue argumentsStrategyPropertyValue = context.getProperty(ARGUMENTS_STRATEGY);
         final boolean useDynamicPropertyArguments = argumentsStrategyPropertyValue.isSet() && argumentsStrategyPropertyValue.getValue().equals(DYNAMIC_PROPERTY_ARGUMENTS_STRATEGY.getValue());
@@ -417,7 +416,7 @@ public class ExecuteStreamCommand extends AbstractProcessor {
                 args.add(argValue);
 
             }
-            if (argumentAttributeValue.size() > 0) {
+            if (!argumentAttributeValue.isEmpty()) {
                 final StringBuilder builder = new StringBuilder();
                 for (String s : argumentAttributeValue) {
                     builder.append(s).append("\t");
@@ -538,6 +537,11 @@ public class ExecuteStreamCommand extends AbstractProcessor {
             FileUtils.deleteQuietly(errorOut);
             process.destroy(); // last ditch effort to clean up that process.
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("argumentsStrategy", ARGUMENTS_STRATEGY.getName());
     }
 
     static class ProcessStreamWriterCallback implements InputStreamCallback {

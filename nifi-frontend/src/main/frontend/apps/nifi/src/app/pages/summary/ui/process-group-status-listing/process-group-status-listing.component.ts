@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { initialState } from '../../state/summary-listing/summary-listing.reducer';
 import * as SummaryListingActions from '../../state/summary-listing/summary-listing.actions';
 import { SummaryListingState } from '../../state/summary-listing';
@@ -33,7 +33,7 @@ import {
 import { filter, map, switchMap, take } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { getStatusHistoryAndOpenDialog } from '../../../../state/status-history/status-history.actions';
-import { ComponentType, isDefinedAndNotNull } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull } from '@nifi/shared';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
 import { loadClusterSummary } from '../../../../state/cluster-summary/cluster-summary.actions';
 import { ProcessGroupStatusSnapshotEntity } from '../../state';
@@ -43,13 +43,19 @@ import {
     selectClusterSearchResults,
     selectClusterSummary
 } from '../../../../state/cluster-summary/cluster-summary.selectors';
+import { AsyncPipe } from '@angular/common';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
+import { ProcessGroupStatusTable } from './process-group-status-table/process-group-status-table.component';
 
 @Component({
     selector: 'process-group-status-listing',
     templateUrl: './process-group-status-listing.component.html',
+    imports: [AsyncPipe, NgxSkeletonLoaderComponent, ProcessGroupStatusTable],
     styleUrls: ['./process-group-status-listing.component.scss']
 })
 export class ProcessGroupStatusListing {
+    private store = inject<Store<SummaryListingState>>(Store);
+
     processGroupStatusSnapshots$ = this.store.select(selectProcessGroupStatusSnapshots);
     loadedTimestamp$ = this.store.select(selectSummaryListingLoadedTimestamp);
     summaryListingStatus$ = this.store.select(selectSummaryListingStatus);
@@ -66,7 +72,7 @@ export class ProcessGroupStatusListing {
     );
     selectedClusterNode$ = this.store.select(selectSelectedClusterNode);
 
-    constructor(private store: Store<SummaryListingState>) {
+    constructor() {
         this.store
             .select(selectViewStatusHistory)
             .pipe(

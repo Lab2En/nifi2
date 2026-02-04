@@ -23,9 +23,6 @@ public class GarbageCollectionStatus implements java.io.Serializable {
     private long collectionCount;
     private long collectionTime;
 
-    public GarbageCollectionStatus() {
-    }
-
     public String getName() {
         return name;
     }
@@ -52,13 +49,21 @@ public class GarbageCollectionStatus implements java.io.Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         GarbageCollectionStatus that = (GarbageCollectionStatus) o;
 
-        if (getCollectionCount() != that.getCollectionCount()) return false;
-        if (getCollectionTime() != that.getCollectionTime()) return false;
+        if (getCollectionCount() != that.getCollectionCount()) {
+            return false;
+        }
+        if (getCollectionTime() != that.getCollectionTime()) {
+            return false;
+        }
         return getName() != null ? getName().equals(that.getName()) : that.getName() == null;
 
     }

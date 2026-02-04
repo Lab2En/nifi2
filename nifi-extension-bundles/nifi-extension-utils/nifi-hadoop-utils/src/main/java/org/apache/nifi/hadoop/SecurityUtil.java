@@ -23,15 +23,13 @@ import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.security.krb.KerberosLoginException;
 import org.apache.nifi.security.krb.KerberosUser;
 
-import javax.security.auth.Subject;
-import javax.security.auth.kerberos.KerberosPrincipal;
 import java.io.IOException;
-import java.security.AccessControlContext;
-import java.security.AccessController;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import javax.security.auth.Subject;
+import javax.security.auth.kerberos.KerberosPrincipal;
 
 /**
  * Provides synchronized access to UserGroupInformation to avoid multiple processors/services from
@@ -90,8 +88,7 @@ public class SecurityUtil {
                 kerberosUser.login();
             }
             return kerberosUser.doAs((PrivilegedExceptionAction<UserGroupInformation>) () -> {
-                AccessControlContext context = AccessController.getContext();
-                Subject subject = Subject.getSubject(context);
+                Subject subject = Subject.current();
                 Validate.notEmpty(
                         subject.getPrincipals(KerberosPrincipal.class).stream().filter(p -> p.getName().startsWith(kerberosUser.getPrincipal())).collect(Collectors.toSet()),
                         "No Subject was found matching the given principal");
@@ -156,10 +153,8 @@ public class SecurityUtil {
             if (ugi == null) {
                 try {
                     result = action.run();
-                } catch (IOException ioe) {
-                    throw ioe;
-                } catch (RuntimeException re) {
-                    throw re;
+                } catch (IOException | RuntimeException e) {
+                    throw e;
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }

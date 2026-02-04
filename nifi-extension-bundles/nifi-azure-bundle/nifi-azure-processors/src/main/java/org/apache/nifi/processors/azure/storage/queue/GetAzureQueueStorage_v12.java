@@ -36,8 +36,6 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.proxy.ProxyConfiguration;
-import org.apache.nifi.proxy.ProxySpec;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -69,7 +67,6 @@ import static org.apache.nifi.processors.azure.storage.queue.AbstractAzureQueueS
 public class GetAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
     public static final PropertyDescriptor AUTO_DELETE = new PropertyDescriptor.Builder()
             .name("Auto Delete Messages")
-            .displayName("Auto Delete Messages")
             .description("Specifies whether the received message is to be automatically deleted from the queue.")
             .required(true)
             .allowableValues("true", "false")
@@ -79,7 +76,6 @@ public class GetAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
 
     public static final PropertyDescriptor MESSAGE_BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Message Batch Size")
-            .displayName("Message Batch Size")
             .description("The number of messages to be retrieved from the queue.")
             .required(true)
             .addValidator(StandardValidators.createLongValidator(1, 32, true))
@@ -88,15 +84,13 @@ public class GetAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
 
     public static final PropertyDescriptor VISIBILITY_TIMEOUT = new PropertyDescriptor.Builder()
             .name("Visibility Timeout")
-            .displayName("Visibility Timeout")
             .description("The duration during which the retrieved message should be invisible to other consumers.")
             .required(true)
             .defaultValue("30 secs")
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
             .build();
 
-    private static final ProxySpec[] PROXY_SPECS = {ProxySpec.HTTP, ProxySpec.SOCKS};
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             QUEUE_NAME,
             ENDPOINT_SUFFIX,
             STORAGE_CREDENTIALS_SERVICE,
@@ -104,16 +98,18 @@ public class GetAzureQueueStorage_v12 extends AbstractAzureQueueStorage_v12 {
             MESSAGE_BATCH_SIZE,
             VISIBILITY_TIMEOUT,
             REQUEST_TIMEOUT,
-            ProxyConfiguration.createProxyConfigPropertyDescriptor(PROXY_SPECS)
+            PROXY_CONFIGURATION_SERVICE
     );
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     // 7 days is the maximum timeout as per https://learn.microsoft.com/en-us/rest/api/storageservices/get-messages
     private static final Duration MAX_VISIBILITY_TIMEOUT = Duration.ofDays(7);
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override

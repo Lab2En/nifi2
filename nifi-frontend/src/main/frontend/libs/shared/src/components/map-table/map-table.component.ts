@@ -53,12 +53,13 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { MatIconButton } from '@angular/material/button';
 import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 import { TextEditor } from './editors/text-editor/text-editor.component';
-import { NifiTooltipDirective } from '../../directives';
-import { MapTableEntry, MapTableItem, NiFiCommon, TextTip } from '../../index';
+import { NifiTooltipDirective } from '../../directives/nifi-tooltip.directive';
+import { NiFiCommon } from '../../services/nifi-common.service';
+import { TextTip } from '../tooltips/text-tip/text-tip.component';
+import { MapTableEntry, MapTableItem } from '../../types';
 
 @Component({
     selector: 'map-table',
-    standalone: true,
     imports: [
         CommonModule,
         CdkConnectedOverlay,
@@ -91,6 +92,9 @@ import { MapTableEntry, MapTableItem, NiFiCommon, TextTip } from '../../index';
     ]
 })
 export class MapTable implements AfterViewInit, ControlValueAccessor {
+    private changeDetector = inject(ChangeDetectorRef);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() createNew!: (existingEntries: string[]) => Observable<MapTableEntry>;
     @Input() reportChangesOnly: boolean = false;
 
@@ -123,11 +127,6 @@ export class MapTable implements AfterViewInit, ControlValueAccessor {
         overlayY: 'center'
     };
     public editorPositions: ConnectionPositionPair[] = [];
-
-    constructor(
-        private changeDetector: ChangeDetectorRef,
-        private nifiCommon: NiFiCommon
-    ) {}
 
     ngAfterViewInit(): void {
         this.initFilter();

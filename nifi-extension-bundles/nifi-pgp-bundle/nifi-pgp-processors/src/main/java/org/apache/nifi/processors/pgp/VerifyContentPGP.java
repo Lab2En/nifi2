@@ -17,6 +17,8 @@
 package org.apache.nifi.processors.pgp;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
+import org.apache.nifi.annotation.behavior.SideEffectFree;
+import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -24,6 +26,8 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.pgp.service.api.PGPPublicKeyService;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -31,7 +35,6 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.StreamCallback;
 import org.apache.nifi.processors.pgp.exception.PGPProcessException;
-import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.bouncycastle.openpgp.PGPCompressedData;
 import org.bouncycastle.openpgp.PGPException;
@@ -49,10 +52,7 @@ import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentVerifierBuilderProv
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +62,8 @@ import java.util.Set;
 /**
  * Verify Content using Open Pretty Good Privacy Public Keys
  */
+@SideEffectFree
+@SupportsBatching
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @Tags({"PGP", "GPG", "OpenPGP", "Encryption", "Signing", "RFC 4880"})
 @CapabilityDescription("Verify signatures using OpenPGP Public Keys")
@@ -90,16 +92,18 @@ public class VerifyContentPGP extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor PUBLIC_KEY_SERVICE = new PropertyDescriptor.Builder()
-            .name("public-key-service")
-            .displayName("Public Key Service")
+            .name("Public Key Service")
             .description("PGP Public Key Service for verifying signatures with Public Key Encryption")
             .identifiesControllerService(PGPPublicKeyService.class)
             .required(true)
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = new HashSet<>(Arrays.asList(SUCCESS, FAILURE));
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = Collections.singletonList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             PUBLIC_KEY_SERVICE
     );
 
@@ -124,11 +128,11 @@ public class VerifyContentPGP extends AbstractProcessor {
      */
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     /**
-     * On Trigger verifies signatures found in Flow File contents using configured properties
+     * On Trigger verifies signatures found in FlowFile contents using configured properties
      *
      * @param context Process Context
      * @param session Process Session
@@ -153,6 +157,11 @@ public class VerifyContentPGP extends AbstractProcessor {
             getLogger().error("Processing Failed {}", flowFile, e);
             session.transfer(flowFile, FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("public-key-service", PUBLIC_KEY_SERVICE.getName());
     }
 
     private class VerifyStreamCallback implements StreamCallback {
@@ -197,23 +206,23 @@ public class VerifyContentPGP extends AbstractProcessor {
                 final Object object = objects.next();
                 getLogger().debug("PGP Object Read [{}]", object.getClass().getSimpleName());
 
-                if (object instanceof PGPCompressedData) {
-                    final PGPCompressedData compressedData = (PGPCompressedData) object;
-                    try {
-                        final PGPObjectFactory compressedObjectFactory = new JcaPGPObjectFactory(compressedData.getDataStream());
-                        processObjectFactory(compressedObjectFactory.iterator(), outputStream);
-                    } catch (final PGPException e) {
-                        throw new PGPProcessException("Read Compressed Data Failed", e);
+                switch (object) {
+                    case PGPCompressedData compressedData -> {
+                        try {
+                            final PGPObjectFactory compressedObjectFactory = new JcaPGPObjectFactory(compressedData.getDataStream());
+                            processObjectFactory(compressedObjectFactory.iterator(), outputStream);
+                        } catch (final PGPException e) {
+                            throw new PGPProcessException("Read Compressed Data Failed", e);
+                        }
                     }
-                } else if (object instanceof PGPOnePassSignatureList) {
-                    final PGPOnePassSignatureList onePassSignatureList = (PGPOnePassSignatureList) object;
-                    onePassSignature = processOnePassSignatures(onePassSignatureList);
-                } else if (object instanceof PGPLiteralData) {
-                    final PGPLiteralData literalData = (PGPLiteralData) object;
-                    processLiteralData(literalData, outputStream, onePassSignature);
-                } else if (object instanceof PGPSignatureList) {
-                    final PGPSignatureList signatureList = (PGPSignatureList) object;
-                    processSignatures(signatureList, onePassSignature);
+                    case PGPOnePassSignatureList onePassSignatureList ->
+                        onePassSignature = processOnePassSignatures(onePassSignatureList);
+                    case PGPLiteralData literalData ->
+                        processLiteralData(literalData, outputStream, onePassSignature);
+                    case PGPSignatureList signatureList ->
+                        processSignatures(signatureList, onePassSignature);
+                    default -> {
+                    }
                 }
             }
         }

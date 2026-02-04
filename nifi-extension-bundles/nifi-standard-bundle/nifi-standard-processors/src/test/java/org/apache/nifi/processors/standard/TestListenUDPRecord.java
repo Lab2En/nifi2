@@ -26,30 +26,35 @@ import org.apache.nifi.schema.access.SchemaAccessUtils;
 import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.record.MockRecordWriter;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-import java.io.IOException;
+import java.nio.channels.SelectableChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 public class TestListenUDPRecord {
 
-    static final String SCHEMA_TEXT = "{\n" +
-            "  \"name\": \"syslogRecord\",\n" +
-            "  \"namespace\": \"nifi\",\n" +
-            "  \"type\": \"record\",\n" +
-            "  \"fields\": [\n" +
-            "    { \"name\": \"timestamp\", \"type\": \"string\" },\n" +
-            "    { \"name\": \"logsource\", \"type\": \"string\" },\n" +
-            "    { \"name\": \"message\", \"type\": \"string\" }\n" +
-            "  ]\n" +
-            "}";
+    static final String SCHEMA_TEXT = """
+            {
+              "name": "syslogRecord",
+              "namespace": "nifi",
+              "type": "record",
+              "fields": [
+                { "name": "timestamp", "type": "string" },
+                { "name": "logsource", "type": "string" },
+                { "name": "message", "type": "string" }
+              ]
+            }""";
 
     static final String DATAGRAM_1 = "[ {\"timestamp\" : \"123456789\", \"logsource\" : \"syslog\", \"message\" : \"This is a test 1\"} ]";
     static final String DATAGRAM_2 = "[ {\"timestamp\" : \"123456789\", \"logsource\" : \"syslog\", \"message\" : \"This is a test 2\"} ]";
@@ -97,19 +102,19 @@ public class TestListenUDPRecord {
     public void testSuccessWithBatchSizeGreaterThanAvailableRecords() {
         final String sender = "foo";
 
-        final StandardEvent event1 = new StandardEvent(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event1 = new StandardEvent<>(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event1);
 
-        final StandardEvent event2 = new StandardEvent(sender, DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event2 = new StandardEvent<>(sender, DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event2);
 
-        final StandardEvent event3 = new StandardEvent(sender, DATAGRAM_3.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event3 = new StandardEvent<>(sender, DATAGRAM_3.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event3);
 
         runner.run();
         runner.assertAllFlowFilesTransferred(ListenUDPRecord.REL_SUCCESS, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ListenUDPRecord.RECORD_COUNT_ATTR, "3");
     }
 
@@ -117,13 +122,13 @@ public class TestListenUDPRecord {
     public void testSuccessWithBatchLessThanAvailableRecords() {
         final String sender = "foo";
 
-        final StandardEvent event1 = new StandardEvent(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event1 = new StandardEvent<>(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event1);
 
-        final StandardEvent event2 = new StandardEvent(sender, DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event2 = new StandardEvent<>(sender, DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event2);
 
-        final StandardEvent event3 = new StandardEvent(sender, DATAGRAM_3.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event3 = new StandardEvent<>(sender, DATAGRAM_3.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event3);
 
         runner.setProperty(ListenUDPRecord.BATCH_SIZE, "1");
@@ -132,7 +137,7 @@ public class TestListenUDPRecord {
         runner.run();
         runner.assertAllFlowFilesTransferred(ListenUDPRecord.REL_SUCCESS, 1);
 
-        MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).get(0);
+        MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ListenUDPRecord.RECORD_COUNT_ATTR, "1");
 
         // batch 2
@@ -140,7 +145,7 @@ public class TestListenUDPRecord {
         runner.run();
         runner.assertAllFlowFilesTransferred(ListenUDPRecord.REL_SUCCESS, 1);
 
-        flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ListenUDPRecord.RECORD_COUNT_ATTR, "1");
 
         // batch 3
@@ -148,7 +153,7 @@ public class TestListenUDPRecord {
         runner.run();
         runner.assertAllFlowFilesTransferred(ListenUDPRecord.REL_SUCCESS, 1);
 
-        flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).get(0);
+        flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ListenUDPRecord.RECORD_COUNT_ATTR, "1");
 
         // no more left
@@ -161,16 +166,16 @@ public class TestListenUDPRecord {
     public void testMultipleRecordsPerDatagram() {
         final String sender = "foo";
 
-        final StandardEvent event1 = new StandardEvent(sender, MULTI_DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event1 = new StandardEvent<>(sender, MULTI_DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event1);
 
-        final StandardEvent event2 = new StandardEvent(sender, MULTI_DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event2 = new StandardEvent<>(sender, MULTI_DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event2);
 
         runner.run();
         runner.assertAllFlowFilesTransferred(ListenUDPRecord.REL_SUCCESS, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_SUCCESS).getFirst();
         flowFile.assertAttributeEquals(ListenUDPRecord.RECORD_COUNT_ATTR, "6");
     }
 
@@ -178,17 +183,17 @@ public class TestListenUDPRecord {
     public void testParseFailure() {
         final String sender = "foo";
 
-        final StandardEvent event1 = new StandardEvent(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event1 = new StandardEvent<>(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event1);
 
-        final StandardEvent event2 = new StandardEvent(sender, "WILL NOT PARSE".getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event2 = new StandardEvent<>(sender, "WILL NOT PARSE".getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event2);
 
         runner.run();
         runner.assertTransferCount(ListenUDPRecord.REL_SUCCESS, 1);
         runner.assertTransferCount(ListenUDPRecord.REL_PARSE_FAILURE, 1);
 
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_PARSE_FAILURE).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(ListenUDPRecord.REL_PARSE_FAILURE).getFirst();
         flowFile.assertContentEquals("WILL NOT PARSE");
     }
 
@@ -203,13 +208,13 @@ public class TestListenUDPRecord {
 
         final String sender = "foo";
 
-        final StandardEvent event1 = new StandardEvent(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event1 = new StandardEvent<>(sender, DATAGRAM_1.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event1);
 
-        final StandardEvent event2 = new StandardEvent(sender, DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event2 = new StandardEvent<>(sender, DATAGRAM_2.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event2);
 
-        final StandardEvent event3 = new StandardEvent(sender, DATAGRAM_3.getBytes(StandardCharsets.UTF_8), null);
+        final StandardEvent<SelectableChannel> event3 = new StandardEvent<>(sender, DATAGRAM_3.getBytes(StandardCharsets.UTF_8), null);
         proc.addEvent(event3);
 
         runner.run();
@@ -217,13 +222,28 @@ public class TestListenUDPRecord {
         runner.assertAllFlowFilesTransferred(ListenUDPRecord.REL_PARSE_FAILURE, 0);
     }
 
+    @Test
+    void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("sending-host", ListenUDPRecord.SENDING_HOST.getName()),
+                Map.entry("sending-host-port", ListenUDPRecord.SENDING_HOST_PORT.getName()),
+                Map.entry("record-reader", ListenUDPRecord.RECORD_READER.getName()),
+                Map.entry("record-writer", ListenUDPRecord.RECORD_WRITER.getName()),
+                Map.entry("poll-timeout", ListenUDPRecord.POLL_TIMEOUT.getName()),
+                Map.entry("batch-size", ListenUDPRecord.BATCH_SIZE.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
+    }
+
     private static class TestableListenUDPRecord extends ListenUDPRecord {
 
-        private volatile BlockingQueue<StandardEvent> testEvents = new LinkedBlockingQueue<>();
-        private volatile BlockingQueue<StandardEvent> testErrorEvents = new LinkedBlockingQueue<>();
+        private volatile BlockingQueue<StandardEvent<SelectableChannel>> testEvents = new LinkedBlockingQueue<>();
+        private volatile BlockingQueue<StandardEvent<SelectableChannel>> testErrorEvents = new LinkedBlockingQueue<>();
 
         @Override
-        protected ChannelDispatcher createDispatcher(ProcessContext context, BlockingQueue<StandardEvent> events) throws IOException {
+        protected ChannelDispatcher createDispatcher(ProcessContext context, BlockingQueue<StandardEvent> events) {
             return Mockito.mock(ChannelDispatcher.class);
         }
 

@@ -15,14 +15,17 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import {
+    ClearBulletinsForGroupRequest,
     ComponentRunStatusRequest,
     ControllerServiceStateRequest,
     CreateComponentRequest,
+    CreateComponentResponse,
     CreateConnection,
+    CreateLabelRequest,
     CreatePortRequest,
     CreateProcessGroupRequest,
     CreateProcessorRequest,
@@ -50,22 +53,19 @@ import {
     UploadProcessGroupRequest,
     VersionControlInformationEntity
 } from '../state/flow';
-import { ComponentType } from 'libs/shared/src';
 import { Client } from '../../../service/client.service';
-import { NiFiCommon } from '@nifi/shared';
+import { ComponentType, NiFiCommon } from '@nifi/shared';
 import { ClusterConnectionService } from '../../../service/cluster-connection.service';
-import { PropertyDescriptorRetriever } from '../../../state/shared';
+import { ClearBulletinsRequest, PropertyDescriptorRetriever } from '../../../state/shared';
 
 @Injectable({ providedIn: 'root' })
 export class FlowService implements PropertyDescriptorRetriever {
-    private static readonly API: string = '../nifi-api';
+    private httpClient = inject(HttpClient);
+    private client = inject(Client);
+    private nifiCommon = inject(NiFiCommon);
+    private clusterConnectionService = inject(ClusterConnectionService);
 
-    constructor(
-        private httpClient: HttpClient,
-        private client: Client,
-        private nifiCommon: NiFiCommon,
-        private clusterConnectionService: ClusterConnectionService
-    ) {}
+    private static readonly API: string = '../nifi-api';
 
     getFlow(processGroupId = 'root'): Observable<any> {
         const uiOnly: any = { uiOnly: true };
@@ -86,16 +86,6 @@ export class FlowService implements PropertyDescriptorRetriever {
 
     getControllerBulletins(): Observable<any> {
         return this.httpClient.get(`${FlowService.API}/flow/controller/bulletins`);
-    }
-
-    getParameterContexts(): Observable<any> {
-        return this.httpClient.get(`${FlowService.API}/flow/parameter-contexts`);
-    }
-
-    getParameterContext(id: string): Observable<any> {
-        return this.httpClient.get(`${FlowService.API}/parameter-contexts/${id}`, {
-            params: { includeInheritedParameters: true }
-        });
     }
 
     getProcessor(id: string): Observable<any> {
@@ -128,18 +118,22 @@ export class FlowService implements PropertyDescriptorRetriever {
         });
     }
 
-    createLabel(processGroupId = 'root', createLabel: CreateComponentRequest): Observable<any> {
-        return this.httpClient.post(`${FlowService.API}/process-groups/${processGroupId}/labels`, {
-            revision: createLabel.revision,
-            disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged(),
-            component: {
-                position: createLabel.position
+    createLabel(processGroupId = 'root', createLabel: CreateLabelRequest) {
+        return this.httpClient.post<CreateComponentResponse>(
+            `${FlowService.API}/process-groups/${processGroupId}/labels`,
+            {
+                revision: createLabel.revision,
+                disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged(),
+                component: {
+                    position: createLabel.position,
+                    zIndex: createLabel.zIndex
+                }
             }
-        });
+        );
     }
 
     goToRemoteProcessGroup(goToRemoteProcessGroupRequest: GoToRemoteProcessGroupRequest) {
-        window.open(encodeURI(goToRemoteProcessGroupRequest.uri));
+        window.open(encodeURI(goToRemoteProcessGroupRequest.uri), '_blank', 'noreferrer');
     }
 
     createProcessor(processGroupId = 'root', createProcessor: CreateProcessorRequest): Observable<any> {
@@ -250,17 +244,19 @@ export class FlowService implements PropertyDescriptorRetriever {
     }
 
     updateComponent(updateComponent: UpdateComponentRequest): Observable<any> {
-        return this.httpClient.put(this.nifiCommon.stripProtocol(updateComponent.uri), updateComponent.payload);
+        const path = this.nifiCommon.getComponentTypeApiPath(updateComponent.type);
+        return this.httpClient.put(`${FlowService.API}/${path}/${updateComponent.id}`, updateComponent.payload);
     }
 
     deleteComponent(deleteComponent: DeleteComponentRequest): Observable<any> {
+        const path = this.nifiCommon.getComponentTypeApiPath(deleteComponent.type);
         const params = new HttpParams({
             fromObject: {
                 ...this.client.getRevision(deleteComponent.entity),
                 disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged()
             }
         });
-        return this.httpClient.delete(this.nifiCommon.stripProtocol(deleteComponent.uri), { params });
+        return this.httpClient.delete(`${FlowService.API}/${path}/${deleteComponent.id}`, { params });
     }
 
     replayLastProvenanceEvent(request: ReplayLastProvenanceEventRequest): Observable<any> {
@@ -273,25 +269,28 @@ export class FlowService implements PropertyDescriptorRetriever {
             disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged(),
             state: 'RUN_ONCE'
         };
-        return this.httpClient.put(`${this.nifiCommon.stripProtocol(request.uri)}/run-status`, startRequest);
+        // runOnce is only for processors
+        return this.httpClient.put(`${FlowService.API}/processors/${request.id}/run-status`, startRequest);
     }
 
     enableComponent(request: EnableComponentRequest): Observable<any> {
+        const path = this.nifiCommon.getComponentTypeApiPath(request.type);
         const enableRequest: ComponentRunStatusRequest = {
             revision: request.revision,
             disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged(),
             state: 'STOPPED'
         };
-        return this.httpClient.put(`${this.nifiCommon.stripProtocol(request.uri)}/run-status`, enableRequest);
+        return this.httpClient.put(`${FlowService.API}/${path}/${request.id}/run-status`, enableRequest);
     }
 
     disableComponent(request: DisableComponentRequest): Observable<any> {
+        const path = this.nifiCommon.getComponentTypeApiPath(request.type);
         const disableRequest: ComponentRunStatusRequest = {
             revision: request.revision,
             disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged(),
             state: 'DISABLED'
         };
-        return this.httpClient.put(`${this.nifiCommon.stripProtocol(request.uri)}/run-status`, disableRequest);
+        return this.httpClient.put(`${FlowService.API}/${path}/${request.id}/run-status`, disableRequest);
     }
 
     enableAllControllerServices(id: string): Observable<any> {
@@ -313,25 +312,28 @@ export class FlowService implements PropertyDescriptorRetriever {
     }
 
     startComponent(request: StartComponentRequest): Observable<any> {
+        const path = this.nifiCommon.getComponentTypeApiPath(request.type);
         const startRequest: ComponentRunStatusRequest = {
             revision: request.revision,
             disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged(),
             state: request.type === ComponentType.RemoteProcessGroup ? 'TRANSMITTING' : 'RUNNING'
         };
-        return this.httpClient.put(`${this.nifiCommon.stripProtocol(request.uri)}/run-status`, startRequest);
+        return this.httpClient.put(`${FlowService.API}/${path}/${request.id}/run-status`, startRequest);
     }
 
     stopComponent(request: StopComponentRequest): Observable<any> {
+        const path = this.nifiCommon.getComponentTypeApiPath(request.type);
         const stopRequest: ComponentRunStatusRequest = {
             revision: request.revision,
             disconnectedNodeAcknowledged: this.clusterConnectionService.isDisconnectionAcknowledged(),
             state: 'STOPPED'
         };
-        return this.httpClient.put(`${this.nifiCommon.stripProtocol(request.uri)}/run-status`, stopRequest);
+        return this.httpClient.put(`${FlowService.API}/${path}/${request.id}/run-status`, stopRequest);
     }
 
     terminateThreads(request: TerminateThreadsRequest): Observable<any> {
-        return this.httpClient.delete(`${this.nifiCommon.stripProtocol(request.uri)}/threads`);
+        // terminateThreads is only for processors
+        return this.httpClient.delete(`${FlowService.API}/processors/${request.id}/threads`);
     }
 
     enableProcessGroup(request: EnableProcessGroupRequest): Observable<any> {
@@ -477,7 +479,37 @@ export class FlowService implements PropertyDescriptorRetriever {
 
     downloadFlow(downloadFlowRequest: DownloadFlowRequest): void {
         window.open(
-            `${FlowService.API}/process-groups/${downloadFlowRequest.processGroupId}/download?includeReferencedServices=${downloadFlowRequest.includeReferencedServices}`
+            `${FlowService.API}/process-groups/${downloadFlowRequest.processGroupId}/download?includeReferencedServices=${downloadFlowRequest.includeReferencedServices}`,
+            '_blank',
+            'noreferrer'
+        );
+    }
+
+    /*
+        Clear Bulletins
+    */
+
+    clearBulletinForComponent(request: ClearBulletinsRequest): Observable<any> {
+        const path = this.nifiCommon.getComponentTypeApiPath(request.componentType);
+        const payload = {
+            fromTimestamp: request.fromTimestamp
+        };
+
+        return this.httpClient.post(
+            `${FlowService.API}/${path}/${request.componentId}/bulletins/clear-requests`,
+            payload
+        );
+    }
+
+    clearBulletinsForProcessGroup(request: ClearBulletinsForGroupRequest): Observable<any> {
+        const payload: any = {
+            id: request.processGroupId,
+            fromTimestamp: request.fromTimestamp
+        };
+
+        return this.httpClient.post(
+            `${FlowService.API}/flow/process-groups/${request.processGroupId}/bulletins/clear-requests`,
+            payload
         );
     }
 }

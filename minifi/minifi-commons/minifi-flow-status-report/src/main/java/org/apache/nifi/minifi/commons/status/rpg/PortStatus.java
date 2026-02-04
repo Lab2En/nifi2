@@ -22,9 +22,6 @@ public class PortStatus implements java.io.Serializable {
     private boolean targetExists;
     private boolean targetRunning;
 
-    public PortStatus() {
-    }
-
     public String getName() {
         return name;
     }
@@ -51,13 +48,21 @@ public class PortStatus implements java.io.Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         PortStatus inputPortStatus = (PortStatus) o;
 
-        if (isTargetExists() != inputPortStatus.isTargetExists()) return false;
-        if (isTargetRunning() != inputPortStatus.isTargetRunning()) return false;
+        if (isTargetExists() != inputPortStatus.isTargetExists()) {
+            return false;
+        }
+        if (isTargetRunning() != inputPortStatus.isTargetRunning()) {
+            return false;
+        }
         return getName() != null ? getName().equals(inputPortStatus.getName()) : inputPortStatus.getName() == null;
 
     }

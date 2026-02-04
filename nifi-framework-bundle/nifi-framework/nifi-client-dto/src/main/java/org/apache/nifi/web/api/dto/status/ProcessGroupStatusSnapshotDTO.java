@@ -17,13 +17,13 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlType;
 import org.apache.nifi.web.api.entity.ConnectionStatusSnapshotEntity;
 import org.apache.nifi.web.api.entity.PortStatusSnapshotEntity;
 import org.apache.nifi.web.api.entity.ProcessGroupStatusSnapshotEntity;
 import org.apache.nifi.web.api.entity.ProcessorStatusSnapshotEntity;
 import org.apache.nifi.web.api.entity.RemoteProcessGroupStatusSnapshotEntity;
 
-import jakarta.xml.bind.annotation.XmlType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -112,7 +112,7 @@ public class ProcessGroupStatusSnapshotDTO implements Cloneable {
 
     @Schema(description = "The current state of the Process Group, as it relates to the Versioned Flow",
             accessMode = Schema.AccessMode.READ_ONLY,
-            allowableValues = "LOCALLY_MODIFIED, STALE, LOCALLY_MODIFIED_AND_STALE, UP_TO_DATE, SYNC_FAILURE")
+            allowableValues = {"LOCALLY_MODIFIED", "STALE", "LOCALLY_MODIFIED_AND_STALE", "UP_TO_DATE", "SYNC_FAILURE"})
     public String getVersionedFlowState() {
         return versionedFlowState;
     }
@@ -619,7 +619,7 @@ public class ProcessGroupStatusSnapshotDTO implements Cloneable {
         if (portStatusSnapshots != null) {
             final List<PortStatusSnapshotEntity> portStatusSnapshotEntities = new ArrayList<>();
             for (final PortStatusSnapshotEntity portStatusSnapshotEntity : portStatusSnapshots) {
-               portStatusSnapshotEntities.add(portStatusSnapshotEntity.clone());
+                portStatusSnapshotEntities.add(portStatusSnapshotEntity.clone());
             }
             return portStatusSnapshotEntities;
         }

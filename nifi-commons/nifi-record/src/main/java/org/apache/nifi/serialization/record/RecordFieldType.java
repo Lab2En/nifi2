@@ -225,7 +225,7 @@ public enum RecordFieldType {
     MAP("map", null, new MapDataType(null));
 
 
-    private static final Map<String, RecordFieldType> SIMPLE_NAME_MAP = new HashMap<String, RecordFieldType>();
+    private static final Map<String, RecordFieldType> SIMPLE_NAME_MAP = new HashMap<>();
 
     static {
         for (RecordFieldType value : values()) {
@@ -238,14 +238,14 @@ public enum RecordFieldType {
     private final DataType defaultDataType;
     private final Set<RecordFieldType> narrowDataTypes;
 
-    private RecordFieldType(final String simpleName) {
+    RecordFieldType(final String simpleName) {
         this.simpleName = simpleName;
         this.defaultFormat = null;
         this.defaultDataType = new DataType(this, defaultFormat);
         this.narrowDataTypes = Collections.emptySet();
     }
 
-    private RecordFieldType(final String simpleName, final RecordFieldType... narrowDataTypes) {
+    RecordFieldType(final String simpleName, final RecordFieldType... narrowDataTypes) {
         this.simpleName = simpleName;
         this.defaultFormat = null;
         this.defaultDataType = new DataType(this, defaultFormat);
@@ -253,14 +253,14 @@ public enum RecordFieldType {
         this.narrowDataTypes = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(narrowDataTypes)));
     }
 
-    private RecordFieldType(final String simpleName, final String defaultFormat) {
+    RecordFieldType(final String simpleName, final String defaultFormat) {
         this.simpleName = simpleName;
         this.defaultFormat = defaultFormat;
         this.defaultDataType = new DataType(this, defaultFormat);
         this.narrowDataTypes = Collections.emptySet();
     }
 
-    private RecordFieldType(final String simpleName, final String defaultFormat, final DataType defaultDataType) {
+    RecordFieldType(final String simpleName, final String defaultFormat, final DataType defaultDataType) {
         this.simpleName = simpleName;
         this.defaultFormat = defaultFormat;
         this.defaultDataType = defaultDataType;
@@ -441,7 +441,7 @@ public enum RecordFieldType {
     }
 
     public static RecordFieldType of(final String typeString) {
-      return SIMPLE_NAME_MAP.get(typeString);
+        return SIMPLE_NAME_MAP.get(typeString);
     }
 
     public Set<RecordFieldType> getNarrowDataTypes() {

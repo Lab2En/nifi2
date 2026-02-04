@@ -15,16 +15,15 @@
  * limitations under the License.
  */
 
-import { AfterViewInit, ChangeDetectorRef, Component, forwardRef, Input } from '@angular/core';
-import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
+import { AfterViewInit, ChangeDetectorRef, Component, forwardRef, Input, inject } from '@angular/core';
+import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule } from '@angular/material/dialog';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
-import { AsyncPipe, NgTemplateOutlet } from '@angular/common';
-import { CdkConnectedOverlay, CdkOverlayOrigin } from '@angular/cdk/overlay';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { EditParameterResponse, Parameter, ParameterEntity } from '../../../../../state/shared';
-import { NifiTooltipDirective, NiFiCommon, TextTip } from '@nifi/shared';
+import { EditParameterResponse, ParameterEntity } from '../../../../../state/shared';
+import { NifiTooltipDirective, NiFiCommon, TextTip, Parameter } from '@nifi/shared';
 import { Observable, take } from 'rxjs';
 import { ParameterReferences } from '../../../../../ui/common/parameter-references/parameter-references.component';
 import { Store } from '@ngrx/store';
@@ -32,6 +31,8 @@ import { ParameterContextListingState } from '../../../state/parameter-context-l
 import { showOkDialog } from '../../../state/parameter-context-listing/parameter-context-listing.actions';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
+import { MatCheckbox } from '@angular/material/checkbox';
+import { MatLabel } from '@angular/material/select';
 
 export interface ParameterItem {
     deleted: boolean;
@@ -43,7 +44,6 @@ export interface ParameterItem {
 
 @Component({
     selector: 'parameter-table',
-    standalone: true,
     templateUrl: './parameter-table.component.html',
     imports: [
         MatButtonModule,
@@ -51,15 +51,15 @@ export interface ParameterItem {
         MatTableModule,
         MatSortModule,
         NgTemplateOutlet,
-        CdkOverlayOrigin,
-        CdkConnectedOverlay,
         RouterLink,
-        AsyncPipe,
         NifiTooltipDirective,
         ParameterReferences,
         MatMenu,
         MatMenuItem,
-        MatMenuTrigger
+        MatMenuTrigger,
+        MatLabel,
+        MatCheckbox,
+        FormsModule
     ],
     styleUrls: ['./parameter-table.component.scss'],
     providers: [
@@ -71,9 +71,14 @@ export interface ParameterItem {
     ]
 })
 export class ParameterTable implements AfterViewInit, ControlValueAccessor {
+    private store = inject<Store<ParameterContextListingState>>(Store);
+    private changeDetector = inject(ChangeDetectorRef);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() createNewParameter!: (existingParameters: string[]) => Observable<EditParameterResponse>;
     @Input() editParameter!: (parameter: Parameter) => Observable<EditParameterResponse>;
     @Input() canAddParameters = true;
+    @Input() inheritsParameters = false;
 
     protected readonly TextTip = TextTip;
 
@@ -92,11 +97,7 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
     onTouched!: () => void;
     onChange!: (parameters: ParameterEntity[]) => void;
 
-    constructor(
-        private store: Store<ParameterContextListingState>,
-        private changeDetector: ChangeDetectorRef,
-        private nifiCommon: NiFiCommon
-    ) {}
+    showInheritedParameters: boolean = true;
 
     ngAfterViewInit(): void {
         this.initFilter();
@@ -108,7 +109,19 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
     }
 
     isVisible(item: ParameterItem): boolean {
-        return !item.deleted;
+        if (item.deleted) {
+            return false;
+        }
+
+        if (
+            !this.showInheritedParameters &&
+            item.originalEntity.parameter.inherited &&
+            !item.updatedEntity?.parameter
+        ) {
+            return false;
+        }
+
+        return true;
     }
 
     registerOnChange(onChange: (parameters: ParameterEntity[]) => void): void {
@@ -256,6 +269,18 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
         }
     }
 
+    getInheritedParameterMessage(item: ParameterItem): string {
+        if (item.originalEntity.parameter.inherited) {
+            const parameterContext = item.originalEntity.parameter.parameterContext;
+            if (parameterContext?.permissions.canRead && parameterContext.component) {
+                return `This parameter is inherited from: ${parameterContext.component.name}`;
+            } else {
+                return 'This parameter is inherited from another Parameter Context.';
+            }
+        }
+        return '';
+    }
+
     isSensitiveParameter(item: ParameterItem): boolean {
         return item.originalEntity.parameter.sensitive;
     }
@@ -290,10 +315,7 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
     }
 
     canGoToParameter(item: ParameterItem): boolean {
-        return (
-            item.originalEntity.parameter.inherited === true &&
-            item.originalEntity.parameter.parameterContext?.permissions.canRead == true
-        );
+        return this.canOverride(item) && item.originalEntity.parameter.parameterContext?.permissions.canRead == true;
     }
 
     getParameterLink(item: ParameterItem): string[] {
@@ -304,8 +326,12 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
         return [];
     }
 
+    isOverridden(item: ParameterItem): boolean {
+        return item.originalEntity.parameter.inherited === true && item.updatedEntity !== undefined;
+    }
+
     canOverride(item: ParameterItem): boolean {
-        return item.originalEntity.parameter.inherited === true;
+        return item.originalEntity.parameter.inherited === true && item.updatedEntity === undefined;
     }
 
     overrideParameter(item: ParameterItem): void {
@@ -331,8 +357,13 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
     canEdit(item: ParameterItem): boolean {
         const canWrite: boolean = item.originalEntity.canWrite == true;
         const provided: boolean = item.originalEntity.parameter.provided == true;
-        const inherited: boolean = item.originalEntity.parameter.inherited == true;
-        return canWrite && !provided && !inherited;
+
+        if (item.originalEntity.parameter.inherited) {
+            const overridden: boolean = this.isOverridden(item);
+            return canWrite && !provided && overridden;
+        }
+
+        return canWrite && !provided;
     }
 
     editClicked(item: ParameterItem): void {
@@ -357,10 +388,19 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
         if (!item.updatedEntity) {
             item.updatedEntity = {
                 parameter: {
-                    ...item.originalEntity.parameter,
-                    value: null
+                    ...item.originalEntity.parameter
                 }
             };
+
+            // if this parameter is an existing parameter, we want to mark the value as null. a null value
+            // for existing parameters will indicate to the server that the value is unchanged. this is needed
+            // for sensitive parameters where the value isn't available client side. for new parameters which
+            // are not known on the server should not have their value cleared. this is relevant when the user
+            // created a new parameter and then subsequents edits it (e.g. to change the description) before
+            // submission.
+            if (!item.added) {
+                item.updatedEntity.parameter.value = null;
+            }
         }
 
         let hasChanged: boolean = response.valueChanged;
@@ -399,8 +439,13 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
     canDelete(item: ParameterItem): boolean {
         const canWrite: boolean = item.originalEntity.canWrite == true;
         const provided: boolean = item.originalEntity.parameter.provided == true;
-        const inherited: boolean = item.originalEntity.parameter.inherited == true;
-        return canWrite && !provided && !inherited;
+
+        if (item.originalEntity.parameter.inherited) {
+            const overridden: boolean = this.isOverridden(item);
+            return canWrite && !provided && overridden;
+        }
+
+        return canWrite && !provided;
     }
 
     deleteClicked(item: ParameterItem): void {
@@ -438,7 +483,10 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
         this.onChange(this.serializeParameters());
     }
 
-    private serializeParameters(): any[] {
+    /**
+     * Serializes the Parameters. Not private for testing purposes.
+     */
+    serializeParameters(): any[] {
         const parameters: ParameterItem[] = this.dataSource.data;
 
         // only include dirty items
@@ -483,6 +531,12 @@ export class ParameterTable implements AfterViewInit, ControlValueAccessor {
 
     selectParameter(item: ParameterItem | null): void {
         this.selectedItem = item;
+    }
+
+    doubleClicked(item: ParameterItem): void {
+        if (this.canEdit(item) && !this.isDisabled) {
+            this.editClicked(item);
+        }
     }
 
     isSelected(item: ParameterItem): boolean {

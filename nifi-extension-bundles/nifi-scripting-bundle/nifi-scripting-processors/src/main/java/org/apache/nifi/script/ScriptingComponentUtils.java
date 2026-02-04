@@ -18,6 +18,7 @@ package org.apache.nifi.script;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.Validator;
 import org.apache.nifi.components.resource.ResourceCardinality;
@@ -29,8 +30,6 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.search.SearchContext;
 import org.apache.nifi.search.SearchResult;
 
-import javax.script.ScriptEngineFactory;
-import javax.script.ScriptEngineManager;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -39,6 +38,8 @@ import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeSet;
+import javax.script.ScriptEngineFactory;
+import javax.script.ScriptEngineManager;
 
 /**
  * Utility methods and constants used by the scripting components.
@@ -107,7 +108,7 @@ public class ScriptingComponentUtils {
 
         while (scanner.hasNextLine()) {
             final String line = scanner.nextLine();
-            if (StringUtils.containsIgnoreCase(line, term)) {
+            if (Strings.CI.contains(line, term)) {
                 final String text = String.format("Matched script at line %d: %s", index, line);
                 results.add(new SearchResult.Builder().label(text).match(term).build());
             }

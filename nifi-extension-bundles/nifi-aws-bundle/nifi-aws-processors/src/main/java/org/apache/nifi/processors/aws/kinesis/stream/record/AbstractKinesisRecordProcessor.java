@@ -22,6 +22,7 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessSessionFactory;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processors.aws.kinesis.stream.ConsumeKinesisStream;
+import org.apache.nifi.processors.aws.kinesis.stream.pause.RecordProcessorBlocker;
 import org.apache.nifi.util.StopWatch;
 import org.apache.nifi.util.StringUtils;
 import software.amazon.awssdk.services.kinesis.model.Record;
@@ -69,6 +70,7 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
     private final long retryWaitMillis;
     private final int numRetries;
     private final DateTimeFormatter dateTimeFormatter;
+    private final RecordProcessorBlocker recordProcessorBlocker;
 
     private String kinesisShardId;
     private long nextCheckpointTimeInMillis;
@@ -78,7 +80,7 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
     AbstractKinesisRecordProcessor(final ProcessSessionFactory sessionFactory, final ComponentLog log, final String streamName,
                                    final String endpointPrefix, final String kinesisEndpoint,
                                    final long checkpointIntervalMillis, final long retryWaitMillis,
-                                   final int numRetries, final DateTimeFormatter dateTimeFormatter) {
+                                   final int numRetries, final DateTimeFormatter dateTimeFormatter, final RecordProcessorBlocker recordProcessorBlocker) {
         this.sessionFactory = sessionFactory;
         this.log = log;
         this.streamName = streamName;
@@ -86,6 +88,7 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
         this.retryWaitMillis = retryWaitMillis;
         this.numRetries = numRetries;
         this.dateTimeFormatter = dateTimeFormatter;
+        this.recordProcessorBlocker = recordProcessorBlocker;
 
         this.transitUriPrefix = StringUtils.isBlank(kinesisEndpoint) ? String.format("http://%s.amazonaws.com", endpointPrefix) : kinesisEndpoint;
     }
@@ -108,6 +111,12 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
 
     @Override
     public void processRecords(final ProcessRecordsInput processRecordsInput) {
+        try {
+            recordProcessorBlocker.await();
+        } catch (final InterruptedException ie) {
+            getLogger().debug("Interrupted while waiting for recordProcessorBlocker to unblock, resuming record processing", ie);
+        }
+
         if (log.isDebugEnabled()) {
             log.debug("Processing {} records from {}; cache entry: {}; cache exit: {}; millis behind latest: {}",
                     processRecordsInput.records().size(), kinesisShardId,
@@ -124,8 +133,10 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
                 final StopWatch stopWatch = new StopWatch(true);
                 session = sessionFactory.createSession();
 
+                final BatchProcessingContext batchProcessingContext = new BatchProcessingContext(session, flowFiles, stopWatch);
                 startProcessingRecords();
-                final int recordsTransformed = processRecordsWithRetries(records, flowFiles, session, stopWatch);
+                final int recordsTransformed = processRecordsWithRetries(records, batchProcessingContext);
+                finishProcessingRecords(batchProcessingContext);
                 transferTo(ConsumeKinesisStream.REL_SUCCESS, session, records.size(), recordsTransformed, flowFiles);
 
                 session.commitAsync(() -> {
@@ -148,14 +159,14 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
         processingRecords = true;
     }
 
-    private int processRecordsWithRetries(final List<KinesisClientRecord> records, final List<FlowFile> flowFiles,
-                                           final ProcessSession session, final StopWatch stopWatch) {
+    void finishProcessingRecords(final BatchProcessingContext batchProcessingContext) { }
+
+    private int processRecordsWithRetries(final List<KinesisClientRecord> records, final BatchProcessingContext batchProcessingContext) {
         int recordsTransformed = 0;
-        for (int r = 0; r < records.size(); r++) {
-            final KinesisClientRecord kinesisRecord = records.get(r);
+        for (final KinesisClientRecord kinesisRecord : records) {
             boolean processedSuccessfully = false;
             for (int i = 0; !processedSuccessfully && i < numRetries; i++) {
-                processedSuccessfully = attemptProcessRecord(flowFiles, kinesisRecord, r == records.size() - 1, session, stopWatch);
+                processedSuccessfully = attemptProcessRecord(kinesisRecord, batchProcessingContext);
             }
 
             if (processedSuccessfully) {
@@ -168,12 +179,13 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
         return recordsTransformed;
     }
 
-    private boolean attemptProcessRecord(final List<FlowFile> flowFiles, final KinesisClientRecord kinesisRecord, final boolean lastRecord,
-                                         final ProcessSession session, final StopWatch stopWatch) {
+    private boolean attemptProcessRecord(final KinesisClientRecord kinesisRecord, final BatchProcessingContext batchProcessingContext) {
         boolean processedSuccessfully = false;
         try {
-            processRecord(flowFiles, kinesisRecord, lastRecord, session, stopWatch);
+            processRecord(kinesisRecord, batchProcessingContext);
             processedSuccessfully = true;
+        } catch (final KinesisBatchUnrecoverableException e) {
+            throw e;
         } catch (final Exception e) {
             log.error("Caught Exception while processing Kinesis record {}", kinesisRecord, e);
 
@@ -191,16 +203,11 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
     /**
      * Process an individual {@link Record} and serialise to {@link FlowFile}
      *
-     * @param flowFiles {@link List} of {@link FlowFile}s to be output after all processing is complete
      * @param kinesisRecord the Kinesis {@link Record} to be processed
-     * @param lastRecord whether this is the last {@link Record} to be processed in this batch
-     * @param session {@link ProcessSession} into which {@link FlowFile}s will be transferred
-     * @param stopWatch {@link StopWatch} tracking how much time has been spent processing the current batch
-     *
+     * @param batchProcessingContext the {@link BatchProcessingContext} for the current batch of records being processed, containing the session, flow files and stopwatch
      * @throws RuntimeException if there are any unhandled Exceptions that should be retried
      */
-    abstract void processRecord(final List<FlowFile> flowFiles, final KinesisClientRecord kinesisRecord, final boolean lastRecord,
-                                final ProcessSession session, final StopWatch stopWatch);
+    abstract void processRecord(final KinesisClientRecord kinesisRecord, final BatchProcessingContext batchProcessingContext) throws RuntimeException;
 
     void reportProvenance(final ProcessSession session, final FlowFile flowFile, final String partitionKey,
                  final String sequenceNumber, final StopWatch stopWatch) {
@@ -313,6 +320,10 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
         return log;
     }
 
+    String getStreamName() {
+        return streamName;
+    }
+
     String getKinesisShardId() {
         return kinesisShardId;
     }
@@ -332,4 +343,20 @@ public abstract class AbstractKinesisRecordProcessor implements ShardRecordProce
     void setProcessingRecords(final boolean processingRecords) {
         this.processingRecords = processingRecords;
     }
+
+    protected static class KinesisBatchUnrecoverableException extends RuntimeException {
+        public KinesisBatchUnrecoverableException(final String message, final Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * contains:
+     * <ol>
+     *      <li>{@link ProcessSession} into which {@link FlowFile}s will be transferred
+     *      <li>{@link List} of {@link FlowFile}s to be output after all processing is complete
+     *      <li>{@link StopWatch} tracking how much time has been spent processing the current batch;
+     * </ol>
+     */
+    protected record BatchProcessingContext(ProcessSession session, List<FlowFile> flowFiles, StopWatch stopWatch) { }
 }

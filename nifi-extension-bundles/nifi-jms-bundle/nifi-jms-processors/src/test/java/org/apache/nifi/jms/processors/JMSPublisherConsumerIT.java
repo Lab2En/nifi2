@@ -18,15 +18,6 @@ package org.apache.nifi.jms.processors;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.nifi.jms.processors.JMSConsumer.JMSResponse;
-import org.apache.nifi.logging.ComponentLog;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.springframework.jms.connection.CachingConnectionFactory;
-import org.springframework.jms.core.JmsTemplate;
-import org.springframework.jms.core.MessageCreator;
-import org.springframework.jms.support.JmsHeaders;
-
 import jakarta.jms.BytesMessage;
 import jakarta.jms.JMSException;
 import jakarta.jms.MapMessage;
@@ -36,6 +27,15 @@ import jakarta.jms.Session;
 import jakarta.jms.StreamMessage;
 import jakarta.jms.TextMessage;
 import jakarta.jms.Topic;
+import org.apache.nifi.jms.processors.JMSConsumer.JMSResponse;
+import org.apache.nifi.logging.ComponentLog;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.jms.connection.CachingConnectionFactory;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.core.MessageCreator;
+import org.springframework.jms.support.JmsHeaders;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -51,6 +51,7 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -178,8 +179,10 @@ public class JMSPublisherConsumerIT {
             ObjectMapper objectMapper = new ObjectMapper();
 
             try {
-                Map<String, Object> actual = objectMapper.readValue(response.getMessageBody(), new TypeReference<Map<String, Object>>() { });
-                Map<String, Object> expected = objectMapper.readValue(expectedJson.getBytes(), new TypeReference<Map<String, Object>>() { });
+                Map<String, Object> actual = objectMapper.readValue(response.getMessageBody(), new TypeReference<>() {
+                });
+                Map<String, Object> expected = objectMapper.readValue(expectedJson.getBytes(), new TypeReference<>() {
+                });
 
                 assertEquals(expected, actual);
             } catch (IOException e) {
@@ -220,7 +223,7 @@ public class JMSPublisherConsumerIT {
             publisher.publish(destinationName, "hellomq".getBytes());
 
             Message receivedMessage = jmsTemplate.receive(destinationName);
-            assertTrue(receivedMessage instanceof BytesMessage);
+            assertInstanceOf(BytesMessage.class, receivedMessage);
             byte[] bytes = new byte[7];
             ((BytesMessage) receivedMessage).readBytes(bytes);
             assertEquals("hellomq", new String(bytes));
@@ -247,11 +250,11 @@ public class JMSPublisherConsumerIT {
             publisher.publish(destinationName, "hellomq".getBytes(), flowFileAttributes);
 
             Message receivedMessage = jmsTemplate.receive(destinationName);
-            assertTrue(receivedMessage instanceof BytesMessage);
+            assertInstanceOf(BytesMessage.class, receivedMessage);
             assertEquals("foo", receivedMessage.getStringProperty("foo"));
             assertTrue(receivedMessage.propertyExists("hyphen-property"));
             assertTrue(receivedMessage.propertyExists("fullstop.property"));
-            assertTrue(receivedMessage.getJMSReplyTo() instanceof Topic);
+            assertInstanceOf(Topic.class, receivedMessage.getJMSReplyTo());
             assertEquals(1, receivedMessage.getJMSDeliveryMode());
             assertEquals(1, receivedMessage.getJMSPriority());
             assertEquals("myTopic", ((Topic) receivedMessage.getJMSReplyTo()).getTopicName());
@@ -280,7 +283,7 @@ public class JMSPublisherConsumerIT {
             flowFileAttributes.put(JmsHeaders.EXPIRATION, Long.toString(expiration));
             publisher.publish(destinationName, "hellomq-1".getBytes(), flowFileAttributes);
             receivedMessage = jmsTemplate.receive(destinationName);
-            /**
+            /*
              * https://github.com/spring-projects/spring-framework/issues/24144
              * Suggests we cannot rely on the value being specifically what was set
              * and on a per message level so instead checking experitation is set
@@ -315,12 +318,7 @@ public class JMSPublisherConsumerIT {
         JmsTemplate jmsTemplate = CommonTest.buildJmsTemplateForDestination(false);
 
         try {
-            jmsTemplate.send(destinationName, new MessageCreator() {
-                @Override
-                public Message createMessage(Session session) throws JMSException {
-                    return session.createObjectMessage();
-                }
-            });
+            jmsTemplate.send(destinationName, Session::createObjectMessage);
 
             JMSConsumer consumer = new JMSConsumer((CachingConnectionFactory) jmsTemplate.getConnectionFactory(), jmsTemplate, mock(ComponentLog.class));
             consumer.consumeMessageSet(destinationName, null, false, false, null, null, "UTF-8", 1, responses -> {
@@ -389,7 +387,7 @@ public class JMSPublisherConsumerIT {
                         while (msgCounter.get() < totalMessageCount) {
                             consumer.consumeMessageSet(destinationName, null, false, false, null, null, "UTF-8", 5,
                                     responses -> {
-                                        responses.forEach( response -> {
+                                        responses.forEach(response -> {
                                             msgCounter.incrementAndGet();
                                             String body = new String(response.getMessageBody(), StandardCharsets.UTF_8);
                                             int msgNum = 0;
@@ -453,7 +451,7 @@ public class JMSPublisherConsumerIT {
                     assertEquals("1", new String(responses.getFirst().getMessageBody()));
                     throw new RuntimeException("intentional to avoid explicit ack");
                 });
-            } catch (Exception e) {
+            } catch (Exception ignored) {
                 // expected
             }
 
@@ -482,7 +480,7 @@ public class JMSPublisherConsumerIT {
                         throw new RuntimeException("intentional to avoid explicit ack");
                     });
                 }
-            } catch (Exception e) {
+            } catch (Exception ignored) {
                 // ignore
             }
             assertTrue(callbackInvoked.get());
@@ -498,7 +496,7 @@ public class JMSPublisherConsumerIT {
                         acknowledge(response);
                     });
                 }
-            } catch (Exception e) {
+            } catch (Exception ignored) {
                 // ignore
             }
         } finally {

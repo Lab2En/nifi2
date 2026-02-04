@@ -24,9 +24,6 @@ public class FlowfileRepositoryUsage implements java.io.Serializable {
     private long usedSpace;
     private int diskUtilization;
 
-    public FlowfileRepositoryUsage() {
-    }
-
     public long getFreeSpace() {
         return freeSpace;
     }
@@ -61,14 +58,24 @@ public class FlowfileRepositoryUsage implements java.io.Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         FlowfileRepositoryUsage that = (FlowfileRepositoryUsage) o;
 
-        if (getFreeSpace() != that.getFreeSpace()) return false;
-        if (getTotalSpace() != that.getTotalSpace()) return false;
-        if (getUsedSpace() != that.getUsedSpace()) return false;
+        if (getFreeSpace() != that.getFreeSpace()) {
+            return false;
+        }
+        if (getTotalSpace() != that.getTotalSpace()) {
+            return false;
+        }
+        if (getUsedSpace() != that.getUsedSpace()) {
+            return false;
+        }
         return getDiskUtilization() == that.getDiskUtilization();
 
     }

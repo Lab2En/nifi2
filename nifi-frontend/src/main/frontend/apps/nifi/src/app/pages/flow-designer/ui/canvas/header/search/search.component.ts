@@ -27,7 +27,6 @@ import {
     OriginConnectionPosition,
     OverlayConnectionPosition
 } from '@angular/cdk/overlay';
-import { ComponentType } from 'libs/shared/src';
 import { SearchMatchTipInput } from '../../../../../../state/shared';
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -38,14 +37,13 @@ import { Store } from '@ngrx/store';
 import * as FlowActions from '../../../../state/flow/flow.actions';
 import { centerSelectedComponents, setAllowTransition } from '../../../../state/flow/flow.actions';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { NifiTooltipDirective, selectCurrentRoute } from '@nifi/shared';
+import { ComponentType, NifiTooltipDirective, selectCurrentRoute } from '@nifi/shared';
 import { SearchMatchTip } from '../../../../../../ui/common/tooltips/search-match-tip/search-match-tip.component';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ErrorHelper } from '../../../../../../service/error-helper.service';
 
 @Component({
     selector: 'search',
-    standalone: true,
     templateUrl: './search.component.html',
     styleUrls: ['./search.component.scss'],
     imports: [
@@ -60,6 +58,11 @@ import { ErrorHelper } from '../../../../../../service/error-helper.service';
     ]
 })
 export class Search implements OnInit {
+    private formBuilder = inject(FormBuilder);
+    private searchService = inject(SearchService);
+    private store = inject<Store<CanvasState>>(Store);
+    private errorHelper = inject(ErrorHelper);
+
     protected readonly ComponentType = ComponentType;
     protected readonly SearchMatchTip = SearchMatchTip;
 
@@ -100,12 +103,7 @@ export class Search implements OnInit {
     selectedComponentType: ComponentType | null = null;
     selectedComponentId: string | null = null;
 
-    constructor(
-        private formBuilder: FormBuilder,
-        private searchService: SearchService,
-        private store: Store<CanvasState>,
-        private errorHelper: ErrorHelper
-    ) {
+    constructor() {
         this.searchForm = this.formBuilder.group({ searchBar: '' });
 
         this.store

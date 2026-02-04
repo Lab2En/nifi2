@@ -49,6 +49,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@SuppressWarnings("PMD.LooseCoupling")
 public class TestGetSplunk {
 
     private Service service;
@@ -111,7 +112,7 @@ public class TestGetSplunk {
         final List<MockFlowFile> mockFlowFiles = runner.getFlowFilesForRelationship(GetSplunk.REL_SUCCESS);
         assertEquals(1, mockFlowFiles.size());
 
-        final MockFlowFile mockFlowFile = mockFlowFiles.get(0);
+        final MockFlowFile mockFlowFile = mockFlowFiles.getFirst();
         mockFlowFile.assertContentEquals(resultContent);
         mockFlowFile.assertAttributeEquals(GetSplunk.QUERY_ATTR, query);
         mockFlowFile.assertAttributeEquals(GetSplunk.EARLIEST_TIME_ATTR, providedEarliest);
@@ -120,8 +121,8 @@ public class TestGetSplunk {
 
         final List<ProvenanceEventRecord> events = runner.getProvenanceEvents();
         assertEquals(1, events.size());
-        assertEquals(ProvenanceEventType.RECEIVE, events.get(0).getEventType());
-        assertEquals("https://localhost:8089", events.get(0).getTransitUri());
+        assertEquals(ProvenanceEventType.RECEIVE, events.getFirst().getEventType());
+        assertEquals("https://localhost:8089", events.getFirst().getTransitUri());
     }
 
     @Test
@@ -373,6 +374,7 @@ public class TestGetSplunk {
     /**
      * Custom args matcher for JobExportArgs.
      */
+    @SuppressWarnings("PMD.LooseCoupling")
     private static class JobExportArgsMatcher implements ArgumentMatcher<JobExportArgs> {
 
         private JobExportArgs expected;

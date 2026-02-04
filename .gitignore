@@ -1,4 +1,5 @@
 target
+bin
 .project
 .settings
 .classpath
@@ -10,6 +11,7 @@ nb-configuration.xml
 
 # Intellij
 .idea/
+.run/
 *.iml
 *.iws
 *.ipr
@@ -19,3 +21,7 @@ nb-configuration.xml
 .java-version
 /nifi-nar-bundles/nifi-py4j-bundle/nifi-python-extension-api/src/main/python/dist/
 __pycache__
+.cursor/
+
+# Develocity
+.mvn/.develocity/

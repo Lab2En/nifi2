@@ -44,7 +44,6 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.hadoop.AbstractHadoopProcessor;
 import org.apache.nifi.processors.hadoop.FetchHDFS;
@@ -53,16 +52,14 @@ import org.apache.nifi.processors.hadoop.ListHDFS;
 import org.apache.nifi.processors.hadoop.PutHDFS;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 @TriggerSerially
 @TriggerWhenEmpty
@@ -86,7 +83,6 @@ import java.util.regex.Pattern;
 public class GetHDFSEvents extends AbstractHadoopProcessor {
     static final PropertyDescriptor POLL_DURATION = new PropertyDescriptor.Builder()
             .name("Poll Duration")
-            .displayName("Poll Duration")
             .description("The time before the polling method returns with the next batch of events if they exist. It may exceed this amount of time by up to the time required for an " +
                     "RPC to the NameNode.")
             .defaultValue("1 second")
@@ -96,7 +92,6 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
 
     static final PropertyDescriptor HDFS_PATH_TO_WATCH = new PropertyDescriptor.Builder()
             .name("HDFS Path to Watch")
-            .displayName("HDFS Path to Watch")
             .description("The HDFS path to get event notifications for. This property accepts both expression language and regular expressions. This will be evaluated during the " +
                     "OnScheduled phase.")
             .required(true)
@@ -107,7 +102,6 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
 
     static final PropertyDescriptor IGNORE_HIDDEN_FILES = new PropertyDescriptor.Builder()
             .name("Ignore Hidden Files")
-            .displayName("Ignore Hidden Files")
             .description("If true and the final component of the path associated with a given event starts with a '.' then that event will not be processed.")
             .required(true)
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
@@ -117,7 +111,6 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
 
     static final PropertyDescriptor EVENT_TYPES = new PropertyDescriptor.Builder()
             .name("Event Types to Filter On")
-            .displayName("Event Types to Filter On")
             .description("A comma-separated list of event types to process. Valid event types are: append, close, create, metadata, rename, and unlink. Case does not matter.")
             .addValidator(new EventTypeValidator())
             .required(true)
@@ -126,7 +119,6 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
 
     static final PropertyDescriptor NUMBER_OF_RETRIES_FOR_POLL = new PropertyDescriptor.Builder()
             .name("IOException Retries During Event Polling")
-            .displayName("IOException Retries During Event Polling")
             .description("According to the HDFS admin API for event polling it is good to retry at least a few times. This number defines how many times the poll will be retried if it " +
                     "throws an IOException.")
             .addValidator(StandardValidators.NON_NEGATIVE_INTEGER_VALIDATOR)
@@ -139,7 +131,21 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
             .description("A flow file with updated information about a specific event will be sent to this relationship.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Collections.singletonList(REL_SUCCESS)));
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                    POLL_DURATION,
+                    HDFS_PATH_TO_WATCH,
+                    IGNORE_HIDDEN_FILES,
+                    EVENT_TYPES,
+                    NUMBER_OF_RETRIES_FOR_POLL
+            )
+    ).toList();
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
+
     private static final String LAST_TX_ID = "last.tx.id";
     private volatile long lastTxId = -1L;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -147,13 +153,7 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        List<PropertyDescriptor> props = new ArrayList<>(properties);
-        props.add(POLL_DURATION);
-        props.add(HDFS_PATH_TO_WATCH);
-        props.add(IGNORE_HIDDEN_FILES);
-        props.add(EVENT_TYPES);
-        props.add(NUMBER_OF_RETRIES_FOR_POLL);
-        return Collections.unmodifiableList(props);
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -200,12 +200,7 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
                             flowFile = session.putAttribute(flowFile, CoreAttributes.MIME_TYPE.key(), "application/json");
                             flowFile = session.putAttribute(flowFile, EventAttributes.EVENT_TYPE, e.getEventType().name());
                             flowFile = session.putAttribute(flowFile, EventAttributes.EVENT_PATH, path);
-                            flowFile = session.write(flowFile, new OutputStreamCallback() {
-                                @Override
-                                public void process(OutputStream out) throws IOException {
-                                    out.write(OBJECT_MAPPER.writeValueAsBytes(e));
-                                }
-                            });
+                            flowFile = session.write(flowFile, out -> out.write(OBJECT_MAPPER.writeValueAsBytes(e)));
 
                             flowFiles.add(flowFile);
                         }
@@ -292,15 +287,15 @@ public class GetHDFSEvents extends AbstractHadoopProcessor {
             throw new IllegalArgumentException("Event and event type must not be null.");
         }
 
-        switch (event.getEventType()) {
-            case CREATE: return ((Event.CreateEvent) event).getPath();
-            case CLOSE: return ((Event.CloseEvent) event).getPath();
-            case APPEND: return ((Event.AppendEvent) event).getPath();
-            case RENAME: return ((Event.RenameEvent) event).getSrcPath();
-            case METADATA: return ((Event.MetadataUpdateEvent) event).getPath();
-            case UNLINK: return ((Event.UnlinkEvent) event).getPath();
-            default: throw new IllegalArgumentException("Unsupported event type.");
-        }
+        return switch (event.getEventType()) {
+            case CREATE -> ((Event.CreateEvent) event).getPath();
+            case CLOSE -> ((Event.CloseEvent) event).getPath();
+            case APPEND -> ((Event.AppendEvent) event).getPath();
+            case RENAME -> ((Event.RenameEvent) event).getSrcPath();
+            case METADATA -> ((Event.MetadataUpdateEvent) event).getPath();
+            case UNLINK -> ((Event.UnlinkEvent) event).getPath();
+            default -> throw new IllegalArgumentException("Unsupported event type.");
+        };
     }
 
     private static class NotificationConfig {

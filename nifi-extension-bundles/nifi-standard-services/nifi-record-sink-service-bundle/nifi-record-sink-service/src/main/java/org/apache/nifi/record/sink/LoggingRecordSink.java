@@ -22,9 +22,9 @@ import org.apache.nifi.annotation.lifecycle.OnEnabled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
-import org.apache.nifi.controller.ControllerServiceInitializationContext;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.logging.LogLevel;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.schema.access.SchemaNotFoundException;
 import org.apache.nifi.serialization.RecordSetWriter;
@@ -35,8 +35,6 @@ import org.apache.nifi.serialization.record.RecordSet;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -44,31 +42,25 @@ import java.util.Map;
 @CapabilityDescription("Provides a RecordSinkService that can be used to log records to the application log (nifi-app.log, e.g.) using the specified writer for formatting.")
 public class LoggingRecordSink extends AbstractControllerService implements RecordSinkService {
 
-    private List<PropertyDescriptor> properties;
-    private volatile RecordSetWriterFactory writerFactory;
-    private volatile LogLevel logLevel;
-
     public static final PropertyDescriptor LOG_LEVEL = new PropertyDescriptor.Builder()
-            .name("logsink-log-level")
-            .displayName("Log Level")
+            .name("Log Level")
             .required(true)
             .description("The Log Level at which to log records (INFO, DEBUG, e.g.)")
             .allowableValues(LogLevel.values())
             .defaultValue(LogLevel.INFO.name())
             .build();
 
-    @Override
-    protected void init(final ControllerServiceInitializationContext context) throws InitializationException {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(RecordSinkService.RECORD_WRITER_FACTORY);
-        properties.add(LOG_LEVEL);
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            RecordSinkService.RECORD_WRITER_FACTORY,
+            LOG_LEVEL
+    );
 
-        this.properties = Collections.unmodifiableList(properties);
-    }
+    private volatile RecordSetWriterFactory writerFactory;
+    private volatile LogLevel logLevel;
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -99,5 +91,11 @@ public class LoggingRecordSink extends AbstractControllerService implements Reco
             throw new IOException(e);
         }
         return writeResult;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        RecordSinkService.super.migrateProperties(config);
+        config.renameProperty("logsink-log-level", LOG_LEVEL.getName());
     }
 }

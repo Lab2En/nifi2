@@ -25,8 +25,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.ssl.SslHandler;
 import org.apache.nifi.security.cert.builder.StandardCertificateBuilder;
@@ -38,9 +39,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIf;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLEngine;
-import javax.security.auth.x500.X500Principal;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
@@ -59,6 +57,9 @@ import java.time.Duration;
 import java.util.OptionalInt;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import javax.security.auth.x500.X500Principal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -162,7 +163,7 @@ public class TestPeerChannel {
 
     private int read(final PeerChannel peerChannel) throws IOException {
         OptionalInt read = peerChannel.read();
-        while (!read.isPresent()) {
+        while (read.isEmpty()) {
             try {
                 TimeUnit.MILLISECONDS.sleep(READ_SLEEP_INTERVAL);
             } catch (InterruptedException e) {
@@ -174,7 +175,7 @@ public class TestPeerChannel {
     }
 
     private void processChannel(final String enabledProtocol, final Consumer<PeerChannel> channelConsumer) throws IOException {
-        final EventLoopGroup group = new NioEventLoopGroup(GROUP_THREADS);
+        final EventLoopGroup group = new MultiThreadIoEventLoopGroup(GROUP_THREADS, NioIoHandler.newFactory());
 
         try (final SocketChannel socketChannel = SocketChannel.open()) {
             final Socket socket = socketChannel.socket();
@@ -223,7 +224,7 @@ public class TestPeerChannel {
         final ServerBootstrap bootstrap = new ServerBootstrap();
         bootstrap.group(group);
         bootstrap.channel(NioServerSocketChannel.class);
-        bootstrap.childHandler(new ChannelInitializer<Channel>() {
+        bootstrap.childHandler(new ChannelInitializer<>() {
             @Override
             protected void initChannel(final Channel channel) {
                 final ChannelPipeline pipeline = channel.pipeline();

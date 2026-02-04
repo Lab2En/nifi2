@@ -24,6 +24,7 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processors.aws.ml.AbstractAwsMachineLearningJobStarter;
@@ -38,9 +39,7 @@ import software.amazon.awssdk.services.textract.model.StartExpenseAnalysisRespon
 import software.amazon.awssdk.services.textract.model.TextractRequest;
 import software.amazon.awssdk.services.textract.model.TextractResponse;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.apache.nifi.processors.aws.ml.textract.TextractType.DOCUMENT_ANALYSIS;
@@ -58,19 +57,26 @@ public class StartAwsTextractJob extends AbstractAwsMachineLearningJobStarter<
     public static final String TEXTRACT_TYPE_ATTRIBUTE = "awsTextractType";
 
     public static final PropertyDescriptor TEXTRACT_TYPE = new PropertyDescriptor.Builder()
-            .name("textract-type")
-            .displayName("Textract Type")
+            .name("Textract Type")
             .required(true)
             .description("Supported values: \"Document Analysis\", \"Document Text Detection\", \"Expense Analysis\"")
             .allowableValues(TextractType.TEXTRACT_TYPES)
             .defaultValue(DOCUMENT_ANALYSIS.getType())
             .build();
-    private static final List<PropertyDescriptor> TEXTRACT_PROPERTIES =
-        Collections.unmodifiableList(Stream.concat(PROPERTIES.stream(), Stream.of(TEXTRACT_TYPE)).collect(Collectors.toList()));
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(TEXTRACT_TYPE)
+    ).toList();
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return TEXTRACT_PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("textract-type", TEXTRACT_TYPE.getName());
     }
 
     @Override

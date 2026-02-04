@@ -27,13 +27,13 @@ import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.pgp.service.api.PGPPrivateKeyService;
 import org.apache.nifi.pgp.service.standard.exception.PGPConfigurationException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.StringUtils;
-
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPPrivateKey;
 import org.bouncycastle.openpgp.PGPSecretKey;
@@ -52,7 +52,6 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -67,8 +66,7 @@ import java.util.stream.Collectors;
 @CapabilityDescription("PGP Private Key Service provides Private Keys loaded from files or properties")
 public class StandardPGPPrivateKeyService extends AbstractControllerService implements PGPPrivateKeyService {
     public static final PropertyDescriptor KEYRING_FILE = new PropertyDescriptor.Builder()
-            .name("keyring-file")
-            .displayName("Keyring File")
+            .name("Keyring File")
             .description("File path to PGP Keyring or Secret Key encoded in binary or ASCII Armor")
             .required(false)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -76,8 +74,7 @@ public class StandardPGPPrivateKeyService extends AbstractControllerService impl
             .build();
 
     public static final PropertyDescriptor KEYRING = new PropertyDescriptor.Builder()
-            .name("keyring")
-            .displayName("Keyring")
+            .name("Keyring")
             .description("PGP Keyring or Secret Key encoded in ASCII Armor")
             .required(false)
             .sensitive(true)
@@ -85,8 +82,7 @@ public class StandardPGPPrivateKeyService extends AbstractControllerService impl
             .build();
 
     public static final PropertyDescriptor KEY_PASSWORD = new PropertyDescriptor.Builder()
-            .name("key-password")
-            .displayName("Key Password")
+            .name("Key Password")
             .description("Password used for decrypting Private Keys")
             .required(true)
             .sensitive(true)
@@ -95,7 +91,7 @@ public class StandardPGPPrivateKeyService extends AbstractControllerService impl
 
     private static final Charset KEY_CHARSET = StandardCharsets.US_ASCII;
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             KEYRING_FILE,
             KEYRING,
             KEY_PASSWORD
@@ -147,6 +143,13 @@ public class StandardPGPPrivateKeyService extends AbstractControllerService impl
         return Optional.ofNullable(privateKeys.get(keyIdentifier));
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("keyring-file", KEYRING_FILE.getName());
+        config.renameProperty("keyring", KEYRING.getName());
+        config.renameProperty("key-password", KEY_PASSWORD.getName());
+    }
+
     /**
      * Get Supported Property Descriptors
      *
@@ -154,7 +157,7 @@ public class StandardPGPPrivateKeyService extends AbstractControllerService impl
      */
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     /**

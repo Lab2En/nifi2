@@ -17,10 +17,9 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.ParameterContextReferenceDTO;
 import org.apache.nifi.web.api.dto.PermissionsDTO;
-
-import jakarta.xml.bind.annotation.XmlRootElement;
 
 /**
  * A serialized representation of this class can be placed in the entity body of a request or response to or from the API. This particular entity holds a reference to a ParameterContextReferenceDTO.
@@ -52,12 +51,13 @@ public class ParameterContextReferenceEntity implements Permissible<ParameterCon
      *
      * @return The permissions
      */
-    @Schema(description = "The permissions for this component."
-    )
+    @Schema(description = "The permissions for this component.")
+    @Override
     public PermissionsDTO getPermissions() {
         return permissions;
     }
 
+    @Override
     public void setPermissions(PermissionsDTO permissions) {
         this.permissions = permissions;
     }
@@ -67,10 +67,12 @@ public class ParameterContextReferenceEntity implements Permissible<ParameterCon
      *
      * @return The ParameterContextReferenceDTO object
      */
+    @Override
     public ParameterContextReferenceDTO getComponent() {
         return component;
     }
 
+    @Override
     public void setComponent(ParameterContextReferenceDTO component) {
         this.component = component;
     }

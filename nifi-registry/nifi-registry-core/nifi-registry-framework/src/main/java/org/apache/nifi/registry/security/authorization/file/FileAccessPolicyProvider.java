@@ -16,6 +16,11 @@
  */
 package org.apache.nifi.registry.security.authorization.file;
 
+import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBElement;
+import jakarta.xml.bind.JAXBException;
+import jakarta.xml.bind.Marshaller;
+import jakarta.xml.bind.Unmarshaller;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.registry.security.authorization.AbstractConfigurableAccessPolicyProvider;
 import org.apache.nifi.registry.security.authorization.AccessPolicy;
@@ -48,18 +53,6 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
-import javax.xml.XMLConstants;
-import jakarta.xml.bind.JAXBContext;
-import jakarta.xml.bind.JAXBElement;
-import jakarta.xml.bind.JAXBException;
-import jakarta.xml.bind.Marshaller;
-import jakarta.xml.bind.Unmarshaller;
-import javax.xml.stream.XMLOutputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
-import javax.xml.transform.stream.StreamSource;
-import javax.xml.validation.Schema;
-import javax.xml.validation.SchemaFactory;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -74,6 +67,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.xml.XMLConstants;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
+import javax.xml.transform.stream.StreamSource;
+import javax.xml.validation.Schema;
+import javax.xml.validation.SchemaFactory;
 
 public class FileAccessPolicyProvider extends AbstractConfigurableAccessPolicyProvider {
 
@@ -199,7 +199,8 @@ public class FileAccessPolicyProvider extends AbstractConfigurableAccessPolicyPr
 
     @Override
     public AccessPolicy getAccessPolicy(String resourceIdentifier, RequestAction action) throws AuthorizationAccessException {
-        return authorizationsHolder.get().getAccessPolicy(resourceIdentifier, action);
+        return AccessPolicyProviderUtils.getAccessPolicy(
+                resourceIdentifier, action, authorizationsHolder.get().getPoliciesByResource());
     }
 
     @Override
@@ -321,7 +322,7 @@ public class FileAccessPolicyProvider extends AbstractConfigurableAccessPolicyPr
             if (writer != null) {
                 try {
                     writer.close();
-                } catch (XMLStreamException e) {
+                } catch (XMLStreamException ignored) {
                     // nothing to do here
                 }
             }
@@ -432,8 +433,8 @@ public class FileAccessPolicyProvider extends AbstractConfigurableAccessPolicyPr
         // if we are starting fresh then we might need to populate an initial admin
         if (emptyAuthorizations) {
             if (hasInitialAdminIdentity) {
-               logger.info("Populating authorizations for Initial Admin: '{}'", initialAdminIdentity);
-               populateInitialAdmin(authorizations);
+                logger.info("Populating authorizations for Initial Admin: '{}'", initialAdminIdentity);
+                populateInitialAdmin(authorizations);
             }
 
             if (hasNiFiIdentities) {
@@ -591,29 +592,20 @@ public class FileAccessPolicyProvider extends AbstractConfigurableAccessPolicyPr
     }
 
     private String getActionCode(final RequestAction action) {
-        switch (action) {
-            case READ:
-                return READ_CODE;
-            case WRITE:
-                return WRITE_CODE;
-            case DELETE:
-                return DELETE_CODE;
-            default:
-                throw new IllegalStateException("Unknown action: " + action);
-        }
+        return switch (action) {
+            case READ -> READ_CODE;
+            case WRITE -> WRITE_CODE;
+            case DELETE -> DELETE_CODE;
+        };
     }
 
     private RequestAction getAction(final String actionCode) {
-        switch (actionCode) {
-            case READ_CODE:
-                return RequestAction.READ;
-            case WRITE_CODE:
-                return RequestAction.WRITE;
-            case DELETE_CODE:
-                return RequestAction.DELETE;
-            default:
-                throw new IllegalStateException("Unknown action: " + actionCode);
-        }
+        return switch (actionCode) {
+            case READ_CODE -> RequestAction.READ;
+            case WRITE_CODE -> RequestAction.WRITE;
+            case DELETE_CODE -> RequestAction.DELETE;
+            default -> throw new IllegalStateException("Unknown action: " + actionCode);
+        };
     }
 
     /**

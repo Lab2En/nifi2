@@ -16,6 +16,27 @@
  */
 package org.apache.nifi.util;
 
+import org.apache.nifi.components.state.Scope;
+import org.apache.nifi.components.state.StateManager;
+import org.apache.nifi.components.state.StateMap;
+import org.apache.nifi.controller.queue.QueueSize;
+import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.processor.FlowFileFilter;
+import org.apache.nifi.processor.ProcessSession;
+import org.apache.nifi.processor.Processor;
+import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.processor.exception.FlowFileAccessException;
+import org.apache.nifi.processor.exception.FlowFileHandlingException;
+import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processor.io.InputStreamCallback;
+import org.apache.nifi.processor.io.OutputStreamCallback;
+import org.apache.nifi.processor.io.StreamCallback;
+import org.apache.nifi.processor.metrics.CommitTiming;
+import org.apache.nifi.provenance.ProvenanceReporter;
+import org.apache.nifi.state.MockStateManager;
+import org.junit.jupiter.api.Assertions;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
@@ -43,25 +64,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import org.apache.nifi.components.state.Scope;
-import org.apache.nifi.components.state.StateManager;
-import org.apache.nifi.components.state.StateMap;
-import org.apache.nifi.controller.queue.QueueSize;
-import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.flowfile.attributes.CoreAttributes;
-import org.apache.nifi.processor.FlowFileFilter;
-import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.Processor;
-import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.exception.FlowFileAccessException;
-import org.apache.nifi.processor.exception.FlowFileHandlingException;
-import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.InputStreamCallback;
-import org.apache.nifi.processor.io.OutputStreamCallback;
-import org.apache.nifi.processor.io.StreamCallback;
-import org.apache.nifi.provenance.ProvenanceReporter;
-import org.apache.nifi.state.MockStateManager;
-import org.junit.jupiter.api.Assertions;
 
 public class MockProcessSession implements ProcessSession {
 
@@ -76,6 +78,7 @@ public class MockProcessSession implements ProcessSession {
     private final Map<Long, MockFlowFile> originalVersions = new HashMap<>();
     private final SharedSessionState sharedState;
     private final Map<String, Long> counterMap = new HashMap<>();
+    private final Map<String, List<Double>> namedGaugeValues = new HashMap<>();
     private final Map<FlowFile, Integer> readRecursionSet = new HashMap<>();
     private final Set<FlowFile> writeRecursionSet = new HashSet<>();
     private final MockProvenanceReporter provenanceReporter;
@@ -87,9 +90,11 @@ public class MockProcessSession implements ProcessSession {
     private final Map<FlowFile, OutputStream> openOutputStreams = new HashMap<>();
     private final StateManager stateManager;
     private final boolean allowSynchronousCommits;
+    private final boolean allowRecursiveReads;
+    private final boolean failCommit;
 
     private boolean committed = false;
-    private boolean rolledback = false;
+    private boolean rolledBack = false;
     private final Set<Long> removedFlowFiles = new HashSet<>();
 
     private static final AtomicLong enqueuedIndex = new AtomicLong(0L);
@@ -108,6 +113,16 @@ public class MockProcessSession implements ProcessSession {
 
     public MockProcessSession(final SharedSessionState sharedState, final Processor processor, final boolean enforceStreamsClosed, final StateManager stateManager,
                               final boolean allowSynchronousCommits) {
+        this(sharedState, processor, enforceStreamsClosed, stateManager, allowSynchronousCommits, false, false);
+    }
+
+    public MockProcessSession(final SharedSessionState sharedState, final Processor processor, final boolean enforceStreamsClosed, final StateManager stateManager,
+                              final boolean allowSynchronousCommits, final boolean allowRecursiveReads) {
+        this(sharedState, processor, enforceStreamsClosed, stateManager, allowSynchronousCommits, allowRecursiveReads, false);
+    }
+
+    private MockProcessSession(final SharedSessionState sharedState, final Processor processor, final boolean enforceStreamsClosed, final StateManager stateManager,
+                              final boolean allowSynchronousCommits, final boolean allowRecursiveReads, final boolean failCommit) {
         this.processor = processor;
         this.enforceStreamsClosed = enforceStreamsClosed;
         this.sharedState = sharedState;
@@ -115,6 +130,12 @@ public class MockProcessSession implements ProcessSession {
         this.provenanceReporter = new MockProvenanceReporter(this, sharedState, processor.getIdentifier(), processor.getClass().getSimpleName());
         this.stateManager = stateManager;
         this.allowSynchronousCommits = allowSynchronousCommits;
+        this.allowRecursiveReads = allowRecursiveReads;
+        this.failCommit = failCommit;
+    }
+
+    public static Builder builder(final SharedSessionState sharedState, final Processor processor) {
+        return new Builder(sharedState, processor);
     }
 
     @Override
@@ -133,6 +154,19 @@ public class MockProcessSession implements ProcessSession {
 
         counter = counter + delta;
         counterMap.put(name, counter);
+    }
+
+    @Override
+    public void recordGauge(final String name, final double value, final CommitTiming commitTiming) {
+        if (CommitTiming.NOW == commitTiming) {
+            sharedState.recordGauge(name, value);
+        } else {
+            namedGaugeValues.compute(name, (gaugeName, values) -> {
+                final List<Double> gaugeValues = Objects.requireNonNullElseGet(values, ArrayList::new);
+                gaugeValues.add(value);
+                return gaugeValues;
+            });
+        }
     }
 
     @Override
@@ -278,12 +312,21 @@ public class MockProcessSession implements ProcessSession {
                 "enabled by calling TestRunner.");
         }
 
-        commitInternal();
+        try {
+            commitInternal();
+        } catch (final Throwable t) {
+            rollback();
+            throw t;
+        }
     }
 
     private void commitInternal() {
         if (!beingProcessed.isEmpty()) {
             throw new FlowFileHandlingException("Cannot commit session because the following FlowFiles have not been removed or transferred: " + beingProcessed);
+        }
+
+        if (failCommit) {
+            throw new FlowFileHandlingException("Cannot commit session because the session was requested to fail by a test");
         }
 
         closeStreams(openInputStreams, enforceStreamsClosed);
@@ -299,6 +342,14 @@ public class MockProcessSession implements ProcessSession {
             sharedState.adjustCounter(entry.getKey(), entry.getValue());
         }
 
+        for (final Map.Entry<String, List<Double>> namedGaugeEntry : namedGaugeValues.entrySet()) {
+            final String name = namedGaugeEntry.getKey();
+            final List<Double> gaugeValues = namedGaugeEntry.getValue();
+            for (final Double gaugeValue : gaugeValues) {
+                sharedState.recordGauge(name, gaugeValue);
+            }
+        }
+
         sharedState.addProvenanceEvents(provenanceReporter.getEvents());
         provenanceReporter.clear();
         counterMap.clear();
@@ -306,7 +357,12 @@ public class MockProcessSession implements ProcessSession {
 
     @Override
     public void commitAsync() {
-        commitInternal();
+        try {
+            commitInternal();
+        } catch (final Throwable t) {
+            rollback();
+            throw t;
+        }
     }
 
     @Override
@@ -337,7 +393,7 @@ public class MockProcessSession implements ProcessSession {
      * session
      */
     public void clearRollback() {
-        rolledback = false;
+        rolledBack = false;
     }
 
     @Override
@@ -822,7 +878,7 @@ public class MockProcessSession implements ProcessSession {
             }
         }
 
-        rolledback = true;
+        rolledBack = true;
         beingProcessed.clear();
         currentVersions.clear();
         originalVersions.clear();
@@ -1092,7 +1148,7 @@ public class MockProcessSession implements ProcessSession {
 
     private List<FlowFile> validateState(final Collection<FlowFile> flowFiles) {
         return flowFiles.stream()
-            .map(ff -> validateState(ff))
+            .map(this::validateState)
             .collect(Collectors.toList());
     }
 
@@ -1104,7 +1160,7 @@ public class MockProcessSession implements ProcessSession {
             throw new FlowFileHandlingException(flowFile + " is not known in this session");
         }
 
-        if (readRecursionSet.containsKey(flowFile)) {
+        if (readRecursionSet.containsKey(flowFile) && !allowRecursiveReads) {
             throw new IllegalStateException(flowFile + " already in use for an active callback or InputStream created by ProcessSession.read(FlowFile) has not been closed");
         }
 
@@ -1159,7 +1215,7 @@ public class MockProcessSession implements ProcessSession {
                 continue; // don't want to capture parent uuid of this. Something can't be a child of itself
             }
             final String sourceUuid = source.getAttribute(CoreAttributes.UUID.key());
-            if (sourceUuid != null && !sourceUuid.trim().isEmpty()) {
+            if (sourceUuid != null && !sourceUuid.isBlank()) {
                 uuidsCaptured++;
                 if (parentUuidBuilder.length() > 0) {
                     parentUuidBuilder.append(",");
@@ -1234,14 +1290,14 @@ public class MockProcessSession implements ProcessSession {
      * Assert that {@link #rollback()} has been called
      */
     public void assertRolledBack() {
-        Assertions.assertTrue(rolledback, "Session was not rolled back");
+        Assertions.assertTrue(rolledBack, "Session was not rolled back");
     }
 
     /**
      * Assert that {@link #rollback()} has not been called
      */
     public void assertNotRolledBack() {
-        Assertions.assertFalse(rolledback, "Session was rolled back");
+        Assertions.assertFalse(rolledBack, "Session was rolled back");
     }
 
     /**
@@ -1448,5 +1504,68 @@ public class MockProcessSession implements ProcessSession {
         final String curUuid = curFlowFile.getAttribute(CoreAttributes.UUID.key());
         final String providedUuid = curFlowFile.getAttribute(CoreAttributes.UUID.key());
         return curUuid.equals(providedUuid);
+    }
+
+    public static final class Builder {
+
+        private final SharedSessionState sharedState;
+        private final Processor processor;
+        private StateManager stateManager;
+
+        private boolean enforceStreamsClosed = true;
+        private boolean allowRecursiveReads;
+        private boolean allowSynchronousCommits;
+        private boolean failCommit;
+
+        private Builder(final SharedSessionState sharedState, final Processor processor) {
+            this.sharedState = sharedState;
+            this.processor = processor;
+            this.stateManager = new MockStateManager(processor);
+        }
+
+        public Builder stateManager(final StateManager stateManager) {
+            this.stateManager = stateManager;
+            return this;
+        }
+
+        public Builder enforceStreamsClosed(final boolean enforceStreamsClosed) {
+            this.enforceStreamsClosed = enforceStreamsClosed;
+            return this;
+        }
+
+        public Builder allowSynchronousCommits() {
+            return allowSynchronousCommits(true);
+        }
+
+        public Builder allowSynchronousCommits(final boolean allowSynchronousCommits) {
+            this.allowSynchronousCommits = allowSynchronousCommits;
+            return this;
+        }
+
+        public Builder allowRecursiveReads(final boolean allowRecursiveReads) {
+            this.allowRecursiveReads = allowRecursiveReads;
+            return this;
+        }
+
+        public Builder failCommit() {
+            return failCommit(true);
+        }
+
+        public Builder failCommit(final boolean failCommit) {
+            this.failCommit = failCommit;
+            return this;
+        }
+
+        public MockProcessSession build() {
+            return new MockProcessSession(
+                    sharedState,
+                    processor,
+                    enforceStreamsClosed,
+                    stateManager,
+                    allowSynchronousCommits,
+                    allowRecursiveReads,
+                    failCommit
+            );
+        }
     }
 }

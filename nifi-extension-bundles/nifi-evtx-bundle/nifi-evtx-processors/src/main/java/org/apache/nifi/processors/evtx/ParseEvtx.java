@@ -32,6 +32,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -46,9 +47,6 @@ import org.apache.nifi.processors.evtx.parser.Record;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -97,20 +95,26 @@ public class ParseEvtx extends AbstractProcessor {
             .build();
 
     @VisibleForTesting
-    static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(REL_SUCCESS, REL_FAILURE, REL_ORIGINAL, REL_BAD_CHUNK)));
+    static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE,
+            REL_ORIGINAL,
+            REL_BAD_CHUNK
+    );
 
     @VisibleForTesting
     static final PropertyDescriptor GRANULARITY = new PropertyDescriptor.Builder()
             .required(true)
-            .name("granularity")
-            .displayName("Granularity")
+            .name("Granularity")
             .description("Output flow file for each Record, Chunk, or File encountered in the event log")
             .defaultValue(CHUNK)
             .allowableValues(RECORD, CHUNK, FILE)
             .build();
 
     @VisibleForTesting
-    static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Collections.unmodifiableList(Arrays.asList(GRANULARITY));
+    static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            GRANULARITY
+    );
 
     private final FileHeaderFactory fileHeaderFactory;
     private final MalformedChunkHandler malformedChunkHandler;
@@ -165,9 +169,7 @@ public class ParseEvtx extends AbstractProcessor {
             // File granularity will emit a FlowFile for each input
             FlowFile original = session.clone(flowFile);
             AtomicReference<Exception> exceptionReference = new AtomicReference<>(null);
-            FlowFile updated = session.write(flowFile, (in, out) -> {
-                processFileGranularity(session, logger, original, basename, exceptionReference, in, out);
-            });
+            FlowFile updated = session.write(flowFile, (in, out) -> processFileGranularity(session, logger, original, basename, exceptionReference, in, out));
             session.transfer(original, REL_ORIGINAL);
             resultProcessor.process(session, logger, updated, exceptionReference.get(), getName(basename, null, null, XML_EXTENSION));
         } else {
@@ -182,6 +184,11 @@ public class ParseEvtx extends AbstractProcessor {
             });
             session.transfer(flowFile, REL_ORIGINAL);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("granularity", GRANULARITY.getName());
     }
 
     protected void processFileGranularity(ProcessSession session, ComponentLog componentLog, FlowFile original, String basename,

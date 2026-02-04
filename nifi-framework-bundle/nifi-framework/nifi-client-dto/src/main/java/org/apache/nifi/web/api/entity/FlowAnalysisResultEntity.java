@@ -16,10 +16,10 @@
  */
 package org.apache.nifi.web.api.entity;
 
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.FlowAnalysisRuleDTO;
 import org.apache.nifi.web.api.dto.FlowAnalysisRuleViolationDTO;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,9 +29,6 @@ import java.util.List;
  */
 @XmlRootElement(name = "flowAnalysisResultEntity")
 public class FlowAnalysisResultEntity extends Entity {
-    public FlowAnalysisResultEntity() {
-    }
-
     private boolean flowAnalysisPending;
 
     private List<FlowAnalysisRuleDTO> rules = new ArrayList<>();

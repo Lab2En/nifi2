@@ -17,15 +17,16 @@
 
 package org.apache.nifi.c2.client.http.url;
 
-import static org.apache.commons.lang3.StringUtils.appendIfMissing;
-import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.commons.lang3.StringUtils.stripStart;
-
-import java.util.Optional;
 import okhttp3.HttpUrl;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Optional;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.stripStart;
 
 public class ProxyAwareC2UrlProvider implements C2UrlProvider {
 
@@ -39,7 +40,7 @@ public class ProxyAwareC2UrlProvider implements C2UrlProvider {
     ProxyAwareC2UrlProvider(String c2RestPathBase, String c2RestPathHeartbeat, String c2RestPathAcknowledge) {
         this.c2RestPathBase = Optional.ofNullable(c2RestPathBase)
             .filter(StringUtils::isNotBlank)
-            .map(apiBase -> appendIfMissing(apiBase, SLASH)) // trailing slash needs to be added for proper URL creation
+            .map(apiBase -> Strings.CS.appendIfMissing(apiBase, SLASH)) // trailing slash needs to be added for proper URL creation
             .map(HttpUrl::parse)
             .orElseThrow(() -> new IllegalArgumentException("Parameter c2RestPathBase should not be null or empty and should be a valid URL"));
         this.c2RestPathHeartbeat = toAbsoluteUrl(c2RestPathHeartbeat)

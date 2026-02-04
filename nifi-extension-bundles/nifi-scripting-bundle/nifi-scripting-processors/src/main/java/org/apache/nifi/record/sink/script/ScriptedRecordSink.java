@@ -37,10 +37,6 @@ import org.apache.nifi.script.ScriptingComponentHelper;
 import org.apache.nifi.serialization.WriteResult;
 import org.apache.nifi.serialization.record.RecordSet;
 
-import javax.script.Invocable;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptException;
 import java.io.IOException;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Collection;
@@ -49,6 +45,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.script.Invocable;
+import javax.script.ScriptContext;
+import javax.script.ScriptEngine;
+import javax.script.ScriptException;
 
 @Tags({"record", "record sink", "script", "invoke", "groovy"})
 @CapabilityDescription("Allows the user to provide a scripted RecordSinkService instance in order to transmit records to the desired target. The script must set a variable 'recordSink' to an "
@@ -108,6 +108,7 @@ public class ScriptedRecordSink extends AbstractScriptedControllerService implem
         return scriptingComponentHelper.customValidate(validationContext);
     }
 
+    @Override
     public void setup() {
         if (scriptNeedsReload.get() || recordSink.get() == null) {
             if (ScriptingComponentHelper.isFile(scriptingComponentHelper.getScriptPath())) {
@@ -124,6 +125,7 @@ public class ScriptedRecordSink extends AbstractScriptedControllerService implem
      * @param scriptBody An input stream associated with the script content
      * @return Whether the script was successfully reloaded
      */
+    @Override
     protected boolean reloadScript(final String scriptBody) {
         // note we are starting here with a fresh listing of validation
         // results since we are (re)loading a new/updated script. any

@@ -16,11 +16,6 @@
  */
 package org.apache.nifi.processors.standard.servlets;
 
-import java.io.IOException;
-import java.security.cert.X509Certificate;
-import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
-import java.util.regex.Pattern;
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
@@ -35,6 +30,12 @@ import org.apache.nifi.processors.standard.ListenHTTP;
 import org.apache.nifi.processors.standard.ListenHTTP.FlowFileEntryTimeWrapper;
 import org.apache.nifi.security.cert.StandardPrincipalFormatter;
 import org.apache.nifi.util.FormatUtils;
+
+import java.io.IOException;
+import java.security.cert.X509Certificate;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
 
 @Path("/holds/*")
 public class ContentAcknowledgmentServlet extends HttpServlet {
@@ -115,7 +116,7 @@ public class ContentAcknowledgmentServlet extends HttpServlet {
 
             logger.info("received {} files/{} bytes from Remote Host: [{}] Port [{}] SubjectDN [{}] in {} milliseconds at a rate of {}; "
                     + "transferring to 'success': {}",
-                    new Object[]{flowFiles.size(), totalFlowFileSize, request.getRemoteHost(), request.getRemotePort(), foundSubject, transferTime, transferRate, flowFiles});
+                    flowFiles.size(), totalFlowFileSize, request.getRemoteHost(), request.getRemotePort(), foundSubject, transferTime, transferRate, flowFiles);
 
             final String sendingSubject = foundSubject;
             final ProcessSession session = timeWrapper.getSession();
@@ -126,13 +127,13 @@ public class ContentAcknowledgmentServlet extends HttpServlet {
                     response.flushBuffer();
                 } catch (final Exception e) {
                     logger.error("Received DELETE for HOLD with ID {} from Remote Host: [{}] Port [{}] SubjectDN [{}]. FlowFiles were released but failed to acknowledge them.",
-                        new Object[]{uuid, request.getRemoteHost(), request.getRemotePort(), sendingSubject, e.toString()});
+                            uuid, request.getRemoteHost(), request.getRemotePort(), sendingSubject, e.toString());
                 }
             });
         } catch (final Throwable t) {
             timeWrapper.getSession().rollback();
             logger.error("Received DELETE for HOLD with ID {} from Remote Host: [{}] Port [{}] SubjectDN [{}], but failed to process the request due to {}",
-                    new Object[]{uuid, request.getRemoteHost(), request.getRemotePort(), foundSubject, t.toString()});
+                    uuid, request.getRemoteHost(), request.getRemotePort(), foundSubject, t.toString());
             if (logger.isDebugEnabled()) {
                 logger.error("", t);
             }

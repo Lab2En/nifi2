@@ -19,6 +19,8 @@ package org.apache.nifi.processors.gcp.credentials.factory.strategies;
 import com.google.auth.http.HttpTransportFactory;
 import com.google.auth.oauth2.GoogleCredentials;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.processors.gcp.credentials.factory.CredentialPropertyDescriptors;
+import org.apache.nifi.processors.gcp.credentials.factory.DelegationStrategy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,15 +31,21 @@ import java.util.Map;
  * or through a flat JSON file.
  */
 public abstract class AbstractServiceAccountCredentialsStrategy extends AbstractCredentialsStrategy {
-    public AbstractServiceAccountCredentialsStrategy(String name, PropertyDescriptor[] requiredProperties) {
-        super(name, requiredProperties);
+    public AbstractServiceAccountCredentialsStrategy(String name) {
+        super(name);
     }
 
     protected abstract InputStream getServiceAccountJson(Map<PropertyDescriptor, String> properties) throws IOException;
 
     @Override
     public GoogleCredentials getGoogleCredentials(Map<PropertyDescriptor, String> properties, HttpTransportFactory transportFactory) throws IOException {
+        final String delegationStrategy = properties.get(CredentialPropertyDescriptors.DELEGATION_STRATEGY);
+        if (delegationStrategy != null && delegationStrategy.equals(DelegationStrategy.DELEGATED_ACCOUNT.getValue())) {
+            final String delegationUser = properties.get(CredentialPropertyDescriptors.DELEGATION_USER);
+            return GoogleCredentials.fromStream(getServiceAccountJson(properties), transportFactory).createDelegated(delegationUser);
+        } else {
             return GoogleCredentials.fromStream(getServiceAccountJson(properties), transportFactory);
+        }
     }
 
 }

@@ -32,12 +32,16 @@ import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.azure.AzureServiceEndpoints;
 import org.apache.nifi.processors.azure.storage.utils.AzureStorageUtils;
+import org.apache.nifi.proxy.ProxyConfiguration;
+import org.apache.nifi.proxy.ProxySpec;
 import org.apache.nifi.services.azure.storage.AzureStorageCredentialsDetails_v12;
 import org.apache.nifi.services.azure.storage.AzureStorageCredentialsService_v12;
 import reactor.core.publisher.Mono;
@@ -53,7 +57,6 @@ import java.util.concurrent.TimeUnit;
 public abstract class AbstractAzureQueueStorage_v12 extends AbstractProcessor {
     public static final PropertyDescriptor QUEUE_NAME = new PropertyDescriptor.Builder()
             .name("Queue Name")
-            .displayName("Queue Name")
             .description("Name of the Azure Storage Queue")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_EL_VALIDATOR)
@@ -67,7 +70,6 @@ public abstract class AbstractAzureQueueStorage_v12 extends AbstractProcessor {
 
     public static final PropertyDescriptor STORAGE_CREDENTIALS_SERVICE = new PropertyDescriptor.Builder()
             .name("Credentials Service")
-            .displayName("Credentials Service")
             .description("Controller Service used to obtain Azure Storage Credentials.")
             .identifiesControllerService(AzureStorageCredentialsService_v12.class)
             .required(true)
@@ -75,13 +77,16 @@ public abstract class AbstractAzureQueueStorage_v12 extends AbstractProcessor {
 
     public static final PropertyDescriptor REQUEST_TIMEOUT = new PropertyDescriptor.Builder()
             .name("Request Timeout")
-            .displayName("Request Timeout")
             .description("The timeout for read or write requests to Azure Queue Storage. " +
                     "Defaults to 1 second.")
             .required(true)
             .defaultValue("10 secs")
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
             .build();
+
+    protected static final ProxySpec[] PROXY_SPECS = {ProxySpec.HTTP, ProxySpec.SOCKS};
+
+    public static final PropertyDescriptor PROXY_CONFIGURATION_SERVICE = ProxyConfiguration.createProxyConfigPropertyDescriptor(PROXY_SPECS);
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
@@ -93,7 +98,10 @@ public abstract class AbstractAzureQueueStorage_v12 extends AbstractProcessor {
             .description("Unsuccessful operations will be transferred to the failure relationship.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
     static final String URI_ATTRIBUTE = "azure.queue.uri";
     static final String INSERTION_TIME_ATTRIBUTE = "azure.queue.insertionTime";
@@ -104,6 +112,12 @@ public abstract class AbstractAzureQueueStorage_v12 extends AbstractProcessor {
     @Override
     public Set<Relationship> getRelationships() {
         return RELATIONSHIPS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(AzureStorageUtils.STORAGE_ENDPOINT_SUFFIX_PROPERTY_DESCRIPTOR_NAME, ENDPOINT_SUFFIX.getName());
+        ProxyServiceMigration.renameProxyConfigurationServiceProperty(config);
     }
 
     @Override
@@ -166,8 +180,6 @@ public abstract class AbstractAzureQueueStorage_v12 extends AbstractProcessor {
                 TokenCredential credential = tokenRequestContext -> Mono.just(storageCredentialsDetails.getAccessToken());
                 clientBuilder.credential(credential);
                 break;
-            default:
-                throw new IllegalArgumentException("Unhandled credentials type: " + storageCredentialsDetails.getCredentialsType());
         }
     }
 

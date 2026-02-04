@@ -17,6 +17,7 @@
 
 package org.apache.nifi.py4j;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.nifi.components.AsyncLoadedProcessor;
 import org.apache.nifi.components.AsyncLoadedProcessor.LoadState;
 import org.apache.nifi.components.state.Scope;
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -160,6 +162,7 @@ public class PythonControllerInteractionIT {
             .orElseThrow(() -> new RuntimeException("Could not find ConvertCsvToExcel"));
 
         assertEquals("0.0.1-SNAPSHOT", convertCsvToExcel.getProcessorVersion());
+        assertEquals(List.of("csv", "excel"), convertCsvToExcel.getTags());
         assertEquals(new File("target/python/extensions/ConvertCsvToExcel.py").getAbsolutePath(),
             new File(convertCsvToExcel.getSourceLocation()).getAbsolutePath());
     }
@@ -179,7 +182,7 @@ public class PythonControllerInteractionIT {
     }
 
     @Test
-    @Disabled("Just for manual testing...")
+    @EnabledIfSystemProperty(named = "nifi.test.performance", matches = "true", disabledReason = "Just for manual testing...")
     public void runPrettyPrintJsonManyThreads() throws IOException {
         // Create a PrettyPrintJson Processor
         final TestRunner runner = createFlowFileTransform(PRETTY_PRINT_JSON);
@@ -230,7 +233,7 @@ public class PythonControllerInteractionIT {
         runner.setProperty("Indentation", "");
         runner.assertNotValid();
 
-        runner.setProperty("Indentation", String.valueOf( ((long) Integer.MAX_VALUE) + 1 ));
+        runner.setProperty("Indentation", String.valueOf(((long) Integer.MAX_VALUE) + 1));
         runner.assertNotValid();
 
         runner.setProperty("Indentation", "4");
@@ -469,8 +472,76 @@ public class PythonControllerInteractionIT {
     }
 
 
+    @Test
+    public void testHashRecordFieldHappyPath() throws InitializationException {
+        final TestRunner runner = createRecordTransformRunner("HashRecordField");
+        runner.setProperty("Record Path", "my.example");
+
+        final String json = "[{\"foo\":\"foo\",\"my\":{\"example\":\"value\"}}]";
+        runner.enqueue(json);
+        waitForValid(runner);
+        runner.run();
+
+        runner.assertTransferCount("success", 1);
+        runner.assertTransferCount("original", 1);
+        final MockFlowFile out = runner.getFlowFilesForRelationship("success").get(0);
+        final String expectedHash = DigestUtils.sha256Hex("value");
+        out.assertContentEquals("[{\"foo\":\"foo\",\"my\":{\"example\":\"" + expectedHash + "\"}}]");
+    }
+
+    @Test
+    public void testHashRecordFieldMissingField() throws InitializationException {
+        final TestRunner runner = createRecordTransformRunner("HashRecordField");
+        runner.setProperty("Record Path", "does.not.exist");
+
+        final String json = "[{\"foo\":\"foo\",\"my\":{\"example\":\"value\"}}]";
+        runner.enqueue(json);
+        waitForValid(runner);
+        runner.run();
+
+        runner.assertTransferCount("success", 1);
+        runner.assertTransferCount("original", 1);
+        final MockFlowFile out = runner.getFlowFilesForRelationship("success").get(0);
+        out.assertContentEquals("[{\"foo\":\"foo\",\"my\":{\"example\":\"value\"}}]");
+    }
+
+    @Test
+    public void testHashRecordFieldNonScalar() throws InitializationException {
+        final TestRunner runner = createRecordTransformRunner("HashRecordField");
+        runner.setProperty("Record Path", "my");
+
+        final String json = "[{\"foo\":\"foo\",\"my\":{\"example\":\"value\"}}]";
+        runner.enqueue(json);
+        waitForValid(runner);
+        runner.run();
+
+        runner.assertTransferCount("success", 1);
+        runner.assertTransferCount("original", 1);
+        final MockFlowFile out = runner.getFlowFilesForRelationship("success").get(0);
+        out.assertContentEquals("[{\"foo\":\"foo\",\"my\":{\"example\":\"value\"}}]");
+    }
+
+    @Test
+    public void testHashRecordFieldLongValue() throws InitializationException {
+        final TestRunner runner = createRecordTransformRunner("HashRecordField");
+        runner.setProperty("Record Path", "count");
+
+        final String json = "[{\"count\":7}]";
+        runner.enqueue(json);
+        waitForValid(runner);
+        runner.run();
+
+        runner.assertTransferCount("success", 1);
+        runner.assertTransferCount("original", 1);
+        final MockFlowFile out = runner.getFlowFilesForRelationship("success").get(0);
+        final String expectedHash = DigestUtils.sha256Hex("7");
+        out.assertContentEquals("[{\"count\":\"" + expectedHash + "\"}]");
+    }
+
+
     private TestRunner createRecordTransformRunner(final String type) throws InitializationException {
-        final TestRunner runner = createProcessor("SetRecordField");
+        final TestRunner runner = createProcessor(type);
+        runner.setValidateExpressionUsage(false);
 
         final JsonTreeReader reader = new JsonTreeReader();
         final JsonRecordSetWriter writer = new JsonRecordSetWriter();
@@ -484,6 +555,7 @@ public class PythonControllerInteractionIT {
 
         return runner;
     }
+
 
     @Test
     public void testRecordTransformWithInnerRecord() throws InitializationException {
@@ -525,9 +597,9 @@ public class PythonControllerInteractionIT {
         runner.assertTransferCount("large", 1);
         runner.assertTransferCount("failure", 0);
         final FlowFile largeOutputFlowFile = runner.getFlowFilesForRelationship("large").getFirst();
-        assertEquals(largeInputFlowFile.getId(), largeOutputFlowFile.getId(), "Large Transformed Flow File should be the same as inbound");
+        assertEquals(largeInputFlowFile.getId(), largeOutputFlowFile.getId(), "Large Transformed FlowFile should be the same as inbound");
         final FlowFile smallOutputFlowFile = runner.getFlowFilesForRelationship("small").getFirst();
-        assertEquals(smallInputFlowFile.getId(), smallOutputFlowFile.getId(), "Small Transformed Flow File should be the same as inbound");
+        assertEquals(smallInputFlowFile.getId(), smallOutputFlowFile.getId(), "Small Transformed FlowFile should be the same as inbound");
     }
 
     @Test
@@ -610,6 +682,16 @@ public class PythonControllerInteractionIT {
         runner.run();
 
         runner.assertTransferCount("success", 0);
+    }
+
+    @Test
+    public void testMultipleProcessorsInAPackage() {
+        // This processor is in a package with another processor, which has additional dependency requirements
+        final TestRunner runner = createProcessor("CreateHttpRequest");
+        waitForValid(runner);
+        runner.run();
+
+        runner.assertTransferCount("success", 1);
     }
 
     @Test
@@ -713,6 +795,7 @@ public class PythonControllerInteractionIT {
         final AsyncLoadedProcessor processor = bridge.createProcessor(createId(), type, version, true, true);
 
         final TestRunner runner = TestRunners.newTestRunner(processor);
+        runner.setValidateExpressionUsage(false);
 
         final long maxInitTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(30L);
         while (true) {
@@ -760,6 +843,35 @@ public class PythonControllerInteractionIT {
 
         final MockFlowFile output = runner.getFlowFilesForRelationship(expectedOuputRelationship).get(0);
         output.assertContentEquals(expectedContent);
+    }
+
+    @Test
+    public void testConditionalProcessorWithDependencies() {
+        final TestRunner runner = createFlowFileTransform("ConditionalProcessor");
+
+        // Text mode with uppercase dependency
+        runner.setProperty("Output Mode", "text");
+        runner.setProperty("Uppercase", "true");
+        runner.setProperty("Payload Text", "${filename}");
+        runner.enqueue("body", Map.of("filename", "nifi"));
+        runner.run();
+
+        runner.assertTransferCount("success", 1);
+        MockFlowFile textOutput = runner.getFlowFilesForRelationship("success").getFirst();
+        textOutput.assertContentEquals("NIFI");
+        textOutput.assertAttributeEquals("output.mode", "text");
+
+        // Reset and exercise JSON branch (requires JSON Field Name dependency)
+        runner.clearTransferState();
+        runner.setProperty("Output Mode", "json");
+        runner.setProperty("JSON Field Name", "msg");
+        runner.enqueue("body", Map.of("filename", "payload"));
+        runner.run();
+
+        runner.assertTransferCount("success", 1);
+        MockFlowFile jsonOutput = runner.getFlowFilesForRelationship("success").getFirst();
+        jsonOutput.assertContentEquals("{\"msg\": \"payload\"}");
+        jsonOutput.assertAttributeEquals("output.mode", "json");
     }
 
     private TestRunner createStateManagerTesterProcessor(String methodToTest) {

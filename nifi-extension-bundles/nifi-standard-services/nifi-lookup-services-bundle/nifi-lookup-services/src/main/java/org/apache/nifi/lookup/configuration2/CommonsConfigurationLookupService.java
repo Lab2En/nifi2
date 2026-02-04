@@ -22,7 +22,6 @@ import org.apache.commons.configuration2.builder.ConfigurationBuilderEvent;
 import org.apache.commons.configuration2.builder.ReloadingFileBasedConfigurationBuilder;
 import org.apache.commons.configuration2.builder.fluent.FileBasedBuilderParameters;
 import org.apache.commons.configuration2.builder.fluent.Parameters;
-import org.apache.commons.configuration2.event.EventListener;
 import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.annotation.lifecycle.OnEnabled;
@@ -31,15 +30,14 @@ import org.apache.nifi.components.resource.ResourceCardinality;
 import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
-import org.apache.nifi.controller.ControllerServiceInitializationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.lookup.LookupFailureException;
 import org.apache.nifi.lookup.StringLookupService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.reporting.InitializationException;
 
 import java.io.File;
 import java.lang.reflect.ParameterizedType;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +47,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * This abstract class defines a generic {@link LookupService} backed by an
+ * This abstract class defines a generic {@link org.apache.nifi.lookup.LookupService} backed by an
  * Apache Commons Configuration {@link FileBasedConfiguration}.
  *
  */
@@ -61,8 +59,7 @@ public abstract class CommonsConfigurationLookupService<T extends FileBasedConfi
 
     public static final PropertyDescriptor CONFIGURATION_FILE =
         new PropertyDescriptor.Builder()
-            .name("configuration-file")
-            .displayName("Configuration File")
+            .name("Configuration File")
             .description("A configuration file")
             .required(true)
             .identifiesExternalResource(ResourceCardinality.SINGLE, ResourceType.FILE)
@@ -70,9 +67,12 @@ public abstract class CommonsConfigurationLookupService<T extends FileBasedConfi
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CONFIGURATION_FILE
+    );
+
     private final Class<T> resultClass = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
 
-    private List<PropertyDescriptor> properties;
 
     private volatile ReloadingFileBasedConfigurationBuilder<T> builder;
 
@@ -89,14 +89,7 @@ public abstract class CommonsConfigurationLookupService<T extends FileBasedConfi
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
-    }
-
-    @Override
-    protected void init(final ControllerServiceInitializationContext context) throws InitializationException {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(CONFIGURATION_FILE);
-        this.properties = Collections.unmodifiableList(properties);
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -105,14 +98,11 @@ public abstract class CommonsConfigurationLookupService<T extends FileBasedConfi
         final FileBasedBuilderParameters params = new Parameters().fileBased().setFile(new File(config));
         this.builder = new ReloadingFileBasedConfigurationBuilder<>(resultClass).configure(params);
         builder.addEventListener(ConfigurationBuilderEvent.CONFIGURATION_REQUEST,
-            new EventListener<ConfigurationBuilderEvent>() {
-                @Override
-                public void onEvent(ConfigurationBuilderEvent event) {
+                event -> {
                     if (builder.getReloadingController().checkForReloading(null)) {
                         getLogger().debug("Reloading {}", config);
                     }
-                }
-            });
+                });
 
         try {
             // Try getting configuration to see if there is any issue, for example wrong file format.
@@ -150,4 +140,8 @@ public abstract class CommonsConfigurationLookupService<T extends FileBasedConfi
         return REQUIRED_KEYS;
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("configuration-file", CONFIGURATION_FILE.getName());
+    }
 }

@@ -16,8 +16,13 @@
  */
 package org.apache.nifi.web.standard.api.processor;
 
-import com.bazaarvoice.jolt.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.joltcommunity.jolt.JsonUtils;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.client.Entity;
+import jakarta.ws.rs.core.Application;
+import jakarta.ws.rs.core.Response;
 import org.apache.nifi.web.ComponentDescriptor;
 import org.apache.nifi.web.ComponentDetails;
 import org.apache.nifi.web.NiFiWebConfigurationContext;
@@ -34,19 +39,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.AdditionalMatchers;
 import org.mockito.Mockito;
 
-import jakarta.servlet.ServletContext;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.ws.rs.client.Entity;
-import jakarta.ws.rs.core.Application;
-import jakarta.ws.rs.core.Response;
 import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 
 public class TestProcessorResource extends JerseyTest {
@@ -103,7 +102,7 @@ public class TestProcessorResource extends JerseyTest {
         assertNotNull(response);
         JsonNode jsonNode = response.readEntity(JsonNode.class);
         assertNotNull(jsonNode);
-        assertTrue(jsonNode.get("properties").get("Jolt Transform").asText().equals("jolt-transform-chain"));
+        assertEquals("jolt-transform-chain", jsonNode.get("properties").get("Jolt Transform").asText());
     }
 
 

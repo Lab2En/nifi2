@@ -151,8 +151,8 @@ public class StandardProvenanceReporter implements InternalProvenanceReporter {
     }
 
     @Override
-    public void receive(FlowFile flowFile, String transitUri, String details) {
-        receive(flowFile, transitUri, details, -1L);
+    public void receive(FlowFile flowFile, String transitUri, String sourceSystemFlowFileIdentifier) {
+        receive(flowFile, transitUri, sourceSystemFlowFileIdentifier, null, -1L);
     }
 
     @Override
@@ -457,7 +457,10 @@ public class StandardProvenanceReporter implements InternalProvenanceReporter {
             final ProvenanceEventBuilder eventBuilder = build(parent, ProvenanceEventType.CLONE);
             eventBuilder.addChildFlowFile(child);
             eventBuilder.addParentFlowFile(parent);
-            events.add(eventBuilder.build());
+            final ProvenanceEventRecord eventRecord = eventBuilder.build();
+            final ProvenanceEventRecord enriched = eventEnricher == null ? eventRecord : eventEnricher.enrich(eventRecord, parent, System.nanoTime());
+
+            events.add(enriched);
         } catch (final Exception e) {
             logger.error("Failed to generate Provenance Event", e);
         }

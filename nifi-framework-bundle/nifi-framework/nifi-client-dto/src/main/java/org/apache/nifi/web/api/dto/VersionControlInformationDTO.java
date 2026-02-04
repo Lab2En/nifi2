@@ -18,7 +18,6 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 @XmlType(name = "versionControlInformation")
@@ -145,7 +144,7 @@ public class VersionControlInformationDTO {
 
     @Schema(accessMode = Schema.AccessMode.READ_ONLY,
         description = "The current state of the Process Group, as it relates to the Versioned Flow",
-        allowableValues = LOCALLY_MODIFIED + ", " + STALE + ", " + LOCALLY_MODIFIED_AND_STALE + ", " + UP_TO_DATE + ", " + SYNC_FAILURE)
+        allowableValues = {LOCALLY_MODIFIED, STALE, LOCALLY_MODIFIED_AND_STALE, UP_TO_DATE, SYNC_FAILURE})
     public String getState() {
         return state;
     }

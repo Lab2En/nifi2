@@ -17,7 +17,6 @@
 package org.apache.nifi.cluster.protocol.jaxb.message;
 
 import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
-
 import org.apache.nifi.cluster.protocol.DataFlow;
 import org.apache.nifi.cluster.protocol.NodeIdentifier;
 
@@ -27,9 +26,6 @@ public class AdaptedConnectionRequest {
 
     private NodeIdentifier nodeIdentifier;
     private DataFlow dataFlow;
-
-    public AdaptedConnectionRequest() {
-    }
 
     @XmlJavaTypeAdapter(NodeIdentifierAdapter.class)
     public NodeIdentifier getNodeIdentifier() {

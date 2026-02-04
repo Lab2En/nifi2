@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import {
     ClusterTableFilter,
     ClusterTableFilterColumn
@@ -28,12 +28,13 @@ import { MatTableModule } from '@angular/material/table';
 
 @Component({
     selector: 'cluster-system-table',
-    standalone: true,
     imports: [ClusterTableFilter, MatTableModule, MatSortModule],
     templateUrl: './cluster-system-table.component.html',
     styleUrl: './cluster-system-table.component.scss'
 })
 export class ClusterSystemTable extends ClusterTable<NodeSnapshot> {
+    private nifiCommon = inject(NiFiCommon);
+
     filterableColumns: ClusterTableFilterColumn[] = [{ key: 'address', label: 'Address' }];
 
     displayedColumns: string[] = [
@@ -43,10 +44,6 @@ export class ClusterSystemTable extends ClusterTable<NodeSnapshot> {
         'totalThreads',
         'daemonThreads'
     ];
-
-    constructor(private nifiCommon: NiFiCommon) {
-        super();
-    }
 
     formatNodeAddress(item: NodeSnapshot): string {
         return `${item.address}:${item.apiPort}`;

@@ -17,9 +17,15 @@
 
 export * from './close-on-escape-dialog/close-on-escape-dialog.component';
 export * from './component-context/component-context.component';
-export * from './map-table/editors/text-editor/text-editor.component';
 export * from './map-table/map-table.component';
 export * from './copy-button/copy-button.component';
 export * from './new-map-table-entry-dialog/new-map-table-entry-dialog.component';
+export * from './property-hint/property-hint.component';
 export * from './resizable/resizable.component';
+export * from './codemirror/codemirror.component';
+export * from './codemirror/themes/defaultTheme';
+export * from './codemirror/themes/baseTheme';
+export * from './yes-no-dialog/yes-no-dialog.component';
+export * from './tooltips/property-hint-tip/property-hint-tip.component';
 export * from './tooltips/text-tip/text-tip.component';
+export * from './error-banner/error-banner.component';

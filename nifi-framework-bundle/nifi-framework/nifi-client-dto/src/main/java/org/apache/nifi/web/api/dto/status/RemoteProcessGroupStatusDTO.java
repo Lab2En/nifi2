@@ -18,10 +18,10 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.apache.nifi.web.api.dto.util.TimeAdapter;
-
 import jakarta.xml.bind.annotation.XmlType;
 import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
+import org.apache.nifi.web.api.dto.util.TimeAdapter;
+
 import java.util.Date;
 import java.util.List;
 
@@ -123,7 +123,7 @@ public class RemoteProcessGroupStatusDTO {
     @Schema(description = "Indicates whether the component is valid, invalid, or still in the process of validating" +
             " (i.e., it is unknown whether or not the component is valid)",
             accessMode = Schema.AccessMode.READ_ONLY,
-            allowableValues = "VALID, INVALID, VALIDATING")
+            allowableValues = {"VALID", "INVALID", "VALIDATING"})
     public String getValidationStatus() {
         return validationStatus;
     }

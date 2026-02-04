@@ -16,14 +16,11 @@
  */
 package org.apache.nifi.web.api;
 
-import java.util.Set;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
@@ -31,6 +28,7 @@ import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HttpMethod;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -49,6 +47,8 @@ import org.apache.nifi.web.NiFiServiceFacade;
 import org.apache.nifi.web.Revision;
 import org.apache.nifi.web.api.dto.PortDTO;
 import org.apache.nifi.web.api.dto.PositionDTO;
+import org.apache.nifi.web.api.entity.ClearBulletinsRequestEntity;
+import org.apache.nifi.web.api.entity.ClearBulletinsResultEntity;
 import org.apache.nifi.web.api.entity.PortEntity;
 import org.apache.nifi.web.api.entity.PortRunStatusEntity;
 import org.apache.nifi.web.api.entity.ProcessorEntity;
@@ -56,6 +56,9 @@ import org.apache.nifi.web.api.request.ClientIdParameter;
 import org.apache.nifi.web.api.request.LongParameter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
+
+import java.time.Instant;
+import java.util.Set;
 
 /**
  * RESTful endpoint for managing an Output Port.
@@ -104,18 +107,16 @@ public class OutputPortResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Gets an output port",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = PortEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Read - /output-ports/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = PortEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Read - /output-ports/{uuid}")
             }
     )
     public Response getOutputPort(
@@ -155,18 +156,16 @@ public class OutputPortResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Updates an output port",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = PortEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /output-ports/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = PortEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /output-ports/{uuid}")
             }
     )
     public Response updateOutputPort(
@@ -245,19 +244,17 @@ public class OutputPortResource extends ApplicationResource {
     @Path("{id}")
     @Operation(
             summary = "Deletes an output port",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = PortEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /output-ports/{uuid}"),
-                    @SecurityRequirement(name = "Write - Parent Process Group - /process-groups/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = PortEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /output-ports/{uuid}"),
+                    @SecurityRequirement(name = "Write - Parent Process Group - /process-groups/{uuid}")
             }
     )
     public Response removeOutputPort(
@@ -326,18 +323,16 @@ public class OutputPortResource extends ApplicationResource {
     @Path("/{id}/run-status")
     @Operation(
             summary = "Updates run status of an output-port",
-            responses = @ApiResponse(content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
-            security = {
-                    @SecurityRequirement(name = "Write - /output-ports/{uuid} or /operation/output-ports/{uuid}")
-            }
-    )
-    @ApiResponses(
-            value = {
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ProcessorEntity.class))),
                     @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
                     @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
                     @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
                     @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
                     @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /output-ports/{uuid} or /operation/output-ports/{uuid}")
             }
     )
     public Response updateRunStatus(
@@ -395,6 +390,72 @@ public class OutputPortResource extends ApplicationResource {
         dto.setId(id);
         dto.setState(runStatus);
         return dto;
+    }
+
+    /**
+     * Clears the bulletins for the specified output port.
+     *
+     * @param id The id of the output port
+     * @param requestClearBulletinEntity A clearBulletinsRequestEntity
+     * @return A clearBulletinsResultEntity
+     */
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("/{id}/bulletins/clear-requests")
+    @Operation(
+            summary = "Clears bulletins for an output port",
+            responses = {
+                    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ClearBulletinsResultEntity.class))),
+                    @ApiResponse(responseCode = "400", description = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(responseCode = "401", description = "Client could not be authenticated."),
+                    @ApiResponse(responseCode = "403", description = "Client is not authorized to make this request."),
+                    @ApiResponse(responseCode = "404", description = "The specified resource could not be found."),
+                    @ApiResponse(responseCode = "409", description = "The request was valid but NiFi was not in the appropriate state to process it.")
+            },
+            security = {
+                    @SecurityRequirement(name = "Write - /output-ports/{uuid}")
+            }
+    )
+    public Response clearBulletins(
+            @Parameter(description = "The output port id.", required = true)
+            @PathParam("id") final String id,
+            @Parameter(description = "The request to clear bulletins.", required = true)
+            final ClearBulletinsRequestEntity requestClearBulletinEntity) {
+
+        // Verify the request
+        if (requestClearBulletinEntity == null) {
+            throw new IllegalArgumentException("Clear bulletin request must be specified.");
+        }
+
+        final Instant fromTimestamp = requestClearBulletinEntity.getFromTimestamp();
+        if (fromTimestamp == null) {
+            throw new IllegalArgumentException("From timestamp must be specified.");
+        }
+
+        if (isReplicateRequest()) {
+            return replicate(HttpMethod.POST, requestClearBulletinEntity);
+        }
+
+        final PortEntity requestPortEntity = new PortEntity();
+        requestPortEntity.setId(id);
+
+        return withWriteLock(
+                serviceFacade,
+                requestPortEntity,
+                lookup -> {
+                    final Authorizable outputPort = lookup.getOutputPort(id);
+                    outputPort.authorize(authorizer, RequestAction.WRITE, NiFiUserUtils.getNiFiUser());
+                },
+                () -> { },
+                (portEntity) -> {
+                    // clear the bulletins
+                    final ClearBulletinsResultEntity entity = serviceFacade.clearBulletinsForComponent(portEntity.getId(), fromTimestamp);
+
+                    // generate the response
+                    return generateOkResponse(entity).build();
+                }
+        );
     }
 
     @Autowired

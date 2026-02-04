@@ -31,6 +31,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
@@ -55,9 +56,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
@@ -84,8 +82,7 @@ public class PublishMQTT extends AbstractMQTTProcessor {
             .build();
 
     public static final PropertyDescriptor PROP_QOS = new PropertyDescriptor.Builder()
-            .name("Quality of Service(QoS)")
-            .displayName("Quality of Service (QoS)")
+            .name("Quality of Service")
             .description("The Quality of Service (QoS) to send the message with. Accepts three values '0', '1' and '2'; '0' for 'at most once', '1' for 'at least once', '2' for 'exactly once'. " +
                     "Expression language is allowed in order to support publishing messages with different QoS but the end value of the property must be either '0', '1' or '2'. ")
             .required(true)
@@ -129,7 +126,7 @@ public class PublishMQTT extends AbstractMQTTProcessor {
             .description("FlowFiles that failed to send to the destination are transferred to this relationship.")
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = Collections.unmodifiableList(Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             PROP_BROKER_URI,
             PROP_MQTT_VERSION,
             PROP_USERNAME,
@@ -150,12 +147,12 @@ public class PublishMQTT extends AbstractMQTTProcessor {
             PROP_LAST_WILL_TOPIC,
             PROP_LAST_WILL_RETAIN,
             PROP_LAST_WILL_QOS
-    ));
+    );
 
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
             REL_SUCCESS,
             REL_FAILURE
-    )));
+    );
 
     static final String ATTR_PUBLISH_FAILED_INDEX_SUFFIX = ".mqtt.publish.failed.index";
     private String publishFailedIndexAttributeName;
@@ -172,11 +169,12 @@ public class PublishMQTT extends AbstractMQTTProcessor {
     }
 
     @Override
-    public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+    public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled
+    @Override
     public void onScheduled(final ProcessContext context) {
         super.onScheduled(context);
     }
@@ -219,6 +217,12 @@ public class PublishMQTT extends AbstractMQTTProcessor {
         } else {
             processStandardFlowFile(context, session, flowfile, topic);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("Quality of Service(QoS)", PROP_QOS.getName());
     }
 
     private void processMultiMessageFlowFile(ProcessStrategy processStrategy, ProcessContext context, ProcessSession session, final FlowFile flowfile, String topic) {

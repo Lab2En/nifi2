@@ -15,30 +15,34 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { setOperationCollapsed } from '../../../../state/flow/flow.actions';
 import { Store } from '@ngrx/store';
 import { CanvasState } from '../../../../state';
 import { CanvasUtils } from '../../../../service/canvas-utils.service';
 import { initialState } from '../../../../state/flow/flow.reducer';
-import { Storage, ComponentContext } from '@nifi/shared';
-
+import { ComponentType, Storage, ComponentContext } from '@nifi/shared';
 import { BreadcrumbEntity } from '../../../../state/shared';
 import { MatButtonModule } from '@angular/material/button';
 import * as d3 from 'd3';
 import { CanvasView } from '../../../../service/canvas-view.service';
 import { Client } from '../../../../../../service/client.service';
 import { CanvasActionsService } from '../../../../service/canvas-actions.service';
-import { ComponentType } from 'libs/shared/src';
 
 @Component({
     selector: 'operation-control',
-    standalone: true,
     templateUrl: './operation-control.component.html',
     imports: [MatButtonModule, ComponentContext],
     styleUrls: ['./operation-control.component.scss']
 })
 export class OperationControl {
+    private store = inject<Store<CanvasState>>(Store);
+    canvasUtils = inject(CanvasUtils);
+    private canvasView = inject(CanvasView);
+    private client = inject(Client);
+    private storage = inject(Storage);
+    private canvasActionsService = inject(CanvasActionsService);
+
     private static readonly CONTROL_VISIBILITY_KEY: string = 'graph-control-visibility';
     private static readonly OPERATION_KEY: string = 'operation-control';
 
@@ -47,14 +51,7 @@ export class OperationControl {
 
     operationCollapsed: boolean = initialState.operationCollapsed;
 
-    constructor(
-        private store: Store<CanvasState>,
-        public canvasUtils: CanvasUtils,
-        private canvasView: CanvasView,
-        private client: Client,
-        private storage: Storage,
-        private canvasActionsService: CanvasActionsService
-    ) {
+    constructor() {
         try {
             const item: { [key: string]: boolean } | null = this.storage.getItem(
                 OperationControl.CONTROL_VISIBILITY_KEY
@@ -234,14 +231,6 @@ export class OperationControl {
 
     copy(selection: d3.Selection<any, any, any, any>): void {
         this.canvasActionsService.getActionFunction('copy')(selection);
-    }
-
-    canPaste(): boolean {
-        return this.canvasActionsService.getConditionFunction('paste')(d3.select(null));
-    }
-
-    paste(): void {
-        return this.canvasActionsService.getActionFunction('paste')(d3.select(null));
     }
 
     canGroup(selection: d3.Selection<any, any, any, any>): boolean {

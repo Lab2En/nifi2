@@ -16,10 +16,7 @@
  */
 package org.apache.nifi.init;
 
-import org.apache.nifi.annotation.lifecycle.OnShutdown;
 import org.apache.nifi.components.ConfigurableComponent;
-import org.apache.nifi.mock.MockComponentLogger;
-import org.apache.nifi.mock.MockConfigurationContext;
 import org.apache.nifi.mock.MockParameterProviderInitializationContext;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.nar.NarCloseable;
@@ -44,20 +41,8 @@ public class ParameterProviderInitializer implements ConfigurableComponentInitia
     public void initialize(final ConfigurableComponent component) throws InitializationException {
         ParameterProvider parameterProvider = (ParameterProvider) component;
         ParameterProviderInitializationContext context = new MockParameterProviderInitializationContext();
-        try (NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), context.getIdentifier())) {
+        try (NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), context.getIdentifier())) {
             parameterProvider.initialize(context);
-        }
-    }
-
-    @Override
-    public void teardown(final ConfigurableComponent component) {
-        ParameterProvider parameterProvider = (ParameterProvider) component;
-        try (NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), component.getIdentifier())) {
-
-            final MockConfigurationContext context = new MockConfigurationContext();
-            ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnShutdown.class, parameterProvider, new MockComponentLogger(), context);
-        } finally {
-            extensionManager.removeInstanceClassLoader(component.getIdentifier());
         }
     }
 }

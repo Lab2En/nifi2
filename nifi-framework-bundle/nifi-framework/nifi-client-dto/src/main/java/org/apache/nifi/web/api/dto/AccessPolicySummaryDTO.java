@@ -17,9 +17,8 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.apache.nifi.web.api.entity.ComponentReferenceEntity;
-
 import jakarta.xml.bind.annotation.XmlType;
+import org.apache.nifi.web.api.entity.ComponentReferenceEntity;
 
 /**
  * Details for the access configuration.
@@ -36,7 +35,7 @@ public class AccessPolicySummaryDTO extends ComponentDTO {
      * @return The action associated with this access policy.
      */
     @Schema(description = "The action associated with this access policy.",
-            allowableValues = "read, write"
+            allowableValues = {"read", "write"}
     )
     public String getAction() {
         return action;

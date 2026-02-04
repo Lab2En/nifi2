@@ -220,21 +220,37 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
 
             synchronizeFlow(controller, existingDataFlow, proposedFlow, affectedComponents);
         } finally {
-            // We have to call toExistingSet() here because some of the components that existed in the active set may no longer exist,
-            // so attempting to start them will fail.
-
             if (!existingFlowEmpty) {
-                final AffectedComponentSet startable = activeSet.toExistingSet().toStartableSet();
-
-                final ComponentSetFilter runningComponentFilter = new RunningComponentSetFilter(proposedFlow.getVersionedDataflow());
-                final ComponentSetFilter stoppedComponentFilter = runningComponentFilter.reverse();
-                startable.removeComponents(stoppedComponentFilter);
-                startable.start();
+                restart(activeSet, proposedFlow.getVersionedDataflow());
             }
         }
 
         final long millis = System.currentTimeMillis() - start;
         logger.info("Successfully synchronized dataflow with the proposed flow in {} millis", millis);
+    }
+
+    private void restart(final AffectedComponentSet activeSet, final VersionedDataflow versionedDataflow) {
+        final AffectedComponentSet existing = activeSet.toExistingSet();
+        final AffectedComponentSet noLongerExisting = activeSet.minus(existing);
+        if (!noLongerExisting.isEmpty()) {
+            logger.info("After synchronizing flow, the following components will not be restarted because they no longer exist: {}", noLongerExisting);
+        }
+
+        final AffectedComponentSet startable = existing.toStartableSet();
+        final AffectedComponentSet notStartable = existing.minus(startable);
+        if (!notStartable.isEmpty()) {
+            logger.info("After synchronizing flow, the following components will not be restarted because they are not in a startable state: {}", notStartable);
+        }
+
+        final ComponentSetFilter runningComponentFilter = new RunningComponentSetFilter(versionedDataflow);
+        final ComponentSetFilter stoppedComponentFilter = runningComponentFilter.invert();
+        final AffectedComponentSet stoppedComponents = startable.removeComponents(stoppedComponentFilter);
+        if (!stoppedComponents.isEmpty()) {
+            logger.info("After synchronizing flow, the following components will not be restarted because the proposed flow indicates that they are not running: {}", stoppedComponents);
+        }
+
+        logger.info("After synchronizing flow, restarting {} components", startable.getComponentCount());
+        startable.start();
     }
 
     private void verifyNoConnectionsWithDataRemoved(final DataFlow existingFlow, final DataFlow proposedFlow, final FlowController controller, final FlowComparison flowComparison) {
@@ -429,7 +445,6 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
                     .ignoreLocalModifications(true)
                     .updateGroupSettings(true)
                     .updateDescendantVersionedFlows(true)
-                    .updateGroupVersionControlSnapshot(false)
                     .updateRpgUrls(true)
                     .propertyDecryptor(encryptor::decrypt)
                     .build();
@@ -604,18 +619,19 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
         final BundleCoordinate coordinate = createBundleCoordinate(extensionManager, reportingTask.getBundle(), reportingTask.getType());
 
         final ReportingTaskNode taskNode = controller.createReportingTask(reportingTask.getType(), reportingTask.getInstanceIdentifier(), coordinate, false);
-        updateReportingTask(taskNode, reportingTask, controller);
+
+        final Map<String, String> decryptedProperties = decryptProperties(reportingTask.getProperties(), controller.getEncryptor());
+        configureReportingTask(taskNode, reportingTask, decryptedProperties);
 
         final ControllerServiceFactory serviceFactory = new StandardControllerServiceFactory(controller.getExtensionManager(), controller.getFlowManager(),
             controller.getControllerServiceProvider(), taskNode);
-        Map<String, String> rawPropertyValues = taskNode.getRawPropertyValues().entrySet().stream()
-                .collect(HashMap::new,
-                        (m, e) -> m.put(e.getKey().getName(), e.getValue()),
-                        HashMap::putAll);
-        taskNode.migrateConfiguration(rawPropertyValues, serviceFactory);
+        taskNode.migrateConfiguration(decryptedProperties, serviceFactory);
+
+        // Start reporting task after migration is complete to avoid modifying running task
+        startReportingTask(taskNode, reportingTask, controller);
     }
 
-    private void updateReportingTask(final ReportingTaskNode taskNode, final VersionedReportingTask reportingTask, final FlowController controller) {
+    private void configureReportingTask(final ReportingTaskNode taskNode, final VersionedReportingTask reportingTask, final Map<String, String> decryptedProperties) {
         taskNode.setName(reportingTask.getName());
         taskNode.setComments(reportingTask.getComments());
         taskNode.setSchedulingPeriod(reportingTask.getSchedulingPeriod());
@@ -624,10 +640,10 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
         taskNode.setAnnotationData(reportingTask.getAnnotationData());
 
         final Set<String> sensitiveDynamicPropertyNames = getSensitiveDynamicPropertyNames(taskNode, reportingTask);
-        final Map<String, String> decryptedProperties = decryptProperties(reportingTask.getProperties(), controller.getEncryptor());
         taskNode.setProperties(decryptedProperties, false, sensitiveDynamicPropertyNames);
+    }
 
-        // enable/disable/start according to the ScheduledState
+    private void startReportingTask(final ReportingTaskNode taskNode, final VersionedReportingTask reportingTask, final FlowController controller) {
         switch (reportingTask.getScheduledState()) {
             case DISABLED:
                 if (taskNode.isRunning()) {
@@ -651,6 +667,12 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
                 }
                 break;
         }
+    }
+
+    private void updateReportingTask(final ReportingTaskNode taskNode, final VersionedReportingTask reportingTask, final FlowController controller) {
+        final Map<String, String> decryptedProperties = decryptProperties(reportingTask.getProperties(), controller.getEncryptor());
+        configureReportingTask(taskNode, reportingTask, decryptedProperties);
+        startReportingTask(taskNode, reportingTask, controller);
     }
 
     private void inheritFlowAnalysisRules(final FlowController controller, final VersionedDataflow dataflow, final AffectedComponentSet affectedComponentSet)
@@ -1014,7 +1036,10 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
         for (final VersionedControllerService versionedControllerService : controllerServices) {
             final ControllerServiceNode serviceNode = flowManager.getRootControllerService(versionedControllerService.getInstanceIdentifier());
             if (controllerServicesAddedAndProperties.containsKey(serviceNode) || affectedComponentSet.isControllerServiceAffected(serviceNode.getIdentifier())) {
-                updateRootControllerService(serviceNode, versionedControllerService, controller.getEncryptor());
+                // Set Decrypted Properties for subsequent migrate configuration using actual values
+                final Map<String, String> decryptedProperties = decryptProperties(versionedControllerService.getProperties(), controller.getEncryptor());
+                controllerServicesAddedAndProperties.put(serviceNode, decryptedProperties);
+                updateRootControllerService(serviceNode, versionedControllerService, decryptedProperties);
             }
         }
 
@@ -1156,7 +1181,7 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
     }
 
     private void updateRootControllerService(final ControllerServiceNode serviceNode, final VersionedControllerService versionedControllerService,
-                                             final PropertyEncryptor encryptor) {
+                                             final Map<String, String> decryptedProperties) {
         serviceNode.pauseValidationTrigger();
         try {
             serviceNode.setName(versionedControllerService.getName());
@@ -1172,7 +1197,6 @@ public class VersionedFlowSynchronizer implements FlowSynchronizer {
             }
 
             final Set<String> sensitiveDynamicPropertyNames = getSensitiveDynamicPropertyNames(serviceNode, versionedControllerService);
-            final Map<String, String> decryptedProperties = decryptProperties(versionedControllerService.getProperties(), encryptor);
             serviceNode.setProperties(decryptedProperties, false, sensitiveDynamicPropertyNames);
         } finally {
             serviceNode.resumeValidationTrigger();

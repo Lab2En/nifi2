@@ -16,12 +16,12 @@
  */
 package org.apache.nifi.remote.util;
 
-import java.io.InputStream;
-import java.util.Map;
-
 import org.apache.nifi.remote.protocol.DataPacket;
 import org.apache.nifi.stream.io.LimitingInputStream;
 import org.apache.nifi.stream.io.MinimumLengthInputStream;
+
+import java.io.InputStream;
+import java.util.Map;
 
 public class StandardDataPacket implements DataPacket {
 
@@ -35,14 +35,17 @@ public class StandardDataPacket implements DataPacket {
         this.size = size;
     }
 
+    @Override
     public Map<String, String> getAttributes() {
         return attributes;
     }
 
+    @Override
     public InputStream getData() {
         return stream;
     }
 
+    @Override
     public long getSize() {
         return size;
     }

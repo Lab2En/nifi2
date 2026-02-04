@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.jms.cf;
 
+import jakarta.jms.ConnectionFactory;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.Restricted;
 import org.apache.nifi.annotation.behavior.Restriction;
@@ -27,8 +28,8 @@ import org.apache.nifi.components.RequiredPermission;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 
-import jakarta.jms.ConnectionFactory;
 import java.util.List;
 
 /**
@@ -60,6 +61,14 @@ import java.util.List;
         }
 )
 public class JMSConnectionFactoryProvider extends AbstractJMSConnectionFactoryProvider {
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_CONNECTION_FACTORY_IMPL_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_CONNECTION_FACTORY_IMPL.getName());
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_CLIENT_LIBRARIES_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_CLIENT_LIBRARIES.getName());
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_BROKER_URI_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_BROKER_URI.getName());
+        config.renameProperty(JMSConnectionFactoryProperties.OLD_JMS_SSL_CONTEXT_SERVICE_PROPERTY_NAME, JMSConnectionFactoryProperties.JMS_SSL_CONTEXT_SERVICE.getName());
+    }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {

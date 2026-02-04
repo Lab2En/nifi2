@@ -20,9 +20,9 @@ import org.apache.nifi.distributed.cache.operations.MapOperation;
 import org.apache.nifi.distributed.cache.protocol.ProtocolVersion;
 import org.apache.nifi.distributed.cache.server.EventCacheServer;
 import org.apache.nifi.distributed.cache.server.EvictionPolicy;
+import org.apache.nifi.distributed.cache.server.codec.CacheOperationResultEncoder;
 import org.apache.nifi.distributed.cache.server.codec.CacheVersionRequestHandler;
 import org.apache.nifi.distributed.cache.server.codec.CacheVersionResponseEncoder;
-import org.apache.nifi.distributed.cache.server.codec.CacheOperationResultEncoder;
 import org.apache.nifi.distributed.cache.server.codec.MapCacheRequestDecoder;
 import org.apache.nifi.distributed.cache.server.codec.MapCacheRequestHandler;
 import org.apache.nifi.distributed.cache.server.codec.MapRemoveResponseEncoder;
@@ -35,11 +35,11 @@ import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.remote.StandardVersionNegotiator;
 import org.apache.nifi.remote.VersionNegotiator;
 
-import javax.net.ssl.SSLContext;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Arrays;
+import javax.net.ssl.SSLContext;
 
 /**
  * Standard Map Cache Server implemented using Netty
@@ -57,7 +57,7 @@ public class StandardMapCacheServer extends EventCacheServer {
             final int maxCacheEntries,
             final EvictionPolicy evictionPolicy,
             final File persistencePath,
-            final int maxReadLength
+            final int maxReadSize
     ) throws IOException {
         super(log, port);
 
@@ -89,7 +89,7 @@ public class StandardMapCacheServer extends EventCacheServer {
                         mapRemoveResponseEncoder,
                         mapSizeResponseEncoder,
                         mapValueResponseEncoder,
-                        new MapCacheRequestDecoder(log, maxReadLength, MapOperation.values()),
+                        new MapCacheRequestDecoder(log, maxReadSize, MapOperation.values()),
                         mapCacheRequestHandler,
                         new CacheVersionRequestHandler(log, versionNegotiator)
                 )

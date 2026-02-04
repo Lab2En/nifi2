@@ -43,7 +43,7 @@ import java.util.List;
 @SeeAlso(GetSFTP.class)
 public class PutSFTP extends PutFileTransfer<SFTPTransfer> {
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FileTransfer.HOSTNAME,
             SFTPTransfer.PORT,
             FileTransfer.USERNAME,
@@ -69,6 +69,7 @@ public class PutSFTP extends PutFileTransfer<SFTPTransfer> {
             SFTPTransfer.USE_KEEPALIVE_ON_TIMEOUT,
             FileTransfer.USE_COMPRESSION,
             SFTPTransfer.PROXY_CONFIGURATION_SERVICE,
+            SFTPTransfer.ALGORITHM_CONFIGURATION,
             SFTPTransfer.CIPHERS_ALLOWED,
             SFTPTransfer.KEY_ALGORITHMS_ALLOWED,
             SFTPTransfer.KEY_EXCHANGE_ALGORITHMS_ALLOWED,
@@ -77,13 +78,14 @@ public class PutSFTP extends PutFileTransfer<SFTPTransfer> {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        SFTPTransfer.migrateAlgorithmProperties(config);
     }
 
     @Override

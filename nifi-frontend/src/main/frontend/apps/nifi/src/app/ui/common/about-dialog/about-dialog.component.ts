@@ -15,14 +15,13 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule } from '@angular/material/dialog';
 import { MatTableModule } from '@angular/material/table';
 import { MatSortModule } from '@angular/material/sort';
 import { AsyncPipe, NgOptimizedImage } from '@angular/common';
-import { NifiTooltipDirective, CloseOnEscapeDialog } from '@nifi/shared';
-import { NifiSpinnerDirective } from '../spinner/nifi-spinner.directive';
+import { CloseOnEscapeDialog } from '@nifi/shared';
 import { Store } from '@ngrx/store';
 import { ReactiveFormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -32,15 +31,12 @@ import { selectAbout } from '../../../state/about/about.selectors';
 
 @Component({
     selector: 'about',
-    standalone: true,
     templateUrl: './about-dialog.component.html',
     imports: [
         MatButtonModule,
         MatDialogModule,
         MatTableModule,
         MatSortModule,
-        NifiTooltipDirective,
-        NifiSpinnerDirective,
         AsyncPipe,
         ReactiveFormsModule,
         MatFormFieldModule,
@@ -50,9 +46,7 @@ import { selectAbout } from '../../../state/about/about.selectors';
     styleUrls: ['./about-dialog.component.scss']
 })
 export class AboutDialog extends CloseOnEscapeDialog {
-    about$ = this.store.select(selectAbout);
+    private store = inject<Store<AboutState>>(Store);
 
-    constructor(private store: Store<AboutState>) {
-        super();
-    }
+    about$ = this.store.select(selectAbout);
 }

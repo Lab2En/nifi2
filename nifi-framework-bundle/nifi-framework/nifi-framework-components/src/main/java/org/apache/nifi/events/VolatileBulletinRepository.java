@@ -23,6 +23,7 @@ import org.apache.nifi.reporting.ComponentType;
 import org.apache.nifi.util.RingBuffer;
 import org.apache.nifi.util.RingBuffer.Filter;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -47,7 +48,7 @@ public class VolatileBulletinRepository implements BulletinRepository {
     private static final String PARAMETER_PROVIDER_BULLETIN_STORE_KEY = "PARAMETER_PROVIDER";
 
     private final ConcurrentMap<String, ConcurrentMap<String, RingBuffer<Bulletin>>> bulletinStoreMap = new ConcurrentHashMap<>();
-    private volatile BulletinProcessingStrategy processingStrategy = new DefaultBulletinProcessingStrategy();
+    private final BulletinProcessingStrategy processingStrategy = new DefaultBulletinProcessingStrategy();
     private final AtomicLong maxId = new AtomicLong(-1L);
 
     @Override
@@ -97,60 +98,57 @@ public class VolatileBulletinRepository implements BulletinRepository {
     private Filter<Bulletin> createFilter(final BulletinQuery bulletinQuery) {
         final long fiveMinutesAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(5);
 
-        return new Filter<Bulletin>() {
-            @Override
-            public boolean select(final Bulletin bulletin) {
-                // only include bulletins after the specified id
-                if (bulletinQuery.getAfter() != null && bulletin.getId() <= bulletinQuery.getAfter()) {
-                    return false;
-                }
-
-                // if group pattern was specified see if it should be excluded
-                if (bulletinQuery.getGroupIdPattern() != null) {
-                    // exclude if this bulletin doesnt have a group or if it doesnt match
-                    if (bulletin.getGroupId() == null || !bulletinQuery.getGroupIdPattern().matcher(bulletin.getGroupId()).find()) {
-                        return false;
-                    }
-                }
-
-                // if a message pattern was specified see if it should be excluded
-                if (bulletinQuery.getMessagePattern() != null) {
-                    // exclude if this bulletin doesnt have a message or if it doesnt match
-                    if (bulletin.getMessage() == null || !bulletinQuery.getMessagePattern().matcher(bulletin.getMessage()).find()) {
-                        return false;
-                    }
-                }
-
-                // if a name pattern was specified see if it should be excluded
-                if (bulletinQuery.getNamePattern() != null) {
-                    // exclude if this bulletin doesnt have a source name or if it doesnt match
-                    if (bulletin.getSourceName() == null || !bulletinQuery.getNamePattern().matcher(bulletin.getSourceName()).find()) {
-                        return false;
-                    }
-                }
-
-                if (bulletin.getTimestamp().getTime() < fiveMinutesAgo) {
-                    return false;
-                }
-
-                // if a source id was specified see if it should be excluded
-                if (bulletinQuery.getSourceIdPattern() != null) {
-                    // exclude if this bulletin doesn't have a source id or if it doesn't match
-                    if (bulletin.getSourceId() == null || !bulletinQuery.getSourceIdPattern().matcher(bulletin.getSourceId()).find()) {
-                        return false;
-                    }
-                }
-
-                // if a source component type was specified see if it should be excluded
-                if (bulletinQuery.getSourceType() != null) {
-                    // exclude if this bulletin source type doesn't match
-                    if (bulletin.getSourceType() == null || !bulletinQuery.getSourceType().equals(bulletin.getSourceType())) {
-                        return false;
-                    }
-                }
-
-                return true;
+        return bulletin -> {
+            // only include bulletins after the specified id
+            if (bulletinQuery.getAfter() != null && bulletin.getId() <= bulletinQuery.getAfter()) {
+                return false;
             }
+
+            // if group pattern was specified see if it should be excluded
+            if (bulletinQuery.getGroupIdPattern() != null) {
+                // exclude if this bulletin doesnt have a group or if it doesnt match
+                if (bulletin.getGroupId() == null || !bulletinQuery.getGroupIdPattern().matcher(bulletin.getGroupId()).find()) {
+                    return false;
+                }
+            }
+
+            // if a message pattern was specified see if it should be excluded
+            if (bulletinQuery.getMessagePattern() != null) {
+                // exclude if this bulletin doesnt have a message or if it doesnt match
+                if (bulletin.getMessage() == null || !bulletinQuery.getMessagePattern().matcher(bulletin.getMessage()).find()) {
+                    return false;
+                }
+            }
+
+            // if a name pattern was specified see if it should be excluded
+            if (bulletinQuery.getNamePattern() != null) {
+                // exclude if this bulletin doesnt have a source name or if it doesnt match
+                if (bulletin.getSourceName() == null || !bulletinQuery.getNamePattern().matcher(bulletin.getSourceName()).find()) {
+                    return false;
+                }
+            }
+
+            if (bulletin.getTimestamp().getTime() < fiveMinutesAgo) {
+                return false;
+            }
+
+            // if a source id was specified see if it should be excluded
+            if (bulletinQuery.getSourceIdPattern() != null) {
+                // exclude if this bulletin doesn't have a source id or if it doesn't match
+                if (bulletin.getSourceId() == null || !bulletinQuery.getSourceIdPattern().matcher(bulletin.getSourceId()).find()) {
+                    return false;
+                }
+            }
+
+            // if a source component type was specified see if it should be excluded
+            if (bulletinQuery.getSourceType() != null) {
+                // exclude if this bulletin source type doesn't match
+                if (bulletin.getSourceType() == null || !bulletinQuery.getSourceType().equals(bulletin.getSourceType())) {
+                    return false;
+                }
+            }
+
+            return true;
         };
     }
 
@@ -200,17 +198,12 @@ public class VolatileBulletinRepository implements BulletinRepository {
 
         final ConcurrentMap<String, RingBuffer<Bulletin>> componentMap = bulletinStoreMap.get(groupId);
         if (componentMap == null) {
-            return Collections.<Bulletin>emptyList();
+            return Collections.emptyList();
         }
 
         final List<Bulletin> allComponentBulletins = new ArrayList<>();
         for (final RingBuffer<Bulletin> ringBuffer : componentMap.values()) {
-            allComponentBulletins.addAll(ringBuffer.getSelectedElements(new Filter<Bulletin>() {
-                @Override
-                public boolean select(final Bulletin bulletin) {
-                    return bulletin.getTimestamp().getTime() >= fiveMinutesAgo;
-                }
-            }, maxPerComponent));
+            allComponentBulletins.addAll(ringBuffer.getSelectedElements(bulletin -> bulletin.getTimestamp().getTime() >= fiveMinutesAgo, maxPerComponent));
         }
 
         return allComponentBulletins;
@@ -225,12 +218,7 @@ public class VolatileBulletinRepository implements BulletinRepository {
     public List<Bulletin> findBulletinsForController(final int max) {
         final long fiveMinutesAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(5);
 
-        final Filter<Bulletin> filter = new Filter<Bulletin>() {
-            @Override
-            public boolean select(final Bulletin bulletin) {
-                return bulletin.getTimestamp().getTime() >= fiveMinutesAgo;
-            }
-        };
+        final Filter<Bulletin> filter = bulletin -> bulletin.getTimestamp().getTime() >= fiveMinutesAgo;
 
         final List<Bulletin> controllerBulletins = new ArrayList<>();
 
@@ -295,36 +283,23 @@ public class VolatileBulletinRepository implements BulletinRepository {
     }
 
     private String getBulletinStoreKey(final Bulletin bulletin) {
-        switch (bulletin.getSourceType()) {
-            case FLOW_CONTROLLER:
-                return CONTROLLER_BULLETIN_STORE_KEY;
-            case CONTROLLER_SERVICE:
-                return SERVICE_BULLETIN_STORE_KEY;
-            case REPORTING_TASK:
-                return REPORTING_TASK_BULLETIN_STORE_KEY;
-            case FLOW_ANALYSIS_RULE:
-                return FLOW_ANALYSIS_RULE_BULLETIN_STORE_KEY;
-            case PARAMETER_PROVIDER:
-                return PARAMETER_PROVIDER_BULLETIN_STORE_KEY;
-            case FLOW_REGISTRY_CLIENT:
-                return FLOW_REGISTRY_CLIENT_STORE_KEY;
-            default:
-                return bulletin.getGroupId();
-        }
+        return switch (bulletin.getSourceType()) {
+            case FLOW_CONTROLLER -> CONTROLLER_BULLETIN_STORE_KEY;
+            case CONTROLLER_SERVICE -> SERVICE_BULLETIN_STORE_KEY;
+            case REPORTING_TASK -> REPORTING_TASK_BULLETIN_STORE_KEY;
+            case FLOW_ANALYSIS_RULE -> FLOW_ANALYSIS_RULE_BULLETIN_STORE_KEY;
+            case PARAMETER_PROVIDER -> PARAMETER_PROVIDER_BULLETIN_STORE_KEY;
+            case FLOW_REGISTRY_CLIENT -> FLOW_REGISTRY_CLIENT_STORE_KEY;
+            default -> bulletin.getGroupId();
+        };
     }
 
     private boolean isControllerBulletin(final Bulletin bulletin) {
-        switch (bulletin.getSourceType()) {
-            case FLOW_CONTROLLER:
-            case CONTROLLER_SERVICE:
-            case REPORTING_TASK:
-            case FLOW_ANALYSIS_RULE:
-            case PARAMETER_PROVIDER:
-            case FLOW_REGISTRY_CLIENT:
-                return true;
-            default:
-                return false;
-        }
+        return switch (bulletin.getSourceType()) {
+            case FLOW_CONTROLLER, CONTROLLER_SERVICE, REPORTING_TASK, FLOW_ANALYSIS_RULE, PARAMETER_PROVIDER,
+                 FLOW_REGISTRY_CLIENT -> true;
+            default -> false;
+        };
     }
 
     private class DefaultBulletinProcessingStrategy implements BulletinProcessingStrategy {
@@ -335,5 +310,53 @@ public class VolatileBulletinRepository implements BulletinRepository {
                 bulletinBuffer.add(bulletin);
             }
         }
+    }
+
+    @Override
+    public int clearBulletinsForComponent(final String sourceId, final Instant fromTimestamp) throws IllegalArgumentException {
+        if (sourceId == null) {
+            throw new IllegalArgumentException("Source ID cannot be null");
+        }
+
+        return clearBulletinsForComponents(Collections.singleton(sourceId), fromTimestamp);
+    }
+
+    @Override
+    public int clearBulletinsForComponents(Collection<String> sourceIds, Instant fromTimestamp) throws IllegalArgumentException {
+        if (sourceIds == null || sourceIds.isEmpty()) {
+            throw new IllegalArgumentException("Source IDs cannot be null or empty");
+        }
+
+        if (fromTimestamp == null) {
+            throw new IllegalArgumentException("From timestamp cannot be null");
+        }
+
+        int totalCleared = 0;
+
+        // Create filter to match bulletins for any of the given sourceIds and at or before fromTimestamp
+        final Filter<Bulletin> clearFilter = bulletin -> {
+            // Match any of the source IDs
+            if (!sourceIds.contains(bulletin.getSourceId())) {
+                return false;
+            }
+
+            // Clear bulletins that are older than or equal to the specified timestamp
+            // Convert bulletin timestamp (Date) to Instant for comparison
+            return bulletin.getTimestamp() != null && !bulletin.getTimestamp().toInstant().isAfter(fromTimestamp);
+        };
+
+        // Iterate through all bulletin stores to find and clear matching bulletins
+        for (final ConcurrentMap<String, RingBuffer<Bulletin>> componentMap : bulletinStoreMap.values()) {
+            for (final RingBuffer<Bulletin> ringBuffer : componentMap.values()) {
+                // Count how many bulletins would be cleared first
+                final int countToRemove = ringBuffer.countSelectedElements(clearFilter);
+                totalCleared += countToRemove;
+
+                // Remove the bulletins
+                ringBuffer.removeSelectedElements(clearFilter);
+            }
+        }
+
+        return totalCleared;
     }
 }

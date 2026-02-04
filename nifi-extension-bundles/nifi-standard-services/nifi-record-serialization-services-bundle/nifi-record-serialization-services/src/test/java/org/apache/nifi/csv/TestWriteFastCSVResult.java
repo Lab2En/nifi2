@@ -16,6 +16,19 @@
  */
 package org.apache.nifi.csv;
 
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.QuoteMode;
+import org.apache.nifi.schema.access.SchemaNameAsAttribute;
+import org.apache.nifi.serialization.SimpleRecordSchema;
+import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.MapRecord;
+import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.serialization.record.RecordField;
+import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.nifi.serialization.record.RecordSet;
+import org.junit.jupiter.api.Test;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -31,18 +44,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.QuoteMode;
-import org.apache.nifi.schema.access.SchemaNameAsAttribute;
-import org.apache.nifi.serialization.SimpleRecordSchema;
-import org.apache.nifi.serialization.record.DataType;
-import org.apache.nifi.serialization.record.MapRecord;
-import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.RecordField;
-import org.apache.nifi.serialization.record.RecordFieldType;
-import org.apache.nifi.serialization.record.RecordSchema;
-import org.apache.nifi.serialization.record.RecordSet;
-import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -51,12 +52,12 @@ public class TestWriteFastCSVResult {
         .setEscape('\"')
         .setQuoteMode(QuoteMode.NONE)
         .setRecordSeparator("\n")
-        .build();
+        .get();
 
 
     @Test
     public void testDataTypes() throws IOException {
-        final CSVFormat csvFormat = CSVFormat.RFC4180.builder().setQuoteMode(QuoteMode.NON_NUMERIC).setRecordSeparator("\n").build();
+        final CSVFormat csvFormat = CSVFormat.RFC4180.builder().setQuoteMode(QuoteMode.NON_NUMERIC).setRecordSeparator("\n").get();
 
         final StringBuilder headerBuilder = new StringBuilder();
         final List<RecordField> fields = new ArrayList<>();
@@ -291,7 +292,7 @@ public class TestWriteFastCSVResult {
 
     @Test
     public void testEscapeCharInValueWriteRecord() throws IOException {
-        final CSVFormat csvFormat = defaultFormat.builder().setQuote('"').build();
+        final CSVFormat csvFormat = defaultFormat.builder().setQuote('"').get();
         final List<RecordField> fields = new ArrayList<>();
         fields.add(new RecordField("id", RecordFieldType.STRING.getDataType()));
         fields.add(new RecordField("name", RecordFieldType.STRING.getDataType()));
@@ -319,7 +320,7 @@ public class TestWriteFastCSVResult {
 
     @Test
     public void testEmptyEscapeCharWriteRecord() throws IOException {
-        final CSVFormat csvFormat = defaultFormat.builder().setQuote('"').build();
+        final CSVFormat csvFormat = defaultFormat.builder().setQuote('"').get();
         final List<RecordField> fields = new ArrayList<>();
         fields.add(new RecordField("id", RecordFieldType.STRING.getDataType()));
         fields.add(new RecordField("name", RecordFieldType.STRING.getDataType()));
@@ -348,7 +349,7 @@ public class TestWriteFastCSVResult {
 
     @Test
     public void testWriteHeaderWithNoRecords() throws IOException {
-        final CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setEscape('\"').setQuoteMode(QuoteMode.NONE).setRecordSeparator("\n").build();
+        final CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setEscape('\"').setQuoteMode(QuoteMode.NONE).setRecordSeparator("\n").get();
         final List<RecordField> fields = new ArrayList<>();
         fields.add(new RecordField("id", RecordFieldType.STRING.getDataType()));
         fields.add(new RecordField("name", RecordFieldType.STRING.getDataType()));

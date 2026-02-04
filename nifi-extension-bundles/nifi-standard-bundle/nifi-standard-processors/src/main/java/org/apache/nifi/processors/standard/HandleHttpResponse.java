@@ -29,6 +29,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.http.HttpContextMap;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -76,13 +77,13 @@ public class HandleHttpResponse extends AbstractProcessor {
             .identifiesControllerService(HttpContextMap.class)
             .build();
     public static final PropertyDescriptor ATTRIBUTES_AS_HEADERS_REGEX = new PropertyDescriptor.Builder()
-            .name("Attributes to add to the HTTP Response (Regex)")
+            .name("Attributes for HTTP Response")
             .description("Specifies the Regular Expression that determines the names of FlowFile attributes that should be added to the HTTP response")
             .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
             .required(false)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             STATUS_CODE,
             HTTP_CONTEXT_MAP,
             ATTRIBUTES_AS_HEADERS_REGEX
@@ -98,11 +99,14 @@ public class HandleHttpResponse extends AbstractProcessor {
                     + "for instance, if the connection times out or if NiFi is restarted before responding to the HTTP Request.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -148,7 +152,7 @@ public class HandleHttpResponse extends AbstractProcessor {
         final HttpServletResponse response = contextMap.getResponse(contextIdentifier);
         if (response == null) {
             getLogger().error("Failed to respond to HTTP request for {} because FlowFile had an '{}' attribute of {} but could not find an HTTP Response Object for this identifier",
-                    new Object[]{flowFile, HTTPUtils.HTTP_CONTEXT_ID, contextIdentifier});
+                    flowFile, HTTPUtils.HTTP_CONTEXT_ID, contextIdentifier);
             session.transfer(flowFile, REL_FAILURE);
             return;
         }
@@ -162,7 +166,7 @@ public class HandleHttpResponse extends AbstractProcessor {
                 final String headerName = descriptor.getName();
                 final String headerValue = context.getProperty(descriptor).evaluateAttributeExpressions(flowFile).getValue();
 
-                if (!headerValue.trim().isEmpty()) {
+                if (!headerValue.isBlank()) {
                     response.setHeader(headerName, headerValue);
                 }
             }
@@ -176,7 +180,7 @@ public class HandleHttpResponse extends AbstractProcessor {
             for (final Map.Entry<String, String> entry : attributes.entrySet()) {
                 final String key = entry.getKey();
                 if (pattern.matcher(key).matches()) {
-                    if (!entry.getValue().trim().isEmpty()) {
+                    if (!entry.getValue().isBlank()) {
                         response.setHeader(entry.getKey(), entry.getValue());
                     }
                 }
@@ -212,6 +216,11 @@ public class HandleHttpResponse extends AbstractProcessor {
         session.getProvenanceReporter().send(flowFile, HTTPUtils.getURI(flowFile.getAttributes()), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
         getLogger().info("Successfully responded to HTTP Request for {} with status code {}", flowFile, statusCode);
         session.transfer(flowFile, REL_SUCCESS);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("Attributes to add to the HTTP Response (Regex)", ATTRIBUTES_AS_HEADERS_REGEX.getName());
     }
 
     private static boolean isNumber(final String value) {

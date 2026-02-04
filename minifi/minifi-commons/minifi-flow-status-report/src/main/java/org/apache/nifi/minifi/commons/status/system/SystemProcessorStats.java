@@ -22,9 +22,6 @@ public class SystemProcessorStats implements java.io.Serializable {
     private double loadAverage;
     private int availableProcessors;
 
-    public SystemProcessorStats() {
-    }
-
     public double getLoadAverage() {
         return loadAverage;
     }
@@ -43,12 +40,18 @@ public class SystemProcessorStats implements java.io.Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         SystemProcessorStats that = (SystemProcessorStats) o;
 
-        if (Double.compare(that.getLoadAverage(), getLoadAverage()) != 0) return false;
+        if (Double.compare(that.getLoadAverage(), getLoadAverage()) != 0) {
+            return false;
+        }
         return getAvailableProcessors() == that.getAvailableProcessors();
 
     }

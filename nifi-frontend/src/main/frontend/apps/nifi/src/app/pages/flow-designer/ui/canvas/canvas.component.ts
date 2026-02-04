@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, inject } from '@angular/core';
 import { CanvasState } from '../../state';
 import { Position } from '../../state/shared';
 import { Store } from '@ngrx/store';
@@ -25,6 +25,7 @@ import {
     editComponent,
     editCurrentProcessGroup,
     loadProcessGroup,
+    paste,
     resetFlowState,
     selectComponents,
     setSkipTransform,
@@ -66,17 +67,29 @@ import { initialState } from '../../state/flow/flow.reducer';
 import { CanvasContextMenu } from '../../service/canvas-context-menu.service';
 import { getStatusHistoryAndOpenDialog } from '../../../../state/status-history/status-history.actions';
 import { concatLatestFrom } from '@ngrx/operators';
-import { ComponentType, isDefinedAndNotNull, selectUrl, Storage } from '@nifi/shared';
+import { ComponentType, isDefinedAndNotNull, NiFiCommon, selectUrl, Storage } from '@nifi/shared';
 import { CanvasUtils } from '../../service/canvas-utils.service';
 import { CanvasActionsService } from '../../service/canvas-actions.service';
 import { MatDialog } from '@angular/material/dialog';
+import { CopyResponseEntity } from '../../../../state/copy';
+import { snackBarError } from '../../../../state/error/error.actions';
 
 @Component({
     selector: 'fd-canvas',
     templateUrl: './canvas.component.html',
-    styleUrls: ['./canvas.component.scss']
+    styleUrls: ['./canvas.component.scss'],
+    standalone: false
 })
 export class Canvas implements OnInit, OnDestroy {
+    private store = inject<Store<CanvasState>>(Store);
+    private canvasView = inject(CanvasView);
+    private storage = inject(Storage);
+    private canvasUtils = inject(CanvasUtils);
+    canvasContextMenu = inject(CanvasContextMenu);
+    private canvasActionsService = inject(CanvasActionsService);
+    private dialog = inject(MatDialog);
+    nifiCommon = inject(NiFiCommon);
+
     private svg: any;
     private canvas: any;
 
@@ -85,15 +98,7 @@ export class Canvas implements OnInit, OnDestroy {
 
     flowAnalysisOpen = this.store.selectSignal(selectFlowAnalysisOpen);
 
-    constructor(
-        private store: Store<CanvasState>,
-        private canvasView: CanvasView,
-        private storage: Storage,
-        private canvasUtils: CanvasUtils,
-        public canvasContextMenu: CanvasContextMenu,
-        private canvasActionsService: CanvasActionsService,
-        private dialog: MatDialog
-    ) {
+    constructor() {
         this.store
             .select(selectTransform)
             .pipe(takeUntilDestroyed())
@@ -629,7 +634,7 @@ export class Canvas implements OnInit, OnDestroy {
         this.canvasView.destroy();
     }
 
-    private processKeyboardEvents(event: KeyboardEvent): boolean {
+    private processKeyboardEvents(event: KeyboardEvent | ClipboardEvent): boolean {
         const source = event.target as any;
         let searchFieldIsEventSource = false;
         if (source) {
@@ -684,6 +689,10 @@ export class Canvas implements OnInit, OnDestroy {
 
     @HostListener('window:keydown.control.c', ['$event'])
     handleKeyDownCtrlC(event: KeyboardEvent) {
+        if (!this.canvasUtils.isClipboardAvailable()) {
+            return;
+        }
+
         if (this.executeAction('copy', event)) {
             event.preventDefault();
         }
@@ -696,17 +705,26 @@ export class Canvas implements OnInit, OnDestroy {
         }
     }
 
-    @HostListener('window:keydown.control.v', ['$event'])
-    handleKeyDownCtrlV(event: KeyboardEvent) {
-        if (this.executeAction('paste', event)) {
-            event.preventDefault();
+    @HostListener('window:paste', ['$event'])
+    handlePasteEvent(event: ClipboardEvent) {
+        if (!this.processKeyboardEvents(event) || !this.canvasUtils.isPastable()) {
+            // don't attempt to paste flow content
+            return;
         }
-    }
 
-    @HostListener('window:keydown.meta.v', ['$event'])
-    handleKeyDownMetaV(event: KeyboardEvent) {
-        if (this.executeAction('paste', event)) {
-            event.preventDefault();
+        const textToPaste = event.clipboardData?.getData('text/plain');
+        if (textToPaste) {
+            const copyResponse: CopyResponseEntity | null = this.toCopyResponseEntity(textToPaste);
+            if (copyResponse) {
+                this.store.dispatch(
+                    paste({
+                        request: copyResponse
+                    })
+                );
+                event.preventDefault();
+            } else {
+                this.store.dispatch(snackBarError({ error: 'Cannot paste: incompatible format' }));
+            }
         }
     }
 
@@ -721,6 +739,72 @@ export class Canvas implements OnInit, OnDestroy {
     handleKeyDownMetaA(event: KeyboardEvent) {
         if (this.executeAction('selectAll', event)) {
             event.preventDefault();
+        }
+    }
+
+    toCopyResponseEntity(json: string): CopyResponseEntity | null {
+        try {
+            const copyResponse: CopyResponseEntity = JSON.parse(json);
+            const supportedKeys: string[] = [
+                'processGroups',
+                'remoteProcessGroups',
+                'processors',
+                'inputPorts',
+                'outputPorts',
+                'connections',
+                'labels',
+                'funnels'
+            ];
+
+            // ensure at least one of the copyable component types has something to paste
+            const hasCopiedContent = Object.entries(copyResponse).some((entry) => {
+                return supportedKeys.includes(entry[0]) && Array.isArray(entry[1]) && entry[1].length > 0;
+            });
+
+            if (hasCopiedContent) {
+                return copyResponse;
+            }
+
+            // check to see if this is a FlowDefinition
+            const maybeFlowDefinition: any = JSON.parse(json);
+            const isFlowDefinition = this.nifiCommon.isDefinedAndNotNull(maybeFlowDefinition.flowContents);
+            if (isFlowDefinition) {
+                // make sure the flow has some components
+                const flowHasCopiedContent = Object.entries(maybeFlowDefinition.flowContents).some((entry) => {
+                    return supportedKeys.includes(entry[0]) && Array.isArray(entry[1]);
+                });
+                if (flowHasCopiedContent) {
+                    // construct a new CopyResponseEntity from the FlowDefinition
+                    const copiedFlow: CopyResponseEntity = {
+                        id: maybeFlowDefinition.flowContents.identifier,
+                        processGroups: [
+                            {
+                                ...maybeFlowDefinition.flowContents
+                            }
+                        ]
+                    };
+
+                    // include parameter contexts, providers, and external cs if defined
+                    if (this.nifiCommon.isDefinedAndNotNull(maybeFlowDefinition.parameterContexts)) {
+                        copiedFlow.parameterContexts = { ...maybeFlowDefinition.parameterContexts };
+                    }
+                    if (this.nifiCommon.isDefinedAndNotNull(maybeFlowDefinition.parameterProviders)) {
+                        copiedFlow.parameterProviders = { ...maybeFlowDefinition.parameterProviders };
+                    }
+                    if (this.nifiCommon.isDefinedAndNotNull(maybeFlowDefinition.externalControllerServices)) {
+                        copiedFlow.externalControllerServiceReferences = {
+                            ...maybeFlowDefinition.externalControllerServices
+                        };
+                    }
+                    return copiedFlow;
+                }
+            }
+
+            // attempting to paste something other than CopyResponseEntity or a flow definition
+            return null;
+        } catch (e) {
+            // attempting to paste something other than CopyResponseEntity or a flow definition
+            return null;
         }
     }
 }

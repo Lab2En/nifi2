@@ -15,10 +15,11 @@
 package org.apache.nifi.processors.network.parser;
 
 import java.util.OptionalInt;
-import static org.apache.nifi.processors.network.parser.util.ConversionUtil.toShort;
+
+import static org.apache.nifi.processors.network.parser.util.ConversionUtil.toIPV4;
 import static org.apache.nifi.processors.network.parser.util.ConversionUtil.toInt;
 import static org.apache.nifi.processors.network.parser.util.ConversionUtil.toLong;
-import static org.apache.nifi.processors.network.parser.util.ConversionUtil.toIPV4;
+import static org.apache.nifi.processors.network.parser.util.ConversionUtil.toShort;
 
 /**
  * Networkv5 is Cisco data export format which contains one header and one or more flow records. This Parser parses the netflowv5 format. More information: @see
@@ -33,20 +34,20 @@ public final class Netflowv5Parser {
     private static final int LONG_TYPE = 2;
     private static final int IPV4_TYPE = 3;
 
-    private static final String headerField[] = {"version", "count", "sys_uptime", "unix_secs", "unix_nsecs", "flow_sequence", "engine_type", "engine_id", "sampling_interval"};
-    private static final String recordField[] = {"srcaddr", "dstaddr", "nexthop", "input", "output", "dPkts", "dOctets", "first", "last", "srcport", "dstport", "pad1", "tcp_flags", "prot", "tos",
+    private static final String[] headerField = {"version", "count", "sys_uptime", "unix_secs", "unix_nsecs", "flow_sequence", "engine_type", "engine_id", "sampling_interval"};
+    private static final String[] recordField = {"srcaddr", "dstaddr", "nexthop", "input", "output", "dPkts", "dOctets", "first", "last", "srcport", "dstport", "pad1", "tcp_flags", "prot", "tos",
             "src_as", "dst_as", "src_mask", "dst_mask", "pad2"};
 
     private final int portNumber;
 
-    private Object headerData[];
-    private Object recordData[][];
+    private Object[] headerData;
+    private Object[][] recordData;
 
     public Netflowv5Parser(final OptionalInt portNumber) {
         this.portNumber = (portNumber.isPresent()) ? portNumber.getAsInt() : 0;
     }
 
-    public final int parse(final byte[] buffer) throws Throwable {
+    public int parse(final byte[] buffer) throws Throwable {
         if (!isValid(buffer.length)) {
             throw new Exception("Invalid Packet Length");
         }
@@ -97,7 +98,7 @@ public final class Netflowv5Parser {
         return count;
     }
 
-    private final Object parseField(final byte[] buffer, final int startOffset, final int length, final int type) {
+    private Object parseField(final byte[] buffer, final int startOffset, final int length, final int type) {
         Object value = null;
         switch (type) {
             case SHORT_TYPE:

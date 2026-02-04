@@ -20,6 +20,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { QueueListing } from './queue-listing.component';
 import { provideMockStore } from '@ngrx/store/testing';
 import { initialState } from '../../state/queue-listing/queue-listing.reducer';
+import { queueListingFeatureKey } from '../../state/queue-listing';
+import { queueFeatureKey } from '../../state';
+import { initialState as initialErrorState } from '../../../../state/error/error.reducer';
+import { errorFeatureKey } from '../../../../state/error';
+import { initialState as initialAboutState } from '../../../../state/about/about.reducer';
+import { aboutFeatureKey } from '../../../../state/about';
 
 describe('QueueListing', () => {
     let component: QueueListing;
@@ -27,8 +33,18 @@ describe('QueueListing', () => {
 
     beforeEach(() => {
         TestBed.configureTestingModule({
-            declarations: [QueueListing],
-            providers: [provideMockStore({ initialState })]
+            imports: [QueueListing],
+            providers: [
+                provideMockStore({
+                    initialState: {
+                        [errorFeatureKey]: initialErrorState,
+                        [aboutFeatureKey]: initialAboutState,
+                        [queueFeatureKey]: {
+                            [queueListingFeatureKey]: initialState
+                        }
+                    }
+                })
+            ]
         });
         fixture = TestBed.createComponent(QueueListing);
         component = fixture.componentInstance;

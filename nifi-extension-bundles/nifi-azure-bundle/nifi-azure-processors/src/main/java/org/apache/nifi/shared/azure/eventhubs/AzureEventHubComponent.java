@@ -18,6 +18,7 @@ package org.apache.nifi.shared.azure.eventhubs;
 
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.proxy.ProxyConfiguration;
 import org.apache.nifi.proxy.ProxySpec;
@@ -28,13 +29,28 @@ import org.apache.nifi.proxy.ProxySpec;
 public interface AzureEventHubComponent {
     PropertyDescriptor TRANSPORT_TYPE = new PropertyDescriptor.Builder()
             .name("Transport Type")
-            .displayName("Transport Type")
             .description("Advanced Message Queuing Protocol Transport Type for communication with Azure Event Hubs")
             .allowableValues(AzureEventHubTransportType.class)
             .defaultValue(AzureEventHubTransportType.AMQP)
             .required(true)
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
+            .build();
+    PropertyDescriptor AUTHENTICATION_STRATEGY = new PropertyDescriptor.Builder()
+            .name("Authentication Strategy")
+            .description("Specifies the strategy used for authenticating to Azure Event Hubs")
+            .allowableValues(AzureEventHubAuthenticationStrategy.class)
+            .defaultValue(AzureEventHubAuthenticationStrategy.MANAGED_IDENTITY.getValue())
+            .required(true)
+            .expressionLanguageSupported(ExpressionLanguageScope.NONE)
+            .build();
+    PropertyDescriptor OAUTH2_ACCESS_TOKEN_PROVIDER = new PropertyDescriptor.Builder()
+            .name("Event Hubs Access Token Provider")
+            .description("Controller Service providing OAuth2 Access Tokens for authenticating to Azure Event Hubs")
+            .identifiesControllerService(OAuth2AccessTokenProvider.class)
+            .required(true)
+            .expressionLanguageSupported(ExpressionLanguageScope.NONE)
+            .dependsOn(AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.OAUTH2)
             .build();
     ProxySpec[] PROXY_SPECS = {ProxySpec.HTTP, ProxySpec.HTTP_AUTH};
     PropertyDescriptor PROXY_CONFIGURATION_SERVICE = new PropertyDescriptor.Builder()

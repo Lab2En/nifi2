@@ -17,8 +17,8 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
+
 import java.util.Map;
 
 /**
@@ -36,9 +36,6 @@ public class LabelDTO extends ComponentDTO {
     // font-size = 12px
     // background-color = #eee
     private Map<String, String> style;
-
-    public LabelDTO() {
-    }
 
     /**
      * @return z index for this label

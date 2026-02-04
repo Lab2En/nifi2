@@ -68,7 +68,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -185,6 +184,19 @@ public class ConsumeSlack extends AbstractProcessor implements VerifiableProcess
         .description("Slack messages that are successfully received will be routed to this relationship")
         .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            CHANNEL_IDS,
+            ACCESS_TOKEN,
+            REPLY_MONITOR_WINDOW,
+            REPLY_MONITOR_FREQUENCY,
+            BATCH_SIZE,
+            RESOLVE_USERNAMES,
+            INCLUDE_MESSAGE_BLOCKS,
+            INCLUDE_NULL_FIELDS);
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     private RateLimit rateLimit;
     private final Queue<ConsumeChannel> channels = new LinkedBlockingQueue<>();
@@ -193,13 +205,12 @@ public class ConsumeSlack extends AbstractProcessor implements VerifiableProcess
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return Arrays.asList(CHANNEL_IDS, ACCESS_TOKEN, REPLY_MONITOR_WINDOW, REPLY_MONITOR_FREQUENCY,
-            BATCH_SIZE, RESOLVE_USERNAMES, INCLUDE_MESSAGE_BLOCKS, INCLUDE_NULL_FIELDS);
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public Set<Relationship> getRelationships() {
-        return Collections.singleton(REL_SUCCESS);
+        return RELATIONSHIPS;
     }
 
     @Override
@@ -244,9 +255,9 @@ public class ConsumeSlack extends AbstractProcessor implements VerifiableProcess
     private List<ConsumeChannel> createChannels(final ProcessContext context, final App slackApp) throws SlackApiException, IOException {
         final ObjectMapper objectMapper = new ObjectMapper();
         if (context.getProperty(INCLUDE_NULL_FIELDS).asBoolean()) {
-            objectMapper.setSerializationInclusion(JsonInclude.Include.ALWAYS);
+            objectMapper.setDefaultPropertyInclusion(JsonInclude.Include.ALWAYS);
         } else {
-            objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+            objectMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         }
 
         final ConsumeSlackClient client = initializeClient(slackApp);

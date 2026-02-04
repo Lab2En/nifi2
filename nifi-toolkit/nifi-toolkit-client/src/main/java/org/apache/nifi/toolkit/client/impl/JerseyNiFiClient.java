@@ -51,10 +51,9 @@ import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.ClientProperties;
 import org.glassfish.jersey.jackson.internal.jackson.jaxrs.json.JacksonJaxbJsonProvider;
 
+import java.net.URI;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
-
-import java.net.URI;
 
 /**
  * Jersey implementation of NiFiClient.
@@ -317,7 +316,7 @@ public class JerseyNiFiClient implements NiFiClient {
         if (this.client != null) {
             try {
                 this.client.close();
-            } catch (Exception e) {
+            } catch (Exception ignored) {
 
             }
         }

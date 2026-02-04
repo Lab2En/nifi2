@@ -22,6 +22,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.exception.ProcessException;
@@ -33,6 +34,13 @@ import org.apache.nifi.search.Searchable;
 import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.script.Bindings;
 import javax.script.Compilable;
 import javax.script.CompiledScript;
@@ -40,14 +48,6 @@ import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
 import javax.script.SimpleBindings;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 
 abstract class ScriptedRecordProcessor extends AbstractProcessor implements Searchable {
     protected static final Set<String> SCRIPT_OPTIONS = ScriptingComponentUtils.getAvailableEngines();
@@ -58,7 +58,6 @@ abstract class ScriptedRecordProcessor extends AbstractProcessor implements Sear
 
     static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
             .name("Record Reader")
-            .displayName("Record Reader")
             .description("The Record Reader to use parsing the incoming FlowFile into Records")
             .required(true)
             .identifiesControllerService(RecordReaderFactory.class)
@@ -66,22 +65,17 @@ abstract class ScriptedRecordProcessor extends AbstractProcessor implements Sear
 
     static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
             .name("Record Writer")
-            .displayName("Record Writer")
             .description("The Record Writer to use for serializing Records after they have been transformed")
             .required(true)
             .identifiesControllerService(RecordSetWriterFactory.class)
             .build();
 
-    static final PropertyDescriptor LANGUAGE = new PropertyDescriptor.Builder()
-            .name("Script Engine")
-            .displayName("Script Language")
-            .description("The Language to use for the script")
+    static final PropertyDescriptor LANGUAGE = ScriptingComponentHelper.getScriptEnginePropertyBuilder()
             .allowableValues(SCRIPT_OPTIONS)
             .defaultValue("Groovy")
-            .required(true)
             .build();
 
-    protected static final List<PropertyDescriptor> DESCRIPTORS = Arrays.asList(
+    protected static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             RECORD_READER,
             RECORD_WRITER,
             LANGUAGE,
@@ -140,6 +134,11 @@ abstract class ScriptedRecordProcessor extends AbstractProcessor implements Sear
     @Override
     public Collection<SearchResult> search(final SearchContext context) {
         return ScriptingComponentUtils.search(context, getLogger());
+    }
+
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        ScriptingComponentHelper.migrateProperties(config);
     }
 
     protected static Bindings setupBindings(final ScriptEngine scriptEngine) {

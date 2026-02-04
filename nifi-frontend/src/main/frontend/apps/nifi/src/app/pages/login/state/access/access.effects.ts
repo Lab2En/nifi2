@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import * as AccessActions from './access.actions';
 import { catchError, from, map, of, switchMap, tap } from 'rxjs';
@@ -23,7 +23,7 @@ import { AuthService } from '../../../../service/auth.service';
 import { Router } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
 import { OkDialog } from '../../../../ui/common/ok-dialog/ok-dialog.component';
-import { MEDIUM_DIALOG } from 'libs/shared/src';
+import { MEDIUM_DIALOG } from '@nifi/shared';
 import { ErrorHelper } from '../../../../service/error-helper.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Store } from '@ngrx/store';
@@ -32,14 +32,12 @@ import { resetLoginFailure } from './access.actions';
 
 @Injectable()
 export class AccessEffects {
-    constructor(
-        private actions$: Actions,
-        private store: Store<NiFiState>,
-        private authService: AuthService,
-        private router: Router,
-        private dialog: MatDialog,
-        private errorHelper: ErrorHelper
-    ) {}
+    private actions$ = inject(Actions);
+    private store = inject<Store<NiFiState>>(Store);
+    private authService = inject(AuthService);
+    private router = inject(Router);
+    private dialog = inject(MatDialog);
+    private errorHelper = inject(ErrorHelper);
 
     login$ = createEffect(() =>
         this.actions$.pipe(

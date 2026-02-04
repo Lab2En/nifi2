@@ -56,7 +56,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -174,8 +173,7 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
     public static final AllowableValue PRECISION_MINUTES = new AllowableValue("minutes", "Minutes", "For a target system that only supports precision in minutes.");
 
     public static final PropertyDescriptor TARGET_SYSTEM_TIMESTAMP_PRECISION = new Builder()
-            .name("target-system-timestamp-precision")
-            .displayName("Target System Timestamp Precision")
+            .name("Target System Timestamp Precision")
             .description("Specify timestamp precision at the target system."
                     + " Since this processor uses timestamp of entities to decide which should be listed, it is crucial to use the right timestamp precision.")
             .required(true)
@@ -216,8 +214,7 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
                     " are accurate.");
 
     public static final PropertyDescriptor LISTING_STRATEGY = new Builder()
-            .name("listing-strategy")
-            .displayName("Listing Strategy")
+            .name("Listing Strategy")
             .description("Specify how to determine new/updated entities. See each strategy descriptions for detail.")
             .required(true)
             .allowableValues(BY_TIMESTAMPS, BY_ENTITIES, NO_TRACKING)
@@ -225,13 +222,16 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
             .build();
 
     public static final PropertyDescriptor RECORD_WRITER = new Builder()
-            .name("record-writer")
-            .displayName("Record Writer")
+            .name("Record Writer")
             .description("Specifies the Record Writer to use for creating the listing. If not specified, one FlowFile will be created for each entity that is listed. " +
                     "If the Record Writer is specified, all entities will be written to a single FlowFile instead of adding attributes to individual FlowFiles.")
             .required(false)
             .identifiesControllerService(RecordSetWriterFactory.class)
             .build();
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        REL_SUCCESS
+    );
 
     /**
      * Represents the timestamp of an entity which was the latest one within those listed at the previous cycle.
@@ -273,6 +273,9 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         config.removeProperty("Distributed Cache Service");
+        config.renameProperty("target-system-timestamp-precision", TARGET_SYSTEM_TIMESTAMP_PRECISION.getName());
+        config.renameProperty("listing-strategy", LISTING_STRATEGY.getName());
+        config.renameProperty("record-writer", RECORD_WRITER.getName());
     }
 
     @Override
@@ -286,9 +289,7 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
 
     @Override
     public Set<Relationship> getRelationships() {
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_SUCCESS);
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     /**
@@ -469,9 +470,9 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
             return;
         }
 
-        final TreeMap<Long, List<T>> orderedEntries = new TreeMap<>();
+        final Map<Long, List<T>> orderedEntries = new TreeMap<>();
         for (final T entity : entityList) {
-            List<T> entitiesForTimestamp = orderedEntries.computeIfAbsent(entity.getTimestamp(), k -> new ArrayList<T>());
+            List<T> entitiesForTimestamp = orderedEntries.computeIfAbsent(entity.getTimestamp(), k -> new ArrayList<>());
             entitiesForTimestamp.add(entity);
         }
 
@@ -510,7 +511,7 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
 
         long currentTime = getCurrentTime();
 
-        final TreeMap<Long, List<T>> orderedEntries = new TreeMap<>();
+        final Map<Long, List<T>> orderedEntries = new TreeMap<>();
         try {
             List<T> entityList = performListing(context, lowerBoundInclusiveTimestamp, ListingMode.EXECUTION);
 
@@ -552,7 +553,7 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
                     .forEach(entity -> orderedEntries
                             .computeIfAbsent(entity.getTimestamp(), __ -> new ArrayList<>())
                             .add(entity)
-                    );
+                );
 
             if (getLogger().isTraceEnabled()) {
                 getLogger().trace("orderedEntries: {}",
@@ -661,7 +662,7 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
         }
 
         Long latestListedEntryTimestampThisCycleMillis = null;
-        final TreeMap<Long, List<T>> orderedEntries = new TreeMap<>();
+        final TreeMap<Long, List<T>> orderedEntries = new TreeMap<>(); // NOPMD
 
         // Build a sorted map to determine the latest possible entries
         boolean targetSystemHasMilliseconds = false;
@@ -678,18 +679,14 @@ public abstract class AbstractListProcessor<T extends ListableEntity> extends Ab
             final boolean newEntry = minTimestampToListMillis == null || entityTimestampMillis >= minTimestampToListMillis && entityTimestampMillis >= lastProcessedLatestEntryTimestampMillis;
 
             if (newEntry) {
-                List<T> entitiesForTimestamp = orderedEntries.get(entity.getTimestamp());
-                if (entitiesForTimestamp == null) {
-                    entitiesForTimestamp = new ArrayList<T>();
-                    orderedEntries.put(entity.getTimestamp(), entitiesForTimestamp);
-                }
+                List<T> entitiesForTimestamp = orderedEntries.computeIfAbsent(entity.getTimestamp(), k -> new ArrayList<>());
                 entitiesForTimestamp.add(entity);
             }
         }
 
         int entitiesListed = 0;
 
-        if (orderedEntries.size() > 0) {
+        if (!orderedEntries.isEmpty()) {
             latestListedEntryTimestampThisCycleMillis = orderedEntries.lastKey();
 
             // Determine target system time precision.

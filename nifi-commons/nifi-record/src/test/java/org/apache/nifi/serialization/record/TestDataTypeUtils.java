@@ -24,6 +24,9 @@ import org.apache.nifi.serialization.record.type.RecordDataType;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
 import org.apache.nifi.serialization.record.util.IllegalTypeConversionException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -48,12 +51,12 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.DoubleAdder;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -251,18 +254,14 @@ public class TestDataTypeUtils {
 
         int[] intArray = {3, 2, 1};
 
-        Map<String, Object> inputMap = new HashMap<String, Object>() {{
-            put("field1", "hello");
-            put("field2", 1);
-            put("field3", intArray);
-        }};
+        Map<String, Object> inputMap = Map.of("field1", "hello", "field2", 1, "field3", intArray);
 
         resultMap = DataTypeUtils.convertRecordMapToJavaMap(inputMap, RecordFieldType.STRING.getDataType());
         assertNotNull(resultMap);
         assertFalse(resultMap.isEmpty());
         assertEquals("hello", resultMap.get("field1"));
         assertEquals(1, resultMap.get("field2"));
-        assertTrue(resultMap.get("field3") instanceof int[]);
+        assertInstanceOf(int[].class, resultMap.get("field3"));
         assertNull(resultMap.get("field4"));
 
     }
@@ -273,7 +272,7 @@ public class TestDataTypeUtils {
         String uuidString = generated.toString();
 
         Object result = DataTypeUtils.convertType(uuidString, RecordFieldType.UUID.getDataType(), "uuid_test");
-        assertTrue(result instanceof UUID);
+        assertInstanceOf(UUID.class, result);
         assertEquals(generated, result);
     }
 
@@ -283,7 +282,7 @@ public class TestDataTypeUtils {
         String uuid = generated.toString();
 
         Object result = DataTypeUtils.convertType(generated, RecordFieldType.STRING.getDataType(), "uuid_test");
-        assertTrue(result instanceof String);
+        assertInstanceOf(String.class, result);
         assertEquals(uuid, result);
     }
 
@@ -296,7 +295,7 @@ public class TestDataTypeUtils {
         byte[] expected = buffer.array();
 
         Object result = DataTypeUtils.convertType(expected, RecordFieldType.UUID.getDataType(), "uuid_test");
-        assertTrue(result instanceof UUID);
+        assertInstanceOf(UUID.class, result);
         assertEquals(generated, result);
     }
 
@@ -309,8 +308,8 @@ public class TestDataTypeUtils {
         byte[] expected = buffer.array();
 
         Object result = DataTypeUtils.convertType(expected, RecordFieldType.ARRAY.getDataType(), "uuid_test");
-        assertTrue(result instanceof Byte[]);
-        assertEquals( 16, ((Byte[]) result).length);
+        assertInstanceOf(Byte[].class, result);
+        assertEquals(16, ((Byte[]) result).length);
         Byte[] bytes = (Byte[]) result;
         for (int x = 0; x < bytes.length; x++) {
             byte current = bytes[x];
@@ -326,7 +325,7 @@ public class TestDataTypeUtils {
         Object[] resultArray = DataTypeUtils.convertRecordArrayToJavaArray(stringArray, RecordFieldType.STRING.getDataType());
         assertNotNull(resultArray);
         for (Object o : resultArray) {
-            assertTrue(o instanceof String);
+            assertInstanceOf(String.class, o);
         }
     }
 
@@ -351,33 +350,33 @@ public class TestDataTypeUtils {
         Object[] recordArray = {inputRecord1, inputRecord2};
         Object resultObj = DataTypeUtils.convertRecordFieldtoObject(recordArray, RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.RECORD.getRecordDataType(schema)));
         assertNotNull(resultObj);
-        assertTrue(resultObj instanceof Object[]);
+        assertInstanceOf(Object[].class, resultObj);
         Object[] resultArray = (Object[]) resultObj;
         for (Object o : resultArray) {
-            assertTrue(o instanceof Map);
+            assertInstanceOf(Map.class, o);
         }
     }
 
     @Test
     void testConvertRecordFieldToObjectWithNestedRecord() {
-        final Record record = DataTypeUtils.toRecord(new LinkedHashMap<String, Object>() {{
-            put("firstName", "John");
-            put("age", 30);
-            put("addresses", new Object[] {"some string", DataTypeUtils.toRecord(Collections.singletonMap("address_1", "123 Fake Street"), "addresses")});
-        }}, "");
+        final Record record = DataTypeUtils.toRecord(Map.of(
+                "firstName", "John",
+                "age", 30,
+                "addresses", new Object[] {"some string", DataTypeUtils.toRecord(Map.of("address_1", "123 Fake Street"), "addresses")}
+        ), "");
 
         final Object obj = DataTypeUtils.convertRecordFieldtoObject(record, RecordFieldType.RECORD.getDataType());
-        assertTrue(obj instanceof Map);
+        assertInstanceOf(Map.class, obj);
         final Map<String, Object> map = (Map<String, Object>) obj;
         assertEquals("John", map.get("firstName"));
         assertEquals(30, map.get("age"));
 
-        assertTrue(map.get("addresses") instanceof Object[]);
+        assertInstanceOf(Object[].class, map.get("addresses"));
         final Object[] objArray = (Object[]) map.get("addresses");
         assertEquals(2, objArray.length);
         assertEquals("some string", objArray[0]);
 
-        assertTrue(objArray[1] instanceof Map);
+        assertInstanceOf(Map.class, objArray[1]);
         final Map<String, Object> addressMap = (Map<String, Object>) objArray[1];
         assertEquals("123 Fake Street", addressMap.get("address_1"));
     }
@@ -433,53 +432,53 @@ public class TestDataTypeUtils {
         final Record inputRecord = new MapRecord(schema, values);
 
         Object o = DataTypeUtils.convertRecordFieldtoObject(inputRecord, RecordFieldType.RECORD.getRecordDataType(schema));
-        assertTrue(o instanceof Map);
+        assertInstanceOf(Map.class, o);
         final Map<String, Object> outputMap = (Map<String, Object>) o;
         assertEquals("hello", outputMap.get("defaultOfHello"));
         assertEquals("world", outputMap.get("noDefault"));
         o = outputMap.get("intField");
         assertEquals(5, o);
         o = outputMap.get("intArray");
-        assertTrue(o instanceof Integer[]);
+        assertInstanceOf(Integer[].class, o);
         final Integer[] intArray = (Integer[]) o;
         assertEquals(3, intArray.length);
         assertEquals((Integer) 3, intArray[0]);
         o = outputMap.get("objArray");
-        assertTrue(o instanceof Object[]);
+        assertInstanceOf(Object[].class, o);
         final Object[] objArray = (Object[]) o;
         assertEquals(4, objArray.length);
         assertEquals(3, objArray[0]);
         assertEquals("2", objArray[1]);
         o = outputMap.get("choiceArray");
-        assertTrue(o instanceof Object[]);
+        assertInstanceOf(Object[].class, o);
         final Object[] choiceArray = (Object[]) o;
         assertEquals(2, choiceArray.length);
         assertEquals("foo", choiceArray[0]);
-        assertTrue(choiceArray[1] instanceof Object[]);
+        assertInstanceOf(Object[].class, choiceArray[1]);
         final Object[] strArray = (Object[]) choiceArray[1];
         assertEquals(2, strArray.length);
         assertEquals("bar", strArray[0]);
         assertEquals("baz", strArray[1]);
         o = outputMap.get("complex");
-        assertTrue(o instanceof Map);
+        assertInstanceOf(Map.class, o);
         final Map<String, Object> nestedOutputMap = (Map<String, Object>) o;
         o = nestedOutputMap.get("complex1");
-        assertTrue(o instanceof Map);
+        assertInstanceOf(Map.class, o);
         final Map<String, Object> complex1 = (Map<String, Object>) o;
         o = complex1.get("a");
-        assertTrue(o instanceof Integer[]);
+        assertInstanceOf(Integer[].class, o);
         assertEquals((Integer) 2, ((Integer[]) o)[1]);
         o = complex1.get("b");
-        assertTrue(o instanceof Integer[]);
+        assertInstanceOf(Integer[].class, o);
         assertEquals((Integer) 3, ((Integer[]) o)[2]);
         o = nestedOutputMap.get("complex2");
-        assertTrue(o instanceof Map);
+        assertInstanceOf(Map.class, o);
         final Map<String, Object> complex2 = (Map<String, Object>) o;
         o = complex2.get("a");
-        assertTrue(o instanceof String[]);
+        assertInstanceOf(String[].class, o);
         assertEquals("hello", ((String[]) o)[0]);
         o = complex2.get("b");
-        assertTrue(o instanceof String[]);
+        assertInstanceOf(String[].class, o);
         assertEquals("4", ((String[]) o)[1]);
     }
 
@@ -498,21 +497,21 @@ public class TestDataTypeUtils {
     @Test
     public void testStringToBytes() {
         Object bytes = DataTypeUtils.convertType("Hello", RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.BYTE.getDataType()), null, StandardCharsets.UTF_8);
-        assertTrue(bytes instanceof Byte[]);
+        assertInstanceOf(Byte[].class, bytes);
         assertNotNull(bytes);
         Byte[] b = (Byte[]) bytes;
         assertEquals((long) 72, (long) b[0], "Conversion from String to byte[] failed");  // H
-        assertEquals((long) 101, (long) b[1], "Conversion from String to byte[] failed" ); // e
-        assertEquals((long) 108, (long) b[2], "Conversion from String to byte[] failed" ); // l
-        assertEquals((long) 108, (long) b[3], "Conversion from String to byte[] failed" ); // l
-        assertEquals((long) 111, (long) b[4], "Conversion from String to byte[] failed" ); // o
+        assertEquals((long) 101, (long) b[1], "Conversion from String to byte[] failed"); // e
+        assertEquals((long) 108, (long) b[2], "Conversion from String to byte[] failed"); // l
+        assertEquals((long) 108, (long) b[3], "Conversion from String to byte[] failed"); // l
+        assertEquals((long) 111, (long) b[4], "Conversion from String to byte[] failed"); // o
     }
 
     @Test
     public void testBytesToString() {
         Object s = DataTypeUtils.convertType("Hello".getBytes(StandardCharsets.UTF_16), RecordFieldType.STRING.getDataType(), null, StandardCharsets.UTF_16);
         assertNotNull(s);
-        assertTrue(s instanceof String);
+        assertInstanceOf(String.class, s);
         assertEquals("Hello", s, "Conversion from byte[] to String failed");
     }
 
@@ -520,7 +519,7 @@ public class TestDataTypeUtils {
     public void testBytesToBytes() {
         Object b = DataTypeUtils.convertType("Hello".getBytes(StandardCharsets.UTF_16), RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.BYTE.getDataType()), null, StandardCharsets.UTF_16);
         assertNotNull(b);
-        assertTrue(b instanceof Byte[]);
+        assertInstanceOf(Byte[].class, b);
         assertEquals((Object) "Hello".getBytes(StandardCharsets.UTF_16)[0], ((Byte[]) b)[0], "Conversion from byte[] to String failed at char 0");
     }
 
@@ -557,7 +556,7 @@ public class TestDataTypeUtils {
 
     @Test
     public void testConvertToBigDecimalWhenUnsupportedType() {
-        assertThrows(IllegalTypeConversionException.class, () -> DataTypeUtils.convertType(new ArrayList<Double>(), RecordFieldType.DECIMAL.getDecimalDataType(30, 10),
+        assertThrows(IllegalTypeConversionException.class, () -> DataTypeUtils.convertType(new ArrayList<>(), RecordFieldType.DECIMAL.getDecimalDataType(30, 10),
                 null, StandardCharsets.UTF_8));
     }
 
@@ -591,24 +590,35 @@ public class TestDataTypeUtils {
         assertEquals(RecordFieldType.DECIMAL.getDecimalDataType(3, 1), DataTypeUtils.inferDataType(BigDecimal.valueOf(12.3D), null));
     }
 
-    @Test
-    public void testIsBigDecimalTypeCompatible() {
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible((byte) 13));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible((short) 13));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible(12));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible(12L));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible(BigInteger.valueOf(12L)));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible(12.123F));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible(12.123D));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible(BigDecimal.valueOf(12.123D)));
-        assertTrue(DataTypeUtils.isDecimalTypeCompatible("123"));
+    @ParameterizedTest
+    @MethodSource("decimalTypeCompatibleData")
+    public void testIsBigDecimalTypeCompatible(Object value, boolean compatible) {
+        if (compatible) {
+            assertTrue(DataTypeUtils.isDecimalTypeCompatible(value));
+        } else {
+            assertFalse(DataTypeUtils.isDecimalTypeCompatible(value));
+        }
+    }
 
-        assertFalse(DataTypeUtils.isDecimalTypeCompatible(null));
-        assertFalse(DataTypeUtils.isDecimalTypeCompatible("test"));
-        assertFalse(DataTypeUtils.isDecimalTypeCompatible(new ArrayList<>()));
-        // Decimal handling does not support NaN and Infinity as the underlying BigDecimal is unable to parse
-        assertFalse(DataTypeUtils.isDecimalTypeCompatible("NaN"));
-        assertFalse(DataTypeUtils.isDecimalTypeCompatible("Infinity"));
+    private static Stream<Arguments> decimalTypeCompatibleData() {
+        return Stream.of(
+                Arguments.argumentSet("byte", (byte) 13, true),
+                Arguments.argumentSet("short", (short) 13, true),
+                Arguments.argumentSet("int", 12, true),
+                Arguments.argumentSet("long", 12L, true),
+                Arguments.argumentSet("BigInteger", BigInteger.valueOf(12L), true),
+                Arguments.argumentSet("float", 12.123F, true),
+                Arguments.argumentSet("double", 12.123D, true),
+                Arguments.argumentSet("BigDecimal", BigDecimal.valueOf(12.123D), true),
+                Arguments.argumentSet("integer String", "123", true),
+                Arguments.argumentSet("double as byte array", "12.00".getBytes(StandardCharsets.UTF_8), true),
+                Arguments.argumentSet("null", null, false),
+                Arguments.argumentSet("non number String", "test", false),
+                Arguments.argumentSet("ArrayList", new ArrayList<>(), false),
+                // Decimal handling does not support NaN and Infinity as the underlying BigDecimal is unable to parse
+                Arguments.argumentSet("Nan", "NaN", false),
+                Arguments.argumentSet("Infinity", "Infinity", false)
+        );
     }
 
     @Test
@@ -720,8 +730,8 @@ public class TestDataTypeUtils {
         final Function<Object, BigInteger> toBigInteger = v -> (BigInteger) DataTypeUtils.convertType(v, RecordFieldType.BIGINT.getDataType(), "field");
         assertEquals(new BigInteger("12345678901234567890"), toBigInteger.apply(new BigInteger("12345678901234567890")));
         assertEquals(new BigInteger("1234567890123456789"), toBigInteger.apply(1234567890123456789L));
-        assertEquals(new BigInteger("1"), toBigInteger.apply(1));
-        assertEquals(new BigInteger("1"), toBigInteger.apply((short) 1));
+        assertEquals(BigInteger.ONE, toBigInteger.apply(1));
+        assertEquals(BigInteger.ONE, toBigInteger.apply((short) 1));
         // Decimals are truncated.
         assertEquals(new BigInteger("3"), toBigInteger.apply(3.4f));
         assertEquals(new BigInteger("3"), toBigInteger.apply(3.9f));
@@ -827,7 +837,7 @@ public class TestDataTypeUtils {
         testChooseDataTypeAlsoReverseTypes(value, dataTypes, expected);
     }
 
-    private <E> void testChooseDataTypeAlsoReverseTypes(Object value, List<DataType> dataTypes, DataType expected) {
+    private void testChooseDataTypeAlsoReverseTypes(Object value, List<DataType> dataTypes, DataType expected) {
         testChooseDataType(dataTypes, value, expected);
         Collections.reverse(dataTypes);
         testChooseDataType(dataTypes, value, expected);
@@ -881,12 +891,12 @@ public class TestDataTypeUtils {
 
     @Test
     public void testFindMostSuitableTypeWithByte() {
-        testFindMostSuitableType(Byte.valueOf((byte) 123), RecordFieldType.BYTE.getDataType());
+        testFindMostSuitableType((byte) 123, RecordFieldType.BYTE.getDataType());
     }
 
     @Test
     public void testFindMostSuitableTypeWithShort() {
-        testFindMostSuitableType(Short.valueOf((short) 123), RecordFieldType.SHORT.getDataType());
+        testFindMostSuitableType((short) 123, RecordFieldType.SHORT.getDataType());
     }
 
     @Test
@@ -955,7 +965,7 @@ public class TestDataTypeUtils {
     }
 
     private void testFindMostSuitableType(Object value, DataType expected, DataType... filtered) {
-        List<DataType> filteredOutDataTypes = Arrays.stream(filtered).collect(Collectors.toList());
+        List<DataType> filteredOutDataTypes = Arrays.stream(filtered).toList();
 
         // GIVEN
         List<DataType> unexpectedTypes = Arrays.stream(RecordFieldType.values())
@@ -972,7 +982,7 @@ public class TestDataTypeUtils {
                 })
                 .filter(dataType -> !dataType.equals(expected))
                 .filter(dataType -> !filteredOutDataTypes.contains(dataType))
-                .collect(Collectors.toList());
+                .toList();
 
         IntStream.rangeClosed(0, unexpectedTypes.size()).forEach(insertIndex -> {
             List<DataType> allTypes = new LinkedList<>(unexpectedTypes);
@@ -1186,7 +1196,7 @@ public class TestDataTypeUtils {
     @Test
     public void testConvertTypeStringToDateDefaultTimeZoneFormat() {
         final Object converted = DataTypeUtils.convertType(ISO_8601_YEAR_MONTH_DAY, RecordFieldType.DATE.getDataType(), DATE_FIELD);
-        assertTrue(converted instanceof java.sql.Date, "Converted value is not java.sql.Date");
+        assertInstanceOf(Date.class, converted, "Converted value is not java.sql.Date");
         assertEquals(ISO_8601_YEAR_MONTH_DAY, converted.toString());
     }
 
@@ -1198,7 +1208,7 @@ public class TestDataTypeUtils {
         final Object converted = DataTypeUtils.convertType(
                 CUSTOM_MONTH_DAY_YEAR, RecordFieldType.DATE.getDataType(), Optional.of(CUSTOM_MONTH_DAY_YEAR_PATTERN), Optional.empty(), Optional.empty(), "date"
         );
-        assertTrue(converted instanceof java.sql.Date, "Converted value is not java.sql.Date");
+        assertInstanceOf(Date.class, converted, "Converted value is not java.sql.Date");
         assertEquals(ISO_8601_YEAR_MONTH_DAY, converted.toString());
     }
 

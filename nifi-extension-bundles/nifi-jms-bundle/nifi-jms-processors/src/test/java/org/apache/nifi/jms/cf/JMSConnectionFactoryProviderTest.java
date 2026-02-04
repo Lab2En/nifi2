@@ -17,22 +17,20 @@
 package org.apache.nifi.jms.cf;
 
 import org.apache.nifi.logging.ComponentLog;
-import org.apache.nifi.processor.Processor;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.ssl.SSLContextService;
 import org.apache.nifi.util.MockComponentLog;
 import org.apache.nifi.util.MockConfigurationContext;
+import org.apache.nifi.util.NoOpProcessor;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.net.ssl.SSLContext;
 import java.net.URISyntaxException;
 import java.util.Collections;
 import java.util.Map;
+import javax.net.ssl.SSLContext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -44,8 +42,6 @@ import static org.mockito.Mockito.when;
  * Tests for {@link JMSConnectionFactoryProvider}
  */
 public class JMSConnectionFactoryProviderTest {
-
-    private static Logger logger = LoggerFactory.getLogger(JMSConnectionFactoryProviderTest.class);
 
     private static final String HOSTNAME = "myhost";
     private static final String PORT = "1234";
@@ -79,19 +75,20 @@ public class JMSConnectionFactoryProviderTest {
 
     private String dummyResource;
     private String allDummyResources;
+    private TestRunner runner;
 
     @BeforeEach
     public void prepareTest() throws URISyntaxException {
         dummyResource = this.getClass().getResource("/" + DUMMY_JAR_1).toURI().toString();
-        allDummyResources = this.getClass().getResource("/" + DUMMY_JAR_1).toURI().toString() + "," +
-                this.getClass().getResource("/" + DUMMY_JAR_2).toURI().toString() + "," +
-                this.getClass().getResource("/" + DUMMY_CONF).toURI().toString() + ",";
+        allDummyResources = this.getClass().getResource("/" + DUMMY_JAR_1).toURI() + "," +
+                this.getClass().getResource("/" + DUMMY_JAR_2).toURI() + "," +
+                this.getClass().getResource("/" + DUMMY_CONF).toURI() + ",";
+
+        runner = TestRunners.newTestRunner(NoOpProcessor.class);
     }
 
     @Test
     public void validateNotValidForNonExistingLibPath() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -104,7 +101,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validateELExpression() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
         runner.setValidateExpressionUsage(true);
 
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
@@ -122,7 +118,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void testClientLibResourcesLoaded() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
         runner.setValidateExpressionUsage(true);
 
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
@@ -157,8 +152,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithSingleTestBroker() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -171,8 +164,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithSingleTestBrokerWithScheme() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -185,8 +176,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithMultipleTestBrokers() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -199,8 +188,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithSingleActiveMqBroker() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -213,8 +200,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithMultipleActiveMqBrokers() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -227,8 +212,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithSingleTibcoBroker() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -241,8 +224,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithMultipleTibcoBrokers() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -255,8 +236,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithSingleIbmMqBroker() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -269,8 +248,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithMultipleIbmMqBrokers() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -283,8 +260,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithMultipleIbmMqMixedBrokers() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -297,8 +272,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithMultipleIbmMqColorPairBrokers() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -311,8 +284,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void validWithSingleQpidJmsBroker() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProvider cfProvider = new JMSConnectionFactoryProvider();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -325,8 +296,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleTestBrokerConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -341,8 +310,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleTestBrokerWithSchemaConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -357,8 +324,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnMultipleTestBrokersConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -373,8 +338,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleActiveMqBrokerConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -389,8 +352,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnMultipleActiveMqBrokersConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -405,8 +366,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleActiveMqBrokerWithSslConnectionFactory() throws Exception {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -454,8 +413,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleTibcoBrokerConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -470,8 +427,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnMultipleTibcoBrokersConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -486,8 +441,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleIbmMqBrokerConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -502,8 +455,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnMultipleIbmMqBrokersConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -518,8 +469,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnMultipleIbmMqMixedBrokersConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -534,8 +483,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnMultipleIbmMqColonPairBrokersConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -550,8 +497,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleIbmMqColonSeparatedPairBrokerConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -566,8 +511,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void dynamicPropertiesSetOnSingleTestBrokerConnectionFactory() throws InitializationException {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -585,8 +528,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleQpidJmsConnectionFactory() throws Exception {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 
@@ -601,8 +542,6 @@ public class JMSConnectionFactoryProviderTest {
 
     @Test
     public void propertiesSetOnSingleQpidJmsWithSslConnectionFactory() throws Exception {
-        TestRunner runner = TestRunners.newTestRunner(mock(Processor.class));
-
         JMSConnectionFactoryProviderForTest cfProvider = new JMSConnectionFactoryProviderForTest();
         runner.addControllerService(CF_PROVIDER_SERVICE_ID, cfProvider);
 

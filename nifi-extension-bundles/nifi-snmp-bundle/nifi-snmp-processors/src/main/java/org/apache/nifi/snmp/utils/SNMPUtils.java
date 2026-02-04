@@ -16,25 +16,12 @@
  */
 package org.apache.nifi.snmp.utils;
 
-import org.apache.nifi.snmp.exception.InvalidAuthProtocolException;
-import org.apache.nifi.snmp.exception.InvalidPrivProtocolException;
 import org.apache.nifi.snmp.exception.InvalidSnmpVersionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.snmp4j.PDU;
 import org.snmp4j.PDUv1;
 import org.snmp4j.mp.SnmpConstants;
-import org.snmp4j.security.AuthHMAC128SHA224;
-import org.snmp4j.security.AuthHMAC192SHA256;
-import org.snmp4j.security.AuthHMAC256SHA384;
-import org.snmp4j.security.AuthHMAC384SHA512;
-import org.snmp4j.security.AuthMD5;
-import org.snmp4j.security.AuthSHA;
-import org.snmp4j.security.Priv3DES;
-import org.snmp4j.security.PrivAES128;
-import org.snmp4j.security.PrivAES192;
-import org.snmp4j.security.PrivAES256;
-import org.snmp4j.security.PrivDES;
 import org.snmp4j.smi.AbstractVariable;
 import org.snmp4j.smi.AssignableFromInteger;
 import org.snmp4j.smi.AssignableFromLong;
@@ -67,8 +54,6 @@ public final class SNMPUtils {
     private static final String OID_PROP_PATTERN = SNMP_PROP_PREFIX + "%s" + SNMP_PROP_DELIMITER + "%s";
     private static final Pattern OID_PATTERN = Pattern.compile("[0-9+.]*");
 
-    private static final Map<String, OID> AUTH_MAP;
-    private static final Map<String, OID> PRIV_MAP;
     private static final Map<String, String> REPORT_MAP;
     private static final Map<String, Integer> VERSION_MAP;
 
@@ -85,27 +70,6 @@ public final class SNMPUtils {
         map.put("1.3.6.1.6.3.15.1.1.5", "usmStatsWrongDigests");
         map.put("1.3.6.1.6.3.15.1.1.6", "usmStatsDecryptionErrors");
         REPORT_MAP = Collections.unmodifiableMap(map);
-    }
-
-    static {
-        final Map<String, OID> map = new HashMap<>();
-        map.put("DES", PrivDES.ID);
-        map.put("3DES", Priv3DES.ID);
-        map.put("AES128", PrivAES128.ID);
-        map.put("AES192", PrivAES192.ID);
-        map.put("AES256", PrivAES256.ID);
-        PRIV_MAP = Collections.unmodifiableMap(map);
-    }
-
-    static {
-        final Map<String, OID> map = new HashMap<>();
-        map.put("SHA", AuthSHA.ID);
-        map.put("MD5", AuthMD5.ID);
-        map.put("HMAC128SHA224", AuthHMAC128SHA224.ID);
-        map.put("HMAC192SHA256", AuthHMAC192SHA256.ID);
-        map.put("HMAC256SHA384", AuthHMAC256SHA384.ID);
-        map.put("HMAC384SHA512", AuthHMAC384SHA512.ID);
-        AUTH_MAP = Collections.unmodifiableMap(map);
     }
 
     static {
@@ -152,21 +116,6 @@ public final class SNMPUtils {
         return attributes;
     }
 
-    public static OID getPriv(final String privProtocol) {
-        if (PRIV_MAP.containsKey(privProtocol)) {
-            return PRIV_MAP.get(privProtocol);
-        }
-        throw new InvalidPrivProtocolException("Invalid privacy protocol provided.");
-    }
-
-
-    public static OID getAuth(final String authProtocol) {
-        if (AUTH_MAP.containsKey(authProtocol)) {
-            return AUTH_MAP.get(authProtocol);
-        }
-        throw new InvalidAuthProtocolException("Invalid authentication protocol provided.");
-    }
-
     public static boolean addVariables(final PDU pdu, final Map<String, String> attributes) {
         boolean result = false;
         try {
@@ -176,15 +125,15 @@ public final class SNMPUtils {
                     final String snmpPropName = splits[1];
                     final String snmpPropValue = attributeEntry.getValue();
                     if (SNMPUtils.OID_PATTERN.matcher(snmpPropName).matches()) {
-                        final Optional<Variable> var;
+                        final Optional<Variable> snmpVar;
                         if (splits.length == 2) { // no SMI syntax defined
-                            var = Optional.of(new OctetString(snmpPropValue));
+                            snmpVar = Optional.of(new OctetString(snmpPropValue));
                         } else {
                             final int smiSyntax = Integer.parseInt(splits[2]);
-                            var = SNMPUtils.stringToVariable(snmpPropValue, smiSyntax);
+                            snmpVar = SNMPUtils.stringToVariable(snmpPropValue, smiSyntax);
                         }
-                        if (var.isPresent()) {
-                            final VariableBinding varBind = new VariableBinding(new OID(snmpPropName), var.get());
+                        if (snmpVar.isPresent()) {
+                            final VariableBinding varBind = new VariableBinding(new OID(snmpPropName), snmpVar.get());
                             pdu.add(varBind);
                             result = true;
                         }
@@ -238,23 +187,23 @@ public final class SNMPUtils {
     }
 
     private static Optional<Variable> stringToVariable(final String value, final int smiSyntax) {
-        Variable var = AbstractVariable.createFromSyntax(smiSyntax);
+        Variable variable = AbstractVariable.createFromSyntax(smiSyntax);
         try {
-            if (var instanceof AssignableFromString) {
-                ((AssignableFromString) var).setValue(value);
-            } else if (var instanceof AssignableFromInteger) {
-                ((AssignableFromInteger) var).setValue(Integer.parseInt(value));
-            } else if (var instanceof AssignableFromLong) {
-                ((AssignableFromLong) var).setValue(Long.parseLong(value));
+            if (variable instanceof AssignableFromString) {
+                ((AssignableFromString) variable).setValue(value);
+            } else if (variable instanceof AssignableFromInteger) {
+                ((AssignableFromInteger) variable).setValue(Integer.parseInt(value));
+            } else if (variable instanceof AssignableFromLong) {
+                ((AssignableFromLong) variable).setValue(Long.parseLong(value));
             } else {
-                logger.error("Unsupported conversion of [ {} ] to ", var.getSyntaxString());
-                var = null;
+                logger.error("Unsupported conversion of [ {} ] to ", variable.getSyntaxString());
+                variable = null;
             }
         } catch (IllegalArgumentException e) {
-            logger.error("Unsupported conversion of [ {} ] to ", var.getSyntaxString(), e);
-            var = null;
+            logger.error("Unsupported conversion of [ {} ] to ", variable.getSyntaxString(), e);
+            variable = null;
         }
-        return Optional.ofNullable(var);
+        return Optional.ofNullable(variable);
     }
 
     public static Optional<String> getErrorMessage(final String oid) {

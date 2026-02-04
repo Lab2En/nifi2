@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import {
     BulletinsTipInput,
     ControllerServiceReferencingComponent,
@@ -29,12 +29,10 @@ import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { NifiTooltipDirective, NiFiCommon } from '@nifi/shared';
 import { ValidationErrorsTip } from '../../tooltips/validation-errors-tip/validation-errors-tip.component';
 import { BulletinsTip } from '../../tooltips/bulletins-tip/bulletins-tip.component';
-import { RouterLink } from '@angular/router';
 import { MatDialogModule } from '@angular/material/dialog';
 
 @Component({
     selector: 'controller-service-references',
-    standalone: true,
     templateUrl: './controller-service-references.component.html',
     imports: [
         MatTreeModule,
@@ -43,20 +41,19 @@ import { MatDialogModule } from '@angular/material/dialog';
         NgTemplateOutlet,
         NgClass,
         NifiTooltipDirective,
-        RouterLink,
         MatDialogModule
     ],
     styleUrls: ['./controller-service-references.component.scss']
 })
 export class ControllerServiceReferences {
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() disabledLinks: boolean = false;
     @Input() serviceReferences!: ControllerServiceReferencingComponentEntity[];
     @Input() goToReferencingComponent!: (component: ControllerServiceReferencingComponent) => void;
 
     protected readonly ValidationErrorsTip = ValidationErrorsTip;
     protected readonly BulletinsTip = BulletinsTip;
-
-    constructor(private nifiCommon: NiFiCommon) {}
 
     getUnauthorized(references: ControllerServiceReferencingComponentEntity[]) {
         return references.filter((reference) => !reference.permissions.canRead);
@@ -114,6 +111,10 @@ export class ControllerServiceReferences {
         return {
             bulletins: entity.bulletins
         };
+    }
+
+    getBulletinSeverityClass(entity: ControllerServiceReferencingComponentEntity): string {
+        return this.nifiCommon.getBulletinSeverityClass(entity.bulletins);
     }
 
     hasActiveThreads(reference: ControllerServiceReferencingComponent): boolean {

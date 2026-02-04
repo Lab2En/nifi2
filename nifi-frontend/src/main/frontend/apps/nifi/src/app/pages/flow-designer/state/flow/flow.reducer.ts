@@ -19,7 +19,7 @@ import { createReducer, on } from '@ngrx/store';
 import {
     changeVersionComplete,
     changeVersionSuccess,
-    copySuccess,
+    clearBulletinsForComponentSuccess,
     createComponentComplete,
     createComponentSuccess,
     createConnection,
@@ -51,6 +51,7 @@ import {
     navigateWithoutTransform,
     pasteSuccess,
     pollChangeVersionSuccess,
+    pollProcessorUntilStoppedSuccess,
     pollRevertChangesSuccess,
     requestRefreshRemoteProcessGroup,
     resetFlowState,
@@ -65,14 +66,17 @@ import {
     setFlowAnalysisOpen,
     setNavigationCollapsed,
     setOperationCollapsed,
+    setRegistryClients,
     setSkipTransform,
     setTransitionRequired,
     startComponent,
     startComponentSuccess,
+    startPollingProcessorUntilStopped,
     startProcessGroupSuccess,
     startRemoteProcessGroupPolling,
     stopComponent,
     stopComponentSuccess,
+    stopPollingProcessor,
     stopProcessGroupSuccess,
     stopRemoteProcessGroupPolling,
     stopVersionControl,
@@ -87,13 +91,17 @@ import {
     uploadProcessGroup
 } from './flow.actions';
 import { ComponentEntity, FlowState } from './index';
-import { ComponentType } from 'libs/shared/src';
+import { ComponentType } from '@nifi/shared';
 import { produce } from 'immer';
 
 export const initialState: FlowState = {
     id: 'root',
     changeVersionRequest: null,
+    pollingProcessor: null,
     flow: {
+        revision: {
+            version: 0
+        },
         permissions: {
             canRead: false,
             canWrite: false
@@ -158,7 +166,7 @@ export const initialState: FlowState = {
         parameterProviderBulletins: [],
         reportingTaskBulletins: []
     },
-    copiedSnippet: null,
+    registryClients: [],
     dragging: false,
     saving: false,
     versionSaving: false,
@@ -270,11 +278,16 @@ export const flowReducer = createReducer(
             };
             draftState.flowStatus = response.flowStatus;
             draftState.controllerBulletins = response.controllerBulletins;
+            draftState.registryClients = response.registryClients;
             draftState.addedCache = [];
             draftState.removedCache = [];
             draftState.status = 'success' as const;
         });
     }),
+    on(setRegistryClients, (state, { request }) => ({
+        ...state,
+        registryClients: request
+    })),
     on(loadProcessGroupComplete, (state) => ({
         ...state,
         status: 'complete' as const
@@ -296,7 +309,7 @@ export const flowReducer = createReducer(
             }
         });
     }),
-    on(loadProcessorSuccess, (state, { response }) => {
+    on(loadProcessorSuccess, pollProcessorUntilStoppedSuccess, (state, { response }) => {
         return produce(state, (draftState) => {
             const proposedProcessor = response.processor;
             const componentIndex: number = draftState.flow.processGroupFlow.flow.processors.findIndex(
@@ -371,6 +384,14 @@ export const flowReducer = createReducer(
         dragging: false,
         saving: false,
         versionSaving: false
+    })),
+    on(startPollingProcessorUntilStopped, (state, { request }) => ({
+        ...state,
+        pollingProcessor: request
+    })),
+    on(stopPollingProcessor, (state) => ({
+        ...state,
+        pollingProcessor: null
     })),
     on(
         createProcessor,
@@ -477,10 +498,6 @@ export const flowReducer = createReducer(
             });
         });
     }),
-    on(copySuccess, (state, { copiedSnippet }) => ({
-        ...state,
-        copiedSnippet
-    })),
     on(pasteSuccess, (state, { response }) => {
         return produce(state, (draftState) => {
             const labels: any[] | null = getComponentCollection(draftState, ComponentType.Label);
@@ -518,8 +535,7 @@ export const flowReducer = createReducer(
             if (connections) {
                 connections.push(...response.flow.connections);
             }
-
-            draftState.copiedSnippet = null;
+            draftState.flow.revision = response.revision;
         });
     }),
     on(setDragging, (state, { dragging }) => ({
@@ -637,7 +653,32 @@ export const flowReducer = createReducer(
     on(changeVersionComplete, revertChangesComplete, (state) => ({
         ...state,
         changeVersionRequest: null
-    }))
+    })),
+    on(clearBulletinsForComponentSuccess, (state, { response }) => {
+        return produce(state, (draftState) => {
+            // Find and update the component in all possible collections
+            const collections = [
+                { name: 'processors', array: draftState.flow.processGroupFlow.flow.processors },
+                { name: 'inputPorts', array: draftState.flow.processGroupFlow.flow.inputPorts },
+                { name: 'outputPorts', array: draftState.flow.processGroupFlow.flow.outputPorts },
+                { name: 'remoteProcessGroups', array: draftState.flow.processGroupFlow.flow.remoteProcessGroups }
+            ];
+
+            for (const collection of collections) {
+                if (collection.array) {
+                    const componentIndex = collection.array.findIndex(
+                        (component: any) => component.id === response.componentId
+                    );
+                    if (componentIndex > -1) {
+                        const component = collection.array[componentIndex] as any;
+                        // Replace bulletins with the current bulletins from the server
+                        component.bulletins = response.bulletins;
+                        break; // Component found and updated, no need to continue
+                    }
+                }
+            }
+        });
+    })
 );
 
 function getComponentCollection(draftState: FlowState, componentType: ComponentType): any[] | null {

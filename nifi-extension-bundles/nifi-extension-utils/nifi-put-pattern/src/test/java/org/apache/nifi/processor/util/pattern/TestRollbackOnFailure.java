@@ -21,21 +21,17 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.pattern.TestExceptionHandler.ExternalProcedure;
 import org.apache.nifi.util.MockComponentLog;
 import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.apache.nifi.processor.util.pattern.TestExceptionHandler.createArrayInputErrorHandler;
 import static org.apache.nifi.processor.util.pattern.TestExceptionHandler.exceptionMapping;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class TestRollbackOnFailure {
-
-    private static final Logger logger = LoggerFactory.getLogger(TestRollbackOnFailure.class);
 
     /**
      * This can be an example for how to compose an ExceptionHandler instance by reusable functions.
@@ -79,7 +75,7 @@ public class TestRollbackOnFailure {
         final List<Integer> results = new ArrayList<>();
         assertDoesNotThrow(() -> processInputs(context, inputs, results),
                 "ProcessException should NOT be thrown");
-        assertEquals( 2, context.getProcessedCount(), "Successful inputs");
+        assertEquals(2, context.getProcessedCount(), "Successful inputs");
     }
 
     @Test
@@ -92,7 +88,7 @@ public class TestRollbackOnFailure {
 
         final List<Integer> results = new ArrayList<>();
         assertThrows(ProcessException.class, () -> processInputs(context, inputs, results));
-        assertEquals( 0, context.getProcessedCount(), "Successful inputs");
+        assertEquals(0, context.getProcessedCount(), "Successful inputs");
     }
 
     @Test
@@ -107,7 +103,7 @@ public class TestRollbackOnFailure {
         final List<Integer> results = new ArrayList<>();
         assertDoesNotThrow(() -> processInputs(context, inputs, results),
                 "ProcessException should NOT be thrown");
-        assertEquals( 2, context.getProcessedCount(), "Successful inputs");
+        assertEquals(2, context.getProcessedCount(), "Successful inputs");
     }
 
     @Test

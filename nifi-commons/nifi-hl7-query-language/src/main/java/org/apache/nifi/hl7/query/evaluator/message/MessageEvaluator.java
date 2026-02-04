@@ -16,17 +16,19 @@
  */
 package org.apache.nifi.hl7.query.evaluator.message;
 
-import java.util.Map;
-
 import org.apache.nifi.hl7.model.HL7Message;
 import org.apache.nifi.hl7.query.evaluator.Evaluator;
 
+import java.util.Map;
+
 public class MessageEvaluator implements Evaluator<HL7Message> {
 
+    @Override
     public HL7Message evaluate(final Map<String, Object> objectMap) {
-        return (HL7Message) objectMap.get(Evaluator.MESSAGE_KEY);
+        return (HL7Message) objectMap.get(MESSAGE_KEY);
     }
 
+    @Override
     public Class<? extends HL7Message> getType() {
         return HL7Message.class;
     }

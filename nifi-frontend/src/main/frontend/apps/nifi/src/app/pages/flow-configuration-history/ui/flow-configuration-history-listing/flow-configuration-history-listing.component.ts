@@ -36,7 +36,6 @@ import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { FlowConfigurationHistoryTable } from './flow-configuration-history-table/flow-configuration-history-table.component';
 import { Sort } from '@angular/material/sort';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { isDefinedAndNotNull } from 'libs/shared/src';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -45,7 +44,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { selectAbout } from '../../../../state/about/about.selectors';
 import { debounceTime } from 'rxjs';
-import { NiFiCommon } from '@nifi/shared';
+import { isDefinedAndNotNull, NiFiCommon } from '@nifi/shared';
 import { MatButtonModule } from '@angular/material/button';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
 
@@ -56,7 +55,6 @@ interface FilterableColumn {
 
 @Component({
     selector: 'flow-configuration-history-listing',
-    standalone: true,
     imports: [
         CommonModule,
         NgxSkeletonLoaderModule,
@@ -74,6 +72,10 @@ interface FilterableColumn {
     styleUrls: ['./flow-configuration-history-listing.component.scss']
 })
 export class FlowConfigurationHistoryListing implements OnInit, OnDestroy {
+    private store = inject<Store<FlowConfigurationHistoryListingState>>(Store);
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+
     private static readonly DEFAULT_START_TIME: string = '00:00:00';
     private static readonly DEFAULT_END_TIME: string = '23:59:59';
     private static readonly TIME_REGEX = /^([0-1]\d|2[0-3]):([0-5]\d):([0-5]\d)$/;
@@ -99,11 +101,7 @@ export class FlowConfigurationHistoryListing implements OnInit, OnDestroy {
         { key: 'userIdentity', label: 'user' }
     ];
 
-    constructor(
-        private store: Store<FlowConfigurationHistoryListingState>,
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         this.queryRequest$
             .pipe(takeUntilDestroyed(), isDefinedAndNotNull())
             .subscribe((queryRequest) => (this.queryRequest = queryRequest));

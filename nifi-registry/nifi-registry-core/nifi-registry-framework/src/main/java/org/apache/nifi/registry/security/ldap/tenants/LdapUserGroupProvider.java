@@ -54,12 +54,6 @@ import org.springframework.ldap.filter.AndFilter;
 import org.springframework.ldap.filter.EqualsFilter;
 import org.springframework.ldap.filter.HardcodedFilter;
 
-import javax.naming.Context;
-import javax.naming.NamingEnumeration;
-import javax.naming.NamingException;
-import javax.naming.directory.Attribute;
-import javax.naming.directory.SearchControls;
-import javax.net.ssl.SSLContext;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.KeyStore;
@@ -74,6 +68,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.naming.Context;
+import javax.naming.NamingEnumeration;
+import javax.naming.NamingException;
+import javax.naming.directory.Attribute;
+import javax.naming.directory.SearchControls;
+import javax.net.ssl.SSLContext;
 
 /**
  * Abstract LDAP based implementation of a login identity provider.
@@ -173,56 +173,53 @@ public class LdapUserGroupProvider implements UserGroupProvider {
                     rawAuthenticationStrategy.getValue(), StringUtils.join(LdapAuthenticationStrategy.values(), ", ")));
         }
 
-        switch (authenticationStrategy) {
-            case ANONYMOUS:
-                context.setAnonymousReadOnly(true);
-                break;
-            default:
-                final String userDn = configurationContext.getProperty(PROP_MANAGER_DN).getValue();
-                final String password = configurationContext.getProperty(PROP_MANAGER_PASSWORD).getValue();
+        if (authenticationStrategy == LdapAuthenticationStrategy.ANONYMOUS) {
+            context.setAnonymousReadOnly(true);
+        } else {
+            final String userDn = configurationContext.getProperty(PROP_MANAGER_DN).getValue();
+            final String password = configurationContext.getProperty(PROP_MANAGER_PASSWORD).getValue();
 
-                context.setUserDn(userDn);
-                context.setPassword(password);
+            context.setUserDn(userDn);
+            context.setPassword(password);
 
-                switch (authenticationStrategy) {
-                    case SIMPLE:
-                        context.setAuthenticationStrategy(new SimpleDirContextAuthenticationStrategy());
-                        break;
-                    case LDAPS:
-                        context.setAuthenticationStrategy(new SimpleDirContextAuthenticationStrategy());
+            switch (authenticationStrategy) {
+                case SIMPLE:
+                    context.setAuthenticationStrategy(new SimpleDirContextAuthenticationStrategy());
+                    break;
+                case LDAPS:
+                    context.setAuthenticationStrategy(new SimpleDirContextAuthenticationStrategy());
 
-                        // indicate a secure connection
-                        baseEnvironment.put(Context.SECURITY_PROTOCOL, "ssl");
+                    // indicate a secure connection
+                    baseEnvironment.put(Context.SECURITY_PROTOCOL, "ssl");
 
-                        // get the configured ssl context
-                        final SSLContext ldapsSslContext = getConfiguredSslContext(configurationContext);
-                        if (ldapsSslContext != null) {
-                            // initialize the ldaps socket factory prior to use
-                            LdapsSocketFactory.initialize(ldapsSslContext.getSocketFactory());
-                            baseEnvironment.put("java.naming.ldap.factory.socket", LdapsSocketFactory.class.getName());
-                        }
-                        break;
-                    case START_TLS:
-                        final AbstractTlsDirContextAuthenticationStrategy tlsAuthenticationStrategy = new DefaultTlsDirContextAuthenticationStrategy();
+                    // get the configured ssl context
+                    final SSLContext ldapsSslContext = getConfiguredSslContext(configurationContext);
+                    if (ldapsSslContext != null) {
+                        // initialize the ldaps socket factory prior to use
+                        LdapsSocketFactory.initialize(ldapsSslContext.getSocketFactory());
+                        baseEnvironment.put("java.naming.ldap.factory.socket", LdapsSocketFactory.class.getName());
+                    }
+                    break;
+                case START_TLS:
+                    final AbstractTlsDirContextAuthenticationStrategy tlsAuthenticationStrategy = new DefaultTlsDirContextAuthenticationStrategy();
 
-                        // shutdown gracefully
-                        final String rawShutdownGracefully = configurationContext.getProperty("TLS - Shutdown Gracefully").getValue();
-                        if (StringUtils.isNotBlank(rawShutdownGracefully)) {
-                            final boolean shutdownGracefully = Boolean.TRUE.toString().equalsIgnoreCase(rawShutdownGracefully);
-                            tlsAuthenticationStrategy.setShutdownTlsGracefully(shutdownGracefully);
-                        }
+                    // shutdown gracefully
+                    final String rawShutdownGracefully = configurationContext.getProperty("TLS - Shutdown Gracefully").getValue();
+                    if (StringUtils.isNotBlank(rawShutdownGracefully)) {
+                        final boolean shutdownGracefully = Boolean.TRUE.toString().equalsIgnoreCase(rawShutdownGracefully);
+                        tlsAuthenticationStrategy.setShutdownTlsGracefully(shutdownGracefully);
+                    }
 
-                        // get the configured ssl context
-                        final SSLContext startTlsSslContext = getConfiguredSslContext(configurationContext);
-                        if (startTlsSslContext != null) {
-                            tlsAuthenticationStrategy.setSslSocketFactory(startTlsSslContext.getSocketFactory());
-                        }
+                    // get the configured ssl context
+                    final SSLContext startTlsSslContext = getConfiguredSslContext(configurationContext);
+                    if (startTlsSslContext != null) {
+                        tlsAuthenticationStrategy.setSslSocketFactory(startTlsSslContext.getSocketFactory());
+                    }
 
-                        // set the authentication strategy
-                        context.setAuthenticationStrategy(tlsAuthenticationStrategy);
-                        break;
-                }
-                break;
+                    // set the authentication strategy
+                    context.setAuthenticationStrategy(tlsAuthenticationStrategy);
+                    break;
+            }
         }
 
         // referrals
@@ -480,7 +477,7 @@ public class LdapUserGroupProvider implements UserGroupProvider {
                 }
 
                 do {
-                    userList.addAll(ldapTemplate.search(userSearchBase, userFilter.encode(), userControls, new AbstractContextMapper<User>() {
+                    userList.addAll(ldapTemplate.search(userSearchBase, userFilter.encode(), userControls, new AbstractContextMapper<>() {
                         @Override
                         protected User doMapFromContext(DirContextOperations ctx) {
                             // get the user identity
@@ -554,7 +551,7 @@ public class LdapUserGroupProvider implements UserGroupProvider {
                 }
 
                 do {
-                    groupList.addAll(ldapTemplate.search(groupSearchBase, groupFilter.encode(), groupControls, new AbstractContextMapper<Group>() {
+                    groupList.addAll(ldapTemplate.search(groupSearchBase, groupFilter.encode(), groupControls, new AbstractContextMapper<>() {
                         @Override
                         protected Group doMapFromContext(DirContextOperations ctx) {
                             // get the group identity
@@ -679,7 +676,7 @@ public class LdapUserGroupProvider implements UserGroupProvider {
         }
     }
 
-    private boolean hasMorePages(final DirContextProcessor processor ) {
+    private boolean hasMorePages(final DirContextProcessor processor) {
         return processor instanceof PagedResultsDirContextProcessor && ((PagedResultsDirContextProcessor) processor).hasMore();
     }
 

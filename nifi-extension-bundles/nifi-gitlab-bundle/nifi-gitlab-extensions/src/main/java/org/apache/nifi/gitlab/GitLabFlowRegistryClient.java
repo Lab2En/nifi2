@@ -25,6 +25,7 @@ import org.apache.nifi.registry.flow.FlowRegistryClientConfigurationContext;
 import org.apache.nifi.registry.flow.FlowRegistryException;
 import org.apache.nifi.registry.flow.git.AbstractGitFlowRegistryClient;
 import org.apache.nifi.registry.flow.git.client.GitRepositoryClient;
+import org.apache.nifi.ssl.SSLContextProvider;
 import org.gitlab4j.api.GitLabApi;
 
 import java.util.List;
@@ -131,6 +132,7 @@ public class GitLabFlowRegistryClient extends AbstractGitFlowRegistryClient {
     protected GitRepositoryClient createRepositoryClient(final FlowRegistryClientConfigurationContext context) throws FlowRegistryException {
         return GitLabRepositoryClient.builder()
                 .clientId(getIdentifier())
+                .logger(getLogger())
                 .apiUrl(context.getProperty(GITLAB_API_URL).getValue())
                 .apiVersion(context.getProperty(GITLAB_API_VERSION).asAllowableValue(GitLabApi.ApiVersion.class))
                 .repoNamespace(context.getProperty(REPOSITORY_NAMESPACE).getValue())
@@ -140,6 +142,7 @@ public class GitLabFlowRegistryClient extends AbstractGitFlowRegistryClient {
                 .authToken(context.getProperty(ACCESS_TOKEN).evaluateAttributeExpressions().getValue())
                 .connectTimeout(context.getProperty(CONNECT_TIMEOUT).asTimePeriod(TimeUnit.MILLISECONDS).intValue())
                 .readTimeout(context.getProperty(READ_TIMEOUT).asTimePeriod(TimeUnit.MILLISECONDS).intValue())
+                .sslContext(context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextProvider.class))
                 .build();
     }
 }

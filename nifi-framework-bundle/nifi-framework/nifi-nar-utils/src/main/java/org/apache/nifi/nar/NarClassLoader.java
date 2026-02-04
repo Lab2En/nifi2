@@ -16,6 +16,9 @@
  */
 package org.apache.nifi.nar;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
@@ -24,9 +27,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * <p>
@@ -126,12 +126,9 @@ public class NarClassLoader extends AbstractNativeLibHandlingClassLoader {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(NarClassLoader.class);
 
-    private static final FileFilter JAR_FILTER = new FileFilter() {
-        @Override
-        public boolean accept(File pathname) {
-            final String nameToTest = pathname.getName().toLowerCase();
-            return nameToTest.endsWith(".jar") && pathname.isFile();
-        }
+    private static final FileFilter JAR_FILTER = pathname -> {
+        final String nameToTest = pathname.getName().toLowerCase();
+        return nameToTest.endsWith(".jar") && pathname.isFile();
     };
 
     /**
@@ -215,7 +212,7 @@ public class NarClassLoader extends AbstractNativeLibHandlingClassLoader {
     }
 
     private static List<File> initNativeLibDirList(File narWorkingDirectory) {
-        ArrayList<File> nativeLibDirList = new ArrayList<>();
+        List<File> nativeLibDirList = new ArrayList<>();
 
         nativeLibDirList.add(getNARNativeLibDir(narWorkingDirectory));
 

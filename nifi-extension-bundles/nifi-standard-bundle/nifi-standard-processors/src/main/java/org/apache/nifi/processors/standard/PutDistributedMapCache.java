@@ -35,6 +35,7 @@ import org.apache.nifi.expression.AttributeExpression.ResultType;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
@@ -53,12 +54,12 @@ import java.util.Set;
 @SupportsBatching
 @Tags({"map", "cache", "put", "distributed"})
 @InputRequirement(Requirement.INPUT_REQUIRED)
-@CapabilityDescription("Gets the content of a FlowFile and puts it to a distributed map cache, using a cache key " +
+@CapabilityDescription("Gets the content of a FlowFile and puts it to a map cache, using a cache key " +
     "computed from FlowFile attributes. If the cache already contains the entry and the cache update strategy is " +
     "'keep original' the entry is not replaced.'")
 @WritesAttribute(attribute = "cached", description = "All FlowFiles will have an attribute 'cached'. The value of this " +
     "attribute is true, is the FlowFile is cached, otherwise false.")
-@SeeAlso(classNames = {"org.apache.nifi.distributed.cache.client.DistributedMapCacheClientService", "org.apache.nifi.distributed.cache.server.map.DistributedMapCacheServer",
+@SeeAlso(classNames = {"org.apache.nifi.distributed.cache.client.MapCacheClientService", "org.apache.nifi.distributed.cache.server.map.MapCacheServer",
         "org.apache.nifi.processors.standard.FetchDistributedMapCache"})
 public class PutDistributedMapCache extends AbstractProcessor {
 
@@ -89,7 +90,7 @@ public class PutDistributedMapCache extends AbstractProcessor {
         "Adds the specified entry to the cache, if the key does not exist.");
 
     public static final PropertyDescriptor CACHE_UPDATE_STRATEGY = new PropertyDescriptor.Builder()
-        .name("Cache update strategy")
+        .name("Cache Update Strategy")
         .description("Determines how the cache is updated if the cache already contains the entry")
         .required(true)
         .allowableValues(CACHE_UPDATE_REPLACE, CACHE_UPDATE_KEEP_ORIGINAL)
@@ -97,7 +98,7 @@ public class PutDistributedMapCache extends AbstractProcessor {
         .build();
 
     public static final PropertyDescriptor CACHE_ENTRY_MAX_BYTES = new PropertyDescriptor.Builder()
-        .name("Max cache entry size")
+        .name("Max Cache Size")
         .description("The maximum amount of data to put into cache")
         .required(false)
         .addValidator(StandardValidators.DATA_SIZE_VALIDATOR)
@@ -105,7 +106,7 @@ public class PutDistributedMapCache extends AbstractProcessor {
         .expressionLanguageSupported(ExpressionLanguageScope.NONE)
         .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             CACHE_ENTRY_IDENTIFIER,
             DISTRIBUTED_CACHE_SERVICE,
             CACHE_UPDATE_STRATEGY,
@@ -133,7 +134,7 @@ public class PutDistributedMapCache extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -214,6 +215,12 @@ public class PutDistributedMapCache extends AbstractProcessor {
             session.transfer(flowFile, REL_FAILURE);
             logger.error("Unable to communicate with cache when processing {}", flowFile, e);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("Cache update strategy", CACHE_UPDATE_STRATEGY.getName());
+        config.renameProperty("Max cache entry size", CACHE_ENTRY_MAX_BYTES.getName());
     }
 
     public static class CacheValueSerializer implements Serializer<byte[]> {

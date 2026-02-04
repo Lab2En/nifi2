@@ -17,28 +17,11 @@
 
 package org.apache.nifi.minifi.commons.service;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.UUID.randomUUID;
-import static org.apache.nifi.minifi.commons.service.StandardFlowEnrichService.PARENT_SSL_CONTEXT_SERVICE_NAME;
-import static org.apache.nifi.minifi.commons.service.StandardFlowEnrichService.DEFAULT_SSL_CONTEXT_SERVICE_NAME;
-import static org.apache.nifi.minifi.commons.service.StandardFlowEnrichService.SITE_TO_SITE_PROVENANCE_REPORTING_TASK_NAME;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mockStatic;
-
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jakarta.xmlbind.JakartaXmlBindAnnotationIntrospector;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.controller.flow.VersionedDataflow;
 import org.apache.nifi.flow.Bundle;
@@ -51,6 +34,24 @@ import org.apache.nifi.properties.StandardReadableProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.UUID.randomUUID;
+import static org.apache.nifi.minifi.commons.service.StandardFlowEnrichService.DEFAULT_SSL_CONTEXT_SERVICE_NAME;
+import static org.apache.nifi.minifi.commons.service.StandardFlowEnrichService.PARENT_SSL_CONTEXT_SERVICE_NAME;
+import static org.apache.nifi.minifi.commons.service.StandardFlowEnrichService.SITE_TO_SITE_PROVENANCE_REPORTING_TASK_NAME;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockStatic;
+
 public class StandardFlowEnrichServiceTest {
 
     private static final Path DEFAULT_FLOW_JSON = Path.of("src/test/resources/default_flow.json");
@@ -61,10 +62,10 @@ public class StandardFlowEnrichServiceTest {
         VersionedDataflow testFlow = loadDefaultFlow();
 
         FlowEnrichService testFlowEnrichService = new StandardFlowEnrichService(new StandardReadableProperties(properties));
-        VersionedDataflow enrichedFlow = testFlowEnrichService.enrichFlow(testFlow);
+        testFlowEnrichService.enrichFlow(testFlow);
 
         byte[] testFlowBytes = flowToString(testFlow).getBytes(UTF_8);
-        byte[] enrichedFlowBytes = flowToString(enrichedFlow).getBytes(UTF_8);
+        byte[] enrichedFlowBytes = flowToString(testFlow).getBytes(UTF_8);
         assertArrayEquals(testFlowBytes, enrichedFlowBytes);
     }
 
@@ -80,10 +81,10 @@ public class StandardFlowEnrichServiceTest {
             uuid.when(UUID::randomUUID).thenReturn(expectedIdentifier);
 
             FlowEnrichService testFlowEnrichService = new StandardFlowEnrichService(new StandardReadableProperties(properties));
-            VersionedDataflow enrichedFlow = testFlowEnrichService.enrichFlow(testFlow);
+            testFlowEnrichService.enrichFlow(testFlow);
 
-            assertEquals(expectedIdentifier.toString(), enrichedFlow.getRootGroup().getIdentifier());
-            assertEquals(expectedIdentifier.toString(), enrichedFlow.getRootGroup().getInstanceIdentifier());
+            assertEquals(expectedIdentifier.toString(), testFlow.getRootGroup().getIdentifier());
+            assertEquals(expectedIdentifier.toString(), testFlow.getRootGroup().getInstanceIdentifier());
         }
     }
 
@@ -100,13 +101,13 @@ public class StandardFlowEnrichServiceTest {
             ));
 
         FlowEnrichService testFlowEnrichService = new StandardFlowEnrichService(new StandardReadableProperties(properties));
-        VersionedDataflow enrichedFlow = testFlowEnrichService.enrichFlow(testFlow);
+        testFlowEnrichService.enrichFlow(testFlow);
 
-        assertEquals(1, enrichedFlow.getRootGroup().getControllerServices().size());
-        VersionedControllerService sslControllerService = enrichedFlow.getRootGroup().getControllerServices().iterator().next();
+        assertEquals(1, testFlow.getRootGroup().getControllerServices().size());
+        VersionedControllerService sslControllerService = testFlow.getRootGroup().getControllerServices().iterator().next();
         assertEquals(PARENT_SSL_CONTEXT_SERVICE_NAME, sslControllerService.getName());
         assertEquals(StringUtils.EMPTY, sslControllerService.getBundle().getVersion());
-        Set<VersionedProcessor> processors = enrichedFlow.getRootGroup().getProcessors();
+        Set<VersionedProcessor> processors = testFlow.getRootGroup().getProcessors();
         assertEquals(2, processors.size());
         assertTrue(
             processors.stream()
@@ -132,9 +133,9 @@ public class StandardFlowEnrichServiceTest {
         VersionedDataflow testFlow = loadDefaultFlow();
 
         FlowEnrichService testFlowEnrichService = new StandardFlowEnrichService(new StandardReadableProperties(properties));
-        VersionedDataflow enrichedFlow = testFlowEnrichService.enrichFlow(testFlow);
+        testFlowEnrichService.enrichFlow(testFlow);
 
-        List<VersionedReportingTask> reportingTasks = enrichedFlow.getReportingTasks();
+        List<VersionedReportingTask> reportingTasks = testFlow.getReportingTasks();
         assertEquals(1, reportingTasks.size());
         VersionedReportingTask provenanceReportingTask = reportingTasks.get(0);
         assertEquals(SITE_TO_SITE_PROVENANCE_REPORTING_TASK_NAME, provenanceReportingTask.getName());
@@ -174,8 +175,7 @@ public class StandardFlowEnrichServiceTest {
 
     private String flowToString(VersionedDataflow versionedDataflow) {
         ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        objectMapper.setDefaultPropertyInclusion(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.NON_NULL));
+        objectMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         objectMapper.setAnnotationIntrospector(new JakartaXmlBindAnnotationIntrospector(objectMapper.getTypeFactory()));
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 

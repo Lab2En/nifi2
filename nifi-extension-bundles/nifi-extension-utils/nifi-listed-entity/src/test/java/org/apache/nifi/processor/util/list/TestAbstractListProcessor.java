@@ -46,13 +46,10 @@ import org.apache.nifi.state.MockStateManager;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
-import org.glassfish.jersey.internal.guava.Predicates;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -70,8 +67,6 @@ public class TestAbstractListProcessor {
 
     private ConcreteListProcessor proc;
     private TestRunner runner;
-    @TempDir
-    private Path testFolder;
 
     @BeforeEach
     public void setup() {
@@ -363,7 +358,6 @@ public class TestAbstractListProcessor {
 
     static class EphemeralMapCacheClientService extends AbstractControllerService implements DistributedMapCacheClient {
         private final Map<Object, Object> stored = new HashMap<>();
-        private int fetchCount = 0;
 
         @Override
         public <K, V> boolean putIfAbsent(K key, V value, Serializer<K> keySerializer, Serializer<V> valueSerializer) {
@@ -388,7 +382,6 @@ public class TestAbstractListProcessor {
         @Override
         @SuppressWarnings("unchecked")
         public <K, V> V get(K key, Serializer<K> keySerializer, Deserializer<V> valueDeserializer) throws IOException {
-            fetchCount++;
             return (V) stored.get(key);
         }
 
@@ -411,8 +404,7 @@ public class TestAbstractListProcessor {
                 .addValidator(Validator.VALID)
                 .build();
         private static final PropertyDescriptor LISTING_FILTER = new PropertyDescriptor.Builder()
-                .name("listing-filter")
-                .displayName("Listing Filter")
+                .name("Listing Filter")
                 .description("Filters listed entities by name.")
                 .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
                 .build();
@@ -495,7 +487,7 @@ public class TestAbstractListProcessor {
             final PropertyValue listingFilter = context.getProperty(LISTING_FILTER);
             Predicate<ListableEntity> filter = listingFilter.isSet()
                     ? entity -> entity.getName().matches(listingFilter.getValue())
-                    : Predicates.alwaysTrue();
+                    : entity -> true;
             return getEntityList().stream().filter(filter).collect(Collectors.toList());
         }
 

@@ -48,14 +48,15 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.fileresource.service.api.FileResource;
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.RequiredPermission;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.fileresource.service.api.FileResource;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -63,26 +64,26 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.hadoop.util.GSSExceptionRollbackYieldSessionHandler;
+import org.apache.nifi.processors.transfer.ResourceTransferSource;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.StopWatch;
 
 import java.io.BufferedInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.security.PrivilegedAction;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.io.InputStream;
-import org.apache.nifi.processors.transfer.ResourceTransferSource;
+import java.util.stream.Stream;
+
 import static org.apache.nifi.processors.transfer.ResourceTransferProperties.FILE_RESOURCE_SERVICE;
 import static org.apache.nifi.processors.transfer.ResourceTransferProperties.RESOURCE_TRANSFER_SOURCE;
 import static org.apache.nifi.processors.transfer.ResourceTransferUtils.getFileResource;
@@ -157,16 +158,15 @@ public class PutHDFS extends AbstractHadoopProcessor {
             .name("Conflict Resolution Strategy")
             .description("Indicates what should happen when a file with the same name already exists in the output directory")
             .required(true)
-            .defaultValue(FAIL_RESOLUTION_AV.getValue())
+            .defaultValue(FAIL_RESOLUTION_AV)
             .allowableValues(REPLACE_RESOLUTION_AV, IGNORE_RESOLUTION_AV, FAIL_RESOLUTION_AV, APPEND_RESOLUTION_AV)
             .build();
 
     protected static final PropertyDescriptor WRITING_STRATEGY = new PropertyDescriptor.Builder()
-            .name("writing-strategy")
-            .displayName("Writing Strategy")
+            .name("Writing Strategy")
             .description("Defines the approach for writing the FlowFile data.")
             .required(true)
-            .defaultValue(WRITE_AND_RENAME_AV.getValue())
+            .defaultValue(WRITE_AND_RENAME_AV)
             .allowableValues(WRITE_AND_RENAME_AV, SIMPLE_WRITE_AV)
             .build();
 
@@ -198,7 +198,7 @@ public class PutHDFS extends AbstractHadoopProcessor {
             .build();
 
     public static final PropertyDescriptor UMASK = new PropertyDescriptor.Builder()
-            .name("Permissions umask")
+            .name("Permissions Umask")
             .description(
                    "A umask represented as an octal number which determines the permissions of files written to HDFS. " +
                            "This overrides the Hadoop property \"fs.permissions.umask-mode\". " +
@@ -225,7 +225,6 @@ public class PutHDFS extends AbstractHadoopProcessor {
 
     public static final PropertyDescriptor IGNORE_LOCALITY = new PropertyDescriptor.Builder()
             .name("Ignore Locality")
-            .displayName("Ignore Locality")
             .description(
                     "Directs the HDFS system to ignore locality rules so that data is distributed randomly throughout the cluster")
             .required(false)
@@ -234,41 +233,42 @@ public class PutHDFS extends AbstractHadoopProcessor {
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .build();
 
-    private static final Set<Relationship> relationships;
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
-    static {
-        final Set<Relationship> rels = new HashSet<>();
-        rels.add(REL_SUCCESS);
-        rels.add(REL_FAILURE);
-        relationships = Collections.unmodifiableSet(rels);
-    }
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                    new PropertyDescriptor.Builder()
+                            .fromPropertyDescriptor(DIRECTORY)
+                            .description("The parent HDFS directory to which files should be written. The directory will be created if it doesn't exist.")
+                            .build(),
+                    CONFLICT_RESOLUTION,
+                    APPEND_MODE,
+                    WRITING_STRATEGY,
+                    BLOCK_SIZE,
+                    BUFFER_SIZE,
+                    REPLICATION_FACTOR,
+                    UMASK,
+                    REMOTE_OWNER,
+                    REMOTE_GROUP,
+                    COMPRESSION_CODEC,
+                    IGNORE_LOCALITY,
+                    RESOURCE_TRANSFER_SOURCE,
+                    FILE_RESOURCE_SERVICE
+            )
+    ).toList();
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        List<PropertyDescriptor> props = new ArrayList<>(properties);
-        props.add(new PropertyDescriptor.Builder()
-                .fromPropertyDescriptor(DIRECTORY)
-                .description("The parent HDFS directory to which files should be written. The directory will be created if it doesn't exist.")
-                .build());
-        props.add(CONFLICT_RESOLUTION);
-        props.add(APPEND_MODE);
-        props.add(WRITING_STRATEGY);
-        props.add(BLOCK_SIZE);
-        props.add(BUFFER_SIZE);
-        props.add(REPLICATION_FACTOR);
-        props.add(UMASK);
-        props.add(REMOTE_OWNER);
-        props.add(REMOTE_GROUP);
-        props.add(COMPRESSION_CODEC);
-        props.add(IGNORE_LOCALITY);
-        props.add(RESOURCE_TRANSFER_SOURCE);
-        props.add(FILE_RESOURCE_SERVICE);
-        return props;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -435,9 +435,8 @@ public class PutHDFS extends AbstractHadoopProcessor {
                                 }
                                 createdFile = actualCopyFile;
 
-                                final String appendMode = context.getProperty(APPEND_MODE).getValue();
                                 if (APPEND_RESOLUTION.equals(conflictResponse)
-                                        && AVRO_APPEND_MODE.equals(appendMode)
+                                        && context.getProperty(APPEND_MODE).getValue().equals(AVRO_APPEND_MODE)
                                         && destinationExists) {
                                     getLogger().info("Appending avro record to existing avro file");
                                     try (final DataFileStream<Object> reader = new DataFileStream<>(in, new GenericDatumReader<>());
@@ -466,7 +465,7 @@ public class PutHDFS extends AbstractHadoopProcessor {
                                 if (createdFile != null) {
                                     try {
                                         hdfs.delete(createdFile, false);
-                                    } catch (Throwable ignore) {
+                                    } catch (Throwable ignored) {
                                     }
                                 }
                                 throw t;
@@ -553,6 +552,13 @@ public class PutHDFS extends AbstractHadoopProcessor {
                 });
             }
         });
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("writing-strategy", WRITING_STRATEGY.getName());
+        config.renameProperty("Permissions umask", UMASK.getName());
     }
 
     protected Relationship getSuccessRelationship() {

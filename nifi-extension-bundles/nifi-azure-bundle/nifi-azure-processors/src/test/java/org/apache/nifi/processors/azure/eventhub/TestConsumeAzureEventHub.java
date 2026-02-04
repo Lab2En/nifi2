@@ -22,9 +22,14 @@ import com.azure.messaging.eventhubs.EventProcessorClient;
 import com.azure.messaging.eventhubs.models.Checkpoint;
 import com.azure.messaging.eventhubs.models.EventBatchContext;
 import com.azure.messaging.eventhubs.models.PartitionContext;
+import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.ProxyServiceMigration;
+import org.apache.nifi.oauth2.AccessToken;
+import org.apache.nifi.oauth2.OAuth2AccessTokenProvider;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processors.azure.eventhub.checkpoint.CheckpointStrategy;
+import org.apache.nifi.processors.azure.eventhub.utils.AzureEventHubUtils;
 import org.apache.nifi.provenance.ProvenanceEventRecord;
 import org.apache.nifi.provenance.ProvenanceEventType;
 import org.apache.nifi.proxy.ProxyConfiguration;
@@ -43,8 +48,12 @@ import org.apache.nifi.serialization.record.MockRecordWriter;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.shared.azure.eventhubs.AzureEventHubAuthenticationStrategy;
 import org.apache.nifi.shared.azure.eventhubs.AzureEventHubTransportType;
+import org.apache.nifi.shared.azure.eventhubs.BlobStorageAuthenticationStrategy;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.MockPropertyConfiguration;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,6 +72,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -70,6 +80,7 @@ import java.util.stream.Stream;
 
 import static org.apache.nifi.proxy.ProxyConfigurationService.PROXY_CONFIGURATION_SERVICE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -94,6 +105,8 @@ public class TestConsumeAzureEventHub {
     private static final String FOURTH_CONTENT = "CONTENT-4";
     private static final String APPLICATION_PROPERTY = "application";
     private static final String APPLICATION_ATTRIBUTE_NAME = String.format("eventhub.property.%s", APPLICATION_PROPERTY);
+    private static final String EVENT_HUB_OAUTH_SERVICE_ID = "eventHubOauth";
+    private static final String BLOB_OAUTH_SERVICE_ID = "blobOauth";
 
     private static final String EXPECTED_TRANSIT_URI = String.format("amqps://%s%s/%s/ConsumerGroups/%s/Partitions/%s",
             EVENT_HUB_NAMESPACE,
@@ -151,8 +164,8 @@ public class TestConsumeAzureEventHub {
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.STORAGE_ACCOUNT_NAME, STORAGE_ACCOUNT_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.STORAGE_ACCOUNT_KEY, STORAGE_ACCOUNT_KEY);
-        testRunner.assertNotValid();
-        testRunner.setProperty(ConsumeAzureEventHub.USE_MANAGED_IDENTITY, "true");
+        testRunner.assertValid();
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.MANAGED_IDENTITY.getValue());
         testRunner.assertValid();
         testRunner.setProperty(ConsumeAzureEventHub.TRANSPORT_TYPE, AzureEventHubTransportType.AMQP_WEB_SOCKETS);
         testRunner.assertValid();
@@ -165,6 +178,8 @@ public class TestConsumeAzureEventHub {
         testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_NAME, EVENT_HUB_NAME);
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
+        testRunner.assertNotValid();
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.ACCESS_POLICY_NAME, POLICY_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.POLICY_PRIMARY_KEY, POLICY_KEY);
@@ -179,6 +194,8 @@ public class TestConsumeAzureEventHub {
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
         testRunner.assertNotValid();
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
+        testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.ACCESS_POLICY_NAME, POLICY_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.POLICY_PRIMARY_KEY, POLICY_KEY);
         testRunner.assertNotValid();
@@ -189,15 +206,44 @@ public class TestConsumeAzureEventHub {
     }
 
     @Test
+    public void testProcessorConfigValidityWithEventHubOAuthRequiresTokenProvider() throws InitializationException {
+        testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_NAME, EVENT_HUB_NAME);
+        testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
+        testRunner.setProperty(ConsumeAzureEventHub.CHECKPOINT_STRATEGY, CheckpointStrategy.COMPONENT_STATE.getValue());
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.OAUTH2.getValue());
+        testRunner.assertNotValid();
+
+        configureEventHubOAuthTokenProvider();
+
+        testRunner.assertValid();
+    }
+
+    @Test
+    public void testProcessorConfigValidityWithBlobOAuthRequiresTokenProvider() throws InitializationException {
+        testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_NAME, EVENT_HUB_NAME);
+        testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
+        testRunner.setProperty(ConsumeAzureEventHub.STORAGE_ACCOUNT_NAME, STORAGE_ACCOUNT_NAME);
+        testRunner.setProperty(ConsumeAzureEventHub.BLOB_STORAGE_AUTHENTICATION_STRATEGY, BlobStorageAuthenticationStrategy.OAUTH2.getValue());
+        testRunner.assertNotValid();
+
+        configureBlobOAuthTokenProvider();
+
+        testRunner.assertValid();
+    }
+
+    @Test
     public void testProcessorConfigValidityWithTokenSet() throws InitializationException {
         testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_NAME, EVENT_HUB_NAME);
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
         testRunner.assertNotValid();
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
+        testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.ACCESS_POLICY_NAME, POLICY_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.POLICY_PRIMARY_KEY, POLICY_KEY);
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.STORAGE_ACCOUNT_NAME, STORAGE_ACCOUNT_NAME);
+        testRunner.setProperty(ConsumeAzureEventHub.BLOB_STORAGE_AUTHENTICATION_STRATEGY, BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
         testRunner.setProperty(ConsumeAzureEventHub.STORAGE_SAS_TOKEN, STORAGE_TOKEN);
         testRunner.assertValid();
         testRunner.setProperty(ConsumeAzureEventHub.TRANSPORT_TYPE, AzureEventHubTransportType.AMQP_WEB_SOCKETS);
@@ -211,6 +257,8 @@ public class TestConsumeAzureEventHub {
         testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_NAME, EVENT_HUB_NAME);
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
+        testRunner.assertNotValid();
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.ACCESS_POLICY_NAME, POLICY_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.POLICY_PRIMARY_KEY, POLICY_KEY);
@@ -229,6 +277,8 @@ public class TestConsumeAzureEventHub {
         testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_NAME, EVENT_HUB_NAME);
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
+        testRunner.assertNotValid();
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
         testRunner.assertNotValid();
         testRunner.setProperty(ConsumeAzureEventHub.ACCESS_POLICY_NAME, POLICY_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.POLICY_PRIMARY_KEY, POLICY_KEY);
@@ -409,12 +459,86 @@ public class TestConsumeAzureEventHub {
         assertEquals(EXPECTED_TRANSIT_URI, provenanceEvent2.getTransitUri());
     }
 
+    @Test
+    void testMigration() {
+        TestRunner testRunner = TestRunners.newTestRunner(ConsumeAzureEventHub.class);
+        final PropertyMigrationResult propertyMigrationResult = testRunner.migrateProperties();
+        final Map<String, String> expected = Map.ofEntries(
+                Map.entry("event-hub-namespace", ConsumeAzureEventHub.NAMESPACE.getName()),
+                Map.entry("event-hub-name", ConsumeAzureEventHub.EVENT_HUB_NAME.getName()),
+                Map.entry("event-hub-shared-access-policy-name", ConsumeAzureEventHub.ACCESS_POLICY_NAME.getName()),
+                Map.entry("event-hub-consumer-group", ConsumeAzureEventHub.CONSUMER_GROUP.getName()),
+                Map.entry("record-reader", ConsumeAzureEventHub.RECORD_READER.getName()),
+                Map.entry("record-writer", ConsumeAzureEventHub.RECORD_WRITER.getName()),
+                Map.entry("event-hub-initial-offset", ConsumeAzureEventHub.INITIAL_OFFSET.getName()),
+                Map.entry("event-hub-prefetch-count", ConsumeAzureEventHub.PREFETCH_COUNT.getName()),
+                Map.entry("event-hub-batch-size", ConsumeAzureEventHub.BATCH_SIZE.getName()),
+                Map.entry("event-hub-message-receive-timeout", ConsumeAzureEventHub.RECEIVE_TIMEOUT.getName()),
+                Map.entry("checkpoint-strategy", ConsumeAzureEventHub.CHECKPOINT_STRATEGY.getName()),
+                Map.entry("storage-account-name", ConsumeAzureEventHub.STORAGE_ACCOUNT_NAME.getName()),
+                Map.entry("storage-account-key", ConsumeAzureEventHub.STORAGE_ACCOUNT_KEY.getName()),
+                Map.entry("storage-sas-token", ConsumeAzureEventHub.STORAGE_SAS_TOKEN.getName()),
+                Map.entry("storage-container-name", ConsumeAzureEventHub.STORAGE_CONTAINER_NAME.getName()),
+                Map.entry("event-hub-shared-access-policy-primary-key", ConsumeAzureEventHub.POLICY_PRIMARY_KEY.getName()),
+                Map.entry(AzureEventHubUtils.OLD_USE_MANAGED_IDENTITY_DESCRIPTOR_NAME, AzureEventHubUtils.LEGACY_USE_MANAGED_IDENTITY_PROPERTY_NAME),
+                Map.entry(ProxyServiceMigration.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyServiceMigration.PROXY_CONFIGURATION_SERVICE)
+        );
+
+        assertEquals(expected, propertyMigrationResult.getPropertiesRenamed());
+        assertTrue(propertyMigrationResult.getPropertiesUpdated().contains(ConsumeAzureEventHub.BLOB_STORAGE_AUTHENTICATION_STRATEGY.getName())
+                || propertyMigrationResult.getPropertiesUpdated().isEmpty(),
+                "Blob Storage Authentication Strategy should be initialized during migration");
+    }
+
+    @Test
+    void testMigrationPreservesSharedAccessAuthentication() {
+        final Map<String, String> properties = new HashMap<>();
+        properties.put(AzureEventHubUtils.LEGACY_USE_MANAGED_IDENTITY_PROPERTY_NAME, "false");
+        properties.put(ConsumeAzureEventHub.ACCESS_POLICY_NAME.getName(), POLICY_NAME);
+        properties.put(ConsumeAzureEventHub.POLICY_PRIMARY_KEY.getName(), POLICY_KEY);
+        properties.put(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY.getName(), AzureEventHubAuthenticationStrategy.MANAGED_IDENTITY.getValue());
+
+        final MockPropertyConfiguration configuration = new MockPropertyConfiguration(properties);
+        new ConsumeAzureEventHub().migrateProperties(configuration);
+
+        assertEquals(AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue(),
+                configuration.getRawProperties().get(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY.getName()));
+    }
+
+    @Test
+    void testMigrationDerivesBlobAuthenticationStrategyFromSasToken() {
+        final Map<String, String> properties = new HashMap<>();
+        properties.put(ConsumeAzureEventHub.STORAGE_SAS_TOKEN.getName(), STORAGE_TOKEN);
+
+        final MockPropertyConfiguration configuration = new MockPropertyConfiguration(properties);
+        new ConsumeAzureEventHub().migrateProperties(configuration);
+
+        assertEquals(BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue(),
+                configuration.getRawProperties().get(ConsumeAzureEventHub.BLOB_STORAGE_AUTHENTICATION_STRATEGY.getName()));
+    }
+
+    @Test
+    void testDoesNotOverrideBlobAuthenticationWhenExplicitlyConfigured() {
+        final Map<String, String> properties = new HashMap<>();
+        properties.put(ConsumeAzureEventHub.BLOB_STORAGE_AUTHENTICATION_STRATEGY.getName(), BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY.getValue());
+        properties.put(ConsumeAzureEventHub.STORAGE_SAS_TOKEN.getName(), STORAGE_TOKEN);
+        properties.put(ConsumeAzureEventHub.STORAGE_ACCOUNT_KEY.getName(), STORAGE_ACCOUNT_KEY);
+
+        final MockPropertyConfiguration configuration = new MockPropertyConfiguration(properties);
+        new ConsumeAzureEventHub().migrateProperties(configuration);
+
+        assertEquals(BlobStorageAuthenticationStrategy.STORAGE_ACCOUNT_KEY.getValue(),
+                configuration.getRawProperties().get(ConsumeAzureEventHub.BLOB_STORAGE_AUTHENTICATION_STRATEGY.getName()));
+    }
+
     private void setProperties() {
         testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_NAME, EVENT_HUB_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.NAMESPACE, EVENT_HUB_NAMESPACE);
+        testRunner.setProperty(ConsumeAzureEventHub.AUTHENTICATION_STRATEGY, AzureEventHubAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
         testRunner.setProperty(ConsumeAzureEventHub.ACCESS_POLICY_NAME, POLICY_NAME);
         testRunner.setProperty(ConsumeAzureEventHub.POLICY_PRIMARY_KEY, POLICY_KEY);
         testRunner.setProperty(ConsumeAzureEventHub.STORAGE_ACCOUNT_NAME, STORAGE_ACCOUNT_NAME);
+        testRunner.setProperty(ConsumeAzureEventHub.BLOB_STORAGE_AUTHENTICATION_STRATEGY, BlobStorageAuthenticationStrategy.SHARED_ACCESS_SIGNATURE.getValue());
         testRunner.setProperty(ConsumeAzureEventHub.STORAGE_SAS_TOKEN, STORAGE_TOKEN);
 
         when(partitionContext.getEventHubName()).thenReturn(EVENT_HUB_NAME);
@@ -537,8 +661,21 @@ public class TestConsumeAzureEventHub {
         testRunner.setProperty(PROXY_CONFIGURATION_SERVICE, serviceId);
     }
 
-    private class MockConsumeAzureEventHub extends ConsumeAzureEventHub {
+    private void configureEventHubOAuthTokenProvider() throws InitializationException {
+        final MockOAuth2AccessTokenProvider provider = new MockOAuth2AccessTokenProvider();
+        testRunner.addControllerService(EVENT_HUB_OAUTH_SERVICE_ID, provider);
+        testRunner.enableControllerService(provider);
+        testRunner.setProperty(ConsumeAzureEventHub.EVENT_HUB_OAUTH2_ACCESS_TOKEN_PROVIDER, EVENT_HUB_OAUTH_SERVICE_ID);
+    }
 
+    private void configureBlobOAuthTokenProvider() throws InitializationException {
+        final MockOAuth2AccessTokenProvider provider = new MockOAuth2AccessTokenProvider();
+        testRunner.addControllerService(BLOB_OAUTH_SERVICE_ID, provider);
+        testRunner.enableControllerService(provider);
+        testRunner.setProperty(ConsumeAzureEventHub.BLOB_STORAGE_OAUTH2_ACCESS_TOKEN_PROVIDER, BLOB_OAUTH_SERVICE_ID);
+    }
+
+    private class MockConsumeAzureEventHub extends ConsumeAzureEventHub {
         @Override
         protected EventProcessorClient createClient(final ProcessContext context) {
             return eventProcessorClient;
@@ -547,6 +684,16 @@ public class TestConsumeAzureEventHub {
         @Override
         protected String getTransitUri(final PartitionContext partitionContext) {
             return EXPECTED_TRANSIT_URI;
+        }
+    }
+
+    private static class MockOAuth2AccessTokenProvider extends AbstractControllerService implements OAuth2AccessTokenProvider {
+        @Override
+        public AccessToken getAccessDetails() {
+            final AccessToken accessToken = new AccessToken();
+            accessToken.setAccessToken("access-token");
+            accessToken.setExpiresIn(TimeUnit.MINUTES.toSeconds(5));
+            return accessToken;
         }
     }
 }

@@ -16,15 +16,6 @@
  */
 package org.apache.nifi.processors.email;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
 import jakarta.activation.DataSource;
 import jakarta.mail.Address;
 import jakarta.mail.BodyPart;
@@ -34,7 +25,6 @@ import jakarta.mail.Session;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimePart;
-
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.SideEffectFree;
@@ -52,6 +42,16 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.FlowFileHandlingException;
 import org.apache.nifi.stream.io.StreamUtils;
+
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
 @SupportsBatching
 @SideEffectFree
@@ -83,7 +83,10 @@ public class ExtractEmailAttachments extends AbstractProcessor {
 
     private static final String ATTACHMENT_DISPOSITION = "attachment";
 
-    private static final Set<Relationship> relationships = Set.of(REL_ATTACHMENTS, REL_ORIGINAL, REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_ATTACHMENTS,
+            REL_ORIGINAL,
+            REL_FAILURE);
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) {
@@ -171,7 +174,7 @@ public class ExtractEmailAttachments extends AbstractProcessor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     private void parseAttachments(final List<DataSource> attachments, final MimePart parentPart, final int depth) throws MessagingException, IOException {

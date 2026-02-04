@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { selectLogoutSupported } from '../../../state/current-user/current-user.selectors';
 import { Store } from '@ngrx/store';
@@ -25,17 +25,16 @@ import { logout } from '../../../state/current-user/current-user.actions';
 
 @Component({
     selector: 'page-content',
-    standalone: true,
     templateUrl: './page-content.component.html',
     imports: [RouterLink],
     styleUrls: ['./page-content.component.scss']
 })
 export class PageContent {
+    private store = inject<Store<NiFiState>>(Store);
+
     @Input() title = '';
 
     logoutSupported = this.store.selectSignal(selectLogoutSupported);
-
-    constructor(private store: Store<NiFiState>) {}
 
     resetRoutedToFullScreenError(): void {
         this.store.dispatch(setRoutedToFullScreenError({ routedToFullScreenError: false }));

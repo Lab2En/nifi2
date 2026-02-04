@@ -533,7 +533,7 @@ public class StatelessBasicsIT extends NiFiSystemIT {
 
     @Test
     public void testStopGroupMakesFlowFileAvailable() throws NiFiClientException, IOException, InterruptedException {
-        createFlowShell();
+        createFlowShell("3 sec");
 
         // Add a sleep for 1 min
         final ProcessorEntity sleep = getClientUtil().createProcessor("Sleep", statelessGroup.getId());
@@ -796,7 +796,7 @@ public class StatelessBasicsIT extends NiFiSystemIT {
 
         // Register the first version of the flow
         final VersionControlInformationEntity vci = getClientUtil().startVersionControl(statelessGroup, registryClient, "test-flows", "first-flow");
-        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(statelessGroup.getId())) );
+        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(statelessGroup.getId())));
 
         // Update the flow
         getNifiClient().getConnectionClient().deleteConnection(inputToOutput);
@@ -806,8 +806,8 @@ public class StatelessBasicsIT extends NiFiSystemIT {
         getClientUtil().createConnection(reverseContents, outputPort, SUCCESS, statelessGroup.getId());
 
         // Save v2 of the flow
-        final VersionControlInformationEntity v2Vci = getClientUtil().saveFlowVersion(statelessGroup, registryClient, vci);
-        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(statelessGroup.getId())) );
+        getClientUtil().saveFlowVersion(statelessGroup, registryClient, vci);
+        waitFor(() -> VersionControlInformationDTO.UP_TO_DATE.equals(getClientUtil().getVersionControlState(statelessGroup.getId())));
 
         // Let a FlowFile go through and verify the results
         getClientUtil().startProcessor(generate);

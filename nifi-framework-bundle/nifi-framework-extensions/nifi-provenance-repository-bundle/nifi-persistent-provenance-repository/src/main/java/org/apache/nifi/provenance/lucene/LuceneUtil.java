@@ -41,15 +41,11 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class LuceneUtil {
-
-    private static final long[] MIN_LONG_ARRAY = new long[] {Long.MIN_VALUE};
-    private static final long[] MAX_LONG_ARRAY = new long[] {Long.MAX_VALUE};
 
     public static String substringBefore(final String value, final String searchValue) {
         final int index = value.indexOf(searchValue);
@@ -77,12 +73,12 @@ public class LuceneUtil {
         for (final Path path : allProvenanceLogs) {
             if (path.toFile().getName().startsWith(searchString)) {
                 final File file = path.toFile();
-                if ( file.exists() ) {
+                if (file.exists()) {
                     matchingFiles.add(file);
                 } else {
                     final File dir = file.getParentFile();
                     final File gzFile = new File(dir, file.getName() + ".gz");
-                    if ( gzFile.exists() ) {
+                    if (gzFile.exists()) {
                         matchingFiles.add(gzFile);
                     }
                 }
@@ -152,34 +148,31 @@ public class LuceneUtil {
      *            list of {@link Document}s
      */
     public static void sortDocsForRetrieval(final List<Document> documents) {
-        documents.sort(new Comparator<Document>() {
-            @Override
-            public int compare(final Document o1, final Document o2) {
-                final String filename1 = o1.get(FieldNames.STORAGE_FILENAME);
-                final String filename2 = o2.get(FieldNames.STORAGE_FILENAME);
+        documents.sort((o1, o2) -> {
+            final String filename1 = o1.get(FieldNames.STORAGE_FILENAME);
+            final String filename2 = o2.get(FieldNames.STORAGE_FILENAME);
 
-                final int filenameComp = filename1.compareTo(filename2);
-                if (filenameComp != 0) {
-                    return filenameComp;
-                }
-
-                final IndexableField fileOffset1 = o1.getField(FieldNames.BLOCK_INDEX);
-                final IndexableField fileOffset2 = o1.getField(FieldNames.BLOCK_INDEX);
-                if (fileOffset1 != null && fileOffset2 != null) {
-                    final int blockIndexResult = Long.compare(fileOffset1.numericValue().longValue(), fileOffset2.numericValue().longValue());
-                    if (blockIndexResult != 0) {
-                        return blockIndexResult;
-                    }
-
-                    final long eventId1 = o1.getField(SearchableFields.Identifier.getSearchableFieldName()).numericValue().longValue();
-                    final long eventId2 = o2.getField(SearchableFields.Identifier.getSearchableFieldName()).numericValue().longValue();
-                    return Long.compare(eventId1, eventId2);
-                }
-
-                final long offset1 = o1.getField(FieldNames.STORAGE_FILE_OFFSET).numericValue().longValue();
-                final long offset2 = o2.getField(FieldNames.STORAGE_FILE_OFFSET).numericValue().longValue();
-                return Long.compare(offset1, offset2);
+            final int filenameComp = filename1.compareTo(filename2);
+            if (filenameComp != 0) {
+                return filenameComp;
             }
+
+            final IndexableField fileOffset1 = o1.getField(FieldNames.BLOCK_INDEX);
+            final IndexableField fileOffset2 = o1.getField(FieldNames.BLOCK_INDEX);
+            if (fileOffset1 != null && fileOffset2 != null) {
+                final int blockIndexResult = Long.compare(fileOffset1.numericValue().longValue(), fileOffset2.numericValue().longValue());
+                if (blockIndexResult != 0) {
+                    return blockIndexResult;
+                }
+
+                final long eventId1 = o1.getField(SearchableFields.Identifier.getSearchableFieldName()).numericValue().longValue();
+                final long eventId2 = o2.getField(SearchableFields.Identifier.getSearchableFieldName()).numericValue().longValue();
+                return Long.compare(eventId1, eventId2);
+            }
+
+            final long offset1 = o1.getField(FieldNames.STORAGE_FILE_OFFSET).numericValue().longValue();
+            final long offset2 = o2.getField(FieldNames.STORAGE_FILE_OFFSET).numericValue().longValue();
+            return Long.compare(offset1, offset2);
         });
     }
 
@@ -236,7 +229,7 @@ public class LuceneUtil {
             decoder.reset();
             CharBuffer cbuf = decoder.decode(bbuf);
             return cbuf.toString();
-        } catch (CharacterCodingException shouldNotHappen) { }
+        } catch (CharacterCodingException ignored) { }
 
         // if we get here, something bad has happened
         return null;

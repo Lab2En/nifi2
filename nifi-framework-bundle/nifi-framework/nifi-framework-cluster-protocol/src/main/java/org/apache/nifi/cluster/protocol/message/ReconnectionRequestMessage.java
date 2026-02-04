@@ -16,14 +16,14 @@
  */
 package org.apache.nifi.cluster.protocol.message;
 
+import jakarta.xml.bind.annotation.XmlRootElement;
+import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 import org.apache.nifi.cluster.coordination.node.NodeConnectionStatus;
 import org.apache.nifi.cluster.protocol.ComponentRevisionSnapshot;
 import org.apache.nifi.cluster.protocol.NodeIdentifier;
 import org.apache.nifi.cluster.protocol.StandardDataFlow;
 import org.apache.nifi.cluster.protocol.jaxb.message.NodeIdentifierAdapter;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
-import jakarta.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 import java.util.List;
 
 /**
@@ -37,9 +37,6 @@ public class ReconnectionRequestMessage extends ProtocolMessage {
     private String instanceId;
     private List<NodeConnectionStatus> nodeStatuses;
     private ComponentRevisionSnapshot componentRevisions;
-
-    public ReconnectionRequestMessage() {
-    }
 
     @XmlJavaTypeAdapter(NodeIdentifierAdapter.class)
     public NodeIdentifier getNodeId() {

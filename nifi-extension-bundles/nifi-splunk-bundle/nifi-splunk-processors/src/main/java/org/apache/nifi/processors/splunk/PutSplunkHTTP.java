@@ -32,6 +32,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.dto.splunk.SendRawDataResponse;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -40,18 +41,15 @@ import org.apache.nifi.processor.util.StandardValidators;
 
 import java.io.IOException;
 import java.io.StringWriter;
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @Tags({"splunk", "logs", "http"})
@@ -66,8 +64,7 @@ public class PutSplunkHTTP extends SplunkAPICall {
     private static final String ENDPOINT = "/services/collector/raw";
 
     static final PropertyDescriptor SOURCE = new PropertyDescriptor.Builder()
-            .name("source")
-            .displayName("Source")
+            .name("Source")
             .description("User-defined event source. Sets a default for all events when unspecified.")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -75,8 +72,7 @@ public class PutSplunkHTTP extends SplunkAPICall {
             .build();
 
     static final PropertyDescriptor SOURCE_TYPE = new PropertyDescriptor.Builder()
-            .name("source-type")
-            .displayName("Source Type")
+            .name("Source Type")
             .description("User-defined event sourcetype. Sets a default for all events when unspecified.")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -84,8 +80,7 @@ public class PutSplunkHTTP extends SplunkAPICall {
             .build();
 
     static final PropertyDescriptor HOST = new PropertyDescriptor.Builder()
-            .name("host")
-            .displayName("Host")
+            .name("Host")
             .description("Specify with the host query string parameter. Sets a default for all events when unspecified.")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -93,8 +88,7 @@ public class PutSplunkHTTP extends SplunkAPICall {
             .build();
 
     static final PropertyDescriptor INDEX = new PropertyDescriptor.Builder()
-            .name("index")
-            .displayName("Index")
+            .name("Index")
             .description("Index name. Specify with the index query string parameter. Sets a default for all events when unspecified.")
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -102,8 +96,7 @@ public class PutSplunkHTTP extends SplunkAPICall {
             .build();
 
     static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
-            .name("character-set")
-            .displayName("Character Set")
+            .name("Character Set")
             .description("The name of the character set.")
             .required(true)
             .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR)
@@ -112,8 +105,7 @@ public class PutSplunkHTTP extends SplunkAPICall {
             .build();
 
     static final PropertyDescriptor CONTENT_TYPE = new PropertyDescriptor.Builder()
-            .name("content-type")
-            .displayName("Content Type")
+            .name("Content Type")
             .description(
                     "The media type of the event sent to Splunk. " +
                     "If not set, \"mime.type\" flow file attribute will be used. " +
@@ -133,9 +125,22 @@ public class PutSplunkHTTP extends SplunkAPICall {
             .description("FlowFiles that failed to send to the destination are sent to this relationship.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                SOURCE,
+                SOURCE_TYPE,
+                HOST,
+                INDEX,
+                CONTENT_TYPE,
+                CHARSET
+            )
+    ).toList();
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
             RELATIONSHIP_SUCCESS,
-            RELATIONSHIP_FAILURE)));
+            RELATIONSHIP_FAILURE
+    );
 
     @Override
     public Set<Relationship> getRelationships() {
@@ -144,14 +149,7 @@ public class PutSplunkHTTP extends SplunkAPICall {
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> result = new ArrayList<>(super.getSupportedPropertyDescriptors());
-        result.add(SOURCE);
-        result.add(SOURCE_TYPE);
-        result.add(HOST);
-        result.add(INDEX);
-        result.add(CONTENT_TYPE);
-        result.add(CHARSET);
-        return result;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -188,14 +186,14 @@ public class PutSplunkHTTP extends SplunkAPICall {
                     // fall-through
                 default:
                     getLogger().error("Putting data into Splunk was not successful. Response with header {} was: {}",
-                            new Object[] {responseMessage.getStatus(), IOUtils.toString(responseMessage.getContent(), "UTF-8")});
+                            responseMessage.getStatus(), IOUtils.toString(responseMessage.getContent(), StandardCharsets.UTF_8));
             }
         } catch (final Exception e) {
             getLogger().error("Error during communication with Splunk: {}", e.getMessage(), e);
 
             if (responseMessage != null) {
                 try {
-                    getLogger().error("The response content is: {}", IOUtils.toString(responseMessage.getContent(), "UTF-8"));
+                    getLogger().error("The response content is: {}", IOUtils.toString(responseMessage.getContent(), StandardCharsets.UTF_8));
                 } catch (final IOException ioException) {
                     getLogger().error("An error occurred during reading response content!");
                 }
@@ -203,6 +201,17 @@ public class PutSplunkHTTP extends SplunkAPICall {
         } finally {
             session.transfer(flowFile, success ? RELATIONSHIP_SUCCESS : RELATIONSHIP_FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("source", SOURCE.getName());
+        config.renameProperty("source-type", SOURCE_TYPE.getName());
+        config.renameProperty("host", HOST.getName());
+        config.renameProperty("index", INDEX.getName());
+        config.renameProperty("character-set", CHARSET.getName());
+        config.renameProperty("content-type", CONTENT_TYPE.getName());
     }
 
     protected RequestMessage createRequestMessage(final ProcessSession session, final FlowFile flowFile, final ProcessContext context) {
@@ -259,13 +268,8 @@ public class PutSplunkHTTP extends SplunkAPICall {
         if (!queryParameters.isEmpty()) {
             final List<String> parameters = new LinkedList<>();
 
-            try {
-                for (final Map.Entry<String, String> parameter : queryParameters.entrySet()) {
-                    parameters.add(URLEncoder.encode(parameter.getKey(), "UTF-8") + '=' + URLEncoder.encode(parameter.getValue(), "UTF-8"));
-                }
-            } catch (final UnsupportedEncodingException e) {
-                getLogger().error("Could not be initialized because of: {}", e.getMessage(), e);
-                throw new ProcessException(e);
+            for (final Map.Entry<String, String> parameter : queryParameters.entrySet()) {
+                parameters.add(URLEncoder.encode(parameter.getKey(), StandardCharsets.UTF_8) + '=' + URLEncoder.encode(parameter.getValue(), StandardCharsets.UTF_8));
             }
 
             result.append('?');

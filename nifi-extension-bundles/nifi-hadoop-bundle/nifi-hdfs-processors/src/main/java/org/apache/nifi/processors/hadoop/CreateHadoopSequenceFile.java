@@ -23,12 +23,14 @@ import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.SideEffectFree;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.DeprecationNotice;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.StandardFlowFileMediaType;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -36,12 +38,10 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processors.hadoop.util.SequenceFileWriter;
 import org.apache.nifi.util.StopWatch;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /**
  * <p>
@@ -62,6 +62,7 @@ import java.util.concurrent.TimeUnit;
  * sizes are large.
  *
  */
+@DeprecationNotice(reason = "NIFI-14846: Uses custom file format specific to Apache NiFi and minimal maintenance since initial implementation")
 @SideEffectFree
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @Tags({"hadoop", "sequence file", "create", "sequencefile"})
@@ -83,18 +84,10 @@ public class CreateHadoopSequenceFile extends AbstractHadoopProcessor {
             .name("failure")
             .description("Incoming files that failed to generate a Sequence File are sent to this relationship")
             .build();
-    private static final Set<Relationship> relationships;
 
-    static {
-        Set<Relationship> rels = new HashSet<>();
-        rels.add(RELATIONSHIP_SUCCESS);
-        rels.add(RELATIONSHIP_FAILURE);
-        relationships = Collections.unmodifiableSet(rels);
-    }
     // Optional Properties.
     static final PropertyDescriptor COMPRESSION_TYPE = new PropertyDescriptor.Builder()
-            .displayName("Compression type")
-            .name("compression type")
+            .name("Compression Type")
             .description("Type of compression to use when creating Sequence File")
             .allowableValues(SequenceFile.CompressionType.values())
             .build();
@@ -102,17 +95,27 @@ public class CreateHadoopSequenceFile extends AbstractHadoopProcessor {
     // Default Values.
     public static final String DEFAULT_COMPRESSION_TYPE = "NONE";
 
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            RELATIONSHIP_SUCCESS,
+            RELATIONSHIP_FAILURE
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                COMPRESSION_TYPE,
+                COMPRESSION_CODEC
+            )
+    ).toList();
+
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        List<PropertyDescriptor> someProps = new ArrayList<>(properties);
-        someProps.add(COMPRESSION_TYPE);
-        someProps.add(COMPRESSION_CODEC);
-        return  someProps;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -141,20 +144,12 @@ public class CreateHadoopSequenceFile extends AbstractHadoopProcessor {
                 }
             }
         }
-        final SequenceFileWriter sequenceFileWriter;
-        switch (packagingFormat) {
-            case TAR_FORMAT:
-                sequenceFileWriter = new TarUnpackerSequenceFileWriter();
-                break;
-            case ZIP_FORMAT:
-                sequenceFileWriter = new ZipUnpackerSequenceFileWriter();
-                break;
-            case FLOWFILE_STREAM_FORMAT_V3:
-                sequenceFileWriter = new FlowFileStreamUnpackerSequenceFileWriter();
-                break;
-            default:
-                sequenceFileWriter = new SequenceFileWriterImpl();
-        }
+        final SequenceFileWriter sequenceFileWriter = switch (packagingFormat) {
+            case TAR_FORMAT -> new TarUnpackerSequenceFileWriter();
+            case ZIP_FORMAT -> new ZipUnpackerSequenceFileWriter();
+            case FLOWFILE_STREAM_FORMAT_V3 -> new FlowFileStreamUnpackerSequenceFileWriter();
+            default -> new SequenceFileWriterImpl();
+        };
 
         final Configuration configuration = getConfiguration();
         if (configuration == null) {
@@ -184,5 +179,11 @@ public class CreateHadoopSequenceFile extends AbstractHadoopProcessor {
             session.transfer(flowFile, RELATIONSHIP_FAILURE);
         }
 
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("compression type", COMPRESSION_TYPE.getName());
     }
 }

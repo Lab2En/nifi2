@@ -59,7 +59,10 @@ public abstract class GetFileTransfer extends AbstractProcessor {
             .name("success")
             .description("All FlowFiles that are received are routed to success")
             .build();
-    private final Set<Relationship> relationships;
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+        REL_SUCCESS
+    );
 
     public static final String FILE_LAST_MODIFY_TIME_ATTRIBUTE = "file.lastModifiedTime";
     public static final String FILE_OWNER_ATTRIBUTE = "file.owner";
@@ -72,7 +75,7 @@ public abstract class GetFileTransfer extends AbstractProcessor {
     private final AtomicLong lastPollTime = new AtomicLong(-1L);
     private final Lock listingLock = new ReentrantLock();
     private final AtomicReference<BlockingQueue<FileInfo>> fileQueueRef = new AtomicReference<>();
-    private final Set<FileInfo> processing = Collections.synchronizedSet(new HashSet<FileInfo>());
+    private final Set<FileInfo> processing = Collections.synchronizedSet(new HashSet<>());
 
     // Used when transferring filenames from the File Queue to the processing queue; multiple threads can do this
     // simultaneously using the sharableTransferLock; however, in order to check if either has a given file, the
@@ -81,15 +84,9 @@ public abstract class GetFileTransfer extends AbstractProcessor {
     private final Lock sharableTransferLock = transferLock.readLock();
     private final Lock mutuallyExclusiveTransferLock = transferLock.writeLock();
 
-    public GetFileTransfer() {
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(REL_SUCCESS);
-        this.relationships = Collections.unmodifiableSet(relationships);
-    }
-
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     protected abstract FileTransfer getFileTransfer(final ProcessContext context);
@@ -288,7 +285,7 @@ public abstract class GetFileTransfer extends AbstractProcessor {
         BlockingQueue<FileInfo> queue = fileQueueRef.get();
         if (queue == null) {
             final boolean useNaturalOrdering = context.getProperty(FileTransfer.USE_NATURAL_ORDERING).asBoolean();
-            queue = useNaturalOrdering ? new PriorityBlockingQueue<FileInfo>(25000) : new LinkedBlockingQueue<FileInfo>(25000);
+            queue = useNaturalOrdering ? new PriorityBlockingQueue<>(25000) : new LinkedBlockingQueue<>(25000);
             fileQueueRef.set(queue);
         }
 
@@ -312,6 +309,6 @@ public abstract class GetFileTransfer extends AbstractProcessor {
         }
 
         getLogger().info("Obtained file listing in {} milliseconds; listing had {} items, {} of which were new",
-                new Object[]{millis, listing.size(), newItems});
+                millis, listing.size(), newItems);
     }
 }

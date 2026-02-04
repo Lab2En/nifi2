@@ -17,13 +17,14 @@
 
 package org.apache.nifi.c2.client;
 
-import static java.util.Optional.ofNullable;
-import static java.util.stream.Collectors.toUnmodifiableMap;
-import static org.apache.commons.lang3.StringUtils.EMPTY;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Arrays;
 import java.util.Map;
-import org.apache.commons.lang3.StringUtils;
+
+import static java.util.Optional.ofNullable;
+import static java.util.stream.Collectors.toUnmodifiableMap;
+import static org.apache.commons.lang3.StringUtils.EMPTY;
 
 /**
  * Configuration for a C2 Client.
@@ -57,6 +58,7 @@ public class C2ClientConfig {
     private final long keepAliveDuration;
     private final String c2RequestCompression;
     private final String c2AssetDirectory;
+    private final String c2AssetRepositoryDirectory;
     private final long bootstrapAcknowledgeTimeout;
     private final int c2FlowInfoProcessorBulletinLimit;
     private final boolean c2FlowInfoProcessorStatusEnabled;
@@ -89,6 +91,7 @@ public class C2ClientConfig {
         this.keepAliveDuration = builder.keepAliveDuration;
         this.c2RequestCompression = builder.c2RequestCompression;
         this.c2AssetDirectory = builder.c2AssetDirectory;
+        this.c2AssetRepositoryDirectory = builder.c2AssetRepositoryDirectory;
         this.bootstrapAcknowledgeTimeout = builder.bootstrapAcknowledgeTimeout;
         this.c2FlowInfoProcessorBulletinLimit = builder.c2FlowInfoProcessorBulletinLimit;
         this.c2FlowInfoProcessorStatusEnabled = builder.c2FlowInfoProcessorStatusEnabled;
@@ -194,6 +197,10 @@ public class C2ClientConfig {
         return c2AssetDirectory;
     }
 
+    public String getC2AssetRepositoryDirectory() {
+        return c2AssetRepositoryDirectory;
+    }
+
     public int getMaxIdleConnections() {
         return maxIdleConnections;
     }
@@ -248,6 +255,7 @@ public class C2ClientConfig {
         private long keepAliveDuration;
         private String c2RequestCompression;
         private String c2AssetDirectory;
+        private String c2AssetRepositoryDirectory;
         private long bootstrapAcknowledgeTimeout;
         private int c2FlowInfoProcessorBulletinLimit;
         private boolean c2FlowInfoProcessorStatusEnabled;
@@ -394,6 +402,11 @@ public class C2ClientConfig {
 
         public Builder c2AssetDirectory(String c2AssetDirectory) {
             this.c2AssetDirectory = c2AssetDirectory;
+            return this;
+        }
+
+        public Builder c2AssetRepositoryDirectory(String c2AssetRepositoryDirectory) {
+            this.c2AssetRepositoryDirectory = c2AssetRepositoryDirectory;
             return this;
         }
 

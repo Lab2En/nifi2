@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { CdkDrag, CdkDragEnd } from '@angular/cdk/drag-drop';
 import { Store } from '@ngrx/store';
 import { CanvasState } from '../../../../state';
@@ -23,19 +23,21 @@ import { createComponentRequest, setDragging } from '../../../../state/flow/flow
 import { Client } from '../../../../../../service/client.service';
 import { selectDragging } from '../../../../state/flow/flow.selectors';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ComponentType } from 'libs/shared/src';
 import { CanvasView } from '../../../../service/canvas-view.service';
-import { NifiTooltipDirective, TextTip } from '@nifi/shared';
+import { ComponentType, NifiTooltipDirective, TextTip } from '@nifi/shared';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 
 @Component({
     selector: 'new-canvas-item',
-    standalone: true,
     templateUrl: './new-canvas-item.component.html',
     imports: [CdkDrag, NifiTooltipDirective],
     styleUrls: ['./new-canvas-item.component.scss']
 })
 export class NewCanvasItem {
+    private client = inject(Client);
+    private canvasView = inject(CanvasView);
+    private store = inject<Store<CanvasState>>(Store);
+
     @Input() type!: ComponentType;
     @Input() iconClass = '';
     @Input() iconHoverClass = '';
@@ -56,11 +58,7 @@ export class NewCanvasItem {
 
     private hovering = false;
 
-    constructor(
-        private client: Client,
-        private canvasView: CanvasView,
-        private store: Store<CanvasState>
-    ) {
+    constructor() {
         this.store
             .select(selectDragging)
             .pipe(takeUntilDestroyed())

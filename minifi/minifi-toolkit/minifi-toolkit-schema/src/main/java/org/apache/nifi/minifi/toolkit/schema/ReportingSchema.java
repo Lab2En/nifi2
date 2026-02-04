@@ -24,13 +24,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.apache.nifi.minifi.toolkit.schema.ProcessorSchema.IT_IS_NOT_A_VALID_SCHEDULING_STRATEGY;
 import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.CLASS_KEY;
 import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.COMMENT_KEY;
 import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.DEFAULT_PROPERTIES;
 import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.PROPERTIES_KEY;
 import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.SCHEDULING_PERIOD_KEY;
 import static org.apache.nifi.minifi.toolkit.schema.common.CommonPropertyKeys.SCHEDULING_STRATEGY_KEY;
-import static org.apache.nifi.minifi.toolkit.schema.ProcessorSchema.IT_IS_NOT_A_VALID_SCHEDULING_STRATEGY;
 
 public class ReportingSchema extends BaseSchemaWithIdAndName {
     private String schedulingStrategy;
@@ -66,6 +66,7 @@ public class ReportingSchema extends BaseSchemaWithIdAndName {
         return true;
     }
 
+    @Override
     public Map<String, Object> toMap() {
         Map<String, Object> result = super.toMap();
         result.put(CLASS_KEY, reportingClass);

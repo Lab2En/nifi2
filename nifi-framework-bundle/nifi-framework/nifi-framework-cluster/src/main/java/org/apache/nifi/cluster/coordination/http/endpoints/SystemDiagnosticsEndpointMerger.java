@@ -17,16 +17,16 @@
 
 package org.apache.nifi.cluster.coordination.http.endpoints;
 
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.regex.Pattern;
-
 import org.apache.nifi.cluster.manager.StatusMerger;
 import org.apache.nifi.cluster.protocol.NodeIdentifier;
 import org.apache.nifi.web.api.dto.NodeSystemDiagnosticsSnapshotDTO;
 import org.apache.nifi.web.api.dto.SystemDiagnosticsDTO;
 import org.apache.nifi.web.api.entity.SystemDiagnosticsEntity;
+
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 public class SystemDiagnosticsEndpointMerger extends AbstractNodeStatusEndpoint<SystemDiagnosticsEntity, SystemDiagnosticsDTO> {
     public static final Pattern SYSTEM_DIAGNOSTICS_URI_PATTERN = Pattern.compile("/nifi-api/system-diagnostics");
@@ -49,7 +49,7 @@ public class SystemDiagnosticsEndpointMerger extends AbstractNodeStatusEndpoint<
     @Override
     protected void mergeResponses(SystemDiagnosticsDTO clientDto, Map<NodeIdentifier, SystemDiagnosticsDTO> dtoMap, NodeIdentifier selectedNodeId) {
         final SystemDiagnosticsDTO mergedSystemDiagnostics = clientDto;
-        mergedSystemDiagnostics.setNodeSnapshots(new ArrayList<NodeSystemDiagnosticsSnapshotDTO>());
+        mergedSystemDiagnostics.setNodeSnapshots(new ArrayList<>());
 
         final NodeSystemDiagnosticsSnapshotDTO selectedNodeSnapshot = new NodeSystemDiagnosticsSnapshotDTO();
         selectedNodeSnapshot.setSnapshot(clientDto.getAggregateSnapshot().clone());

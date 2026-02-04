@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
@@ -93,7 +94,7 @@ public class Unpackage {
                             final BufferedOutputStream bufferedOut = new BufferedOutputStream(fos)) {
 
                         for (final Map.Entry<String, String> entry : attributes.entrySet()) {
-                            bufferedOut.write((entry.getKey() + "=" + entry.getValue() + "\n").getBytes("UTF-8"));
+                            bufferedOut.write((entry.getKey() + "=" + entry.getValue() + "\n").getBytes(StandardCharsets.UTF_8));
                         }
                     }
                 }
@@ -104,16 +105,14 @@ public class Unpackage {
     }
 
     public static FlowFileUnpackager createUnpackager(final String version) {
-        switch (version) {
-            case "1":
-                return new FlowFileUnpackagerV1();
-            case "2":
-                return new FlowFileUnpackagerV2();
-            case "3":
-                return new FlowFileUnpackagerV3();
-            default:
+        return switch (version) {
+            case "1" -> new FlowFileUnpackagerV1();
+            case "2" -> new FlowFileUnpackagerV2();
+            case "3" -> new FlowFileUnpackagerV3();
+            default -> {
                 System.out.println("ERROR: Invalid version: " + version + "; must be 1, 2, or 3");
-                return null;
-        }
+                yield null;
+            }
+        };
     }
 }

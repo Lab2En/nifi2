@@ -18,6 +18,7 @@
 package org.apache.nifi.c2.protocol.api;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.io.Serializable;
 import java.util.Objects;
 
@@ -27,7 +28,7 @@ public class ResourceInfo implements Serializable {
 
     private String hash;
 
-    @Schema(description = "A global hash calculated from all the available resources on the agent", required = true)
+    @Schema(description = "A global hash calculated from all the available resources on the agent", requiredMode = Schema.RequiredMode.REQUIRED)
     public String getHash() {
         return hash;
     }

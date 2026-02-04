@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.processors.standard;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.processor.util.file.transfer.FileTransfer;
 import org.apache.nifi.processors.standard.util.SFTPTransfer;
@@ -27,21 +26,25 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TestPutSFTP {
     private static final String FLOW_FILE_CONTENTS = TestPutSFTP.class.getSimpleName();
-
-    private static final String LOCALHOST = "localhost";
 
     private static final String REMOTE_DIRECTORY = "nifi_test/";
 
@@ -53,17 +56,22 @@ class TestPutSFTP {
 
     private static final String TRANSIT_URI_FORMAT = "sftp://%s";
 
+    private static final OffsetDateTime LAST_MODIFIED_TIME_CONFIGURED = OffsetDateTime.ofInstant(Instant.ofEpochSecond(30), ZoneId.systemDefault());
+
     private SSHTestServer sshTestServer;
 
     private TestRunner runner;
 
+    private Path serverRootPath;
+
     @BeforeEach
-    void setRunner() throws IOException {
-        sshTestServer = new SSHTestServer();
+    void setRunner(@TempDir final Path rootPath) throws IOException {
+        sshTestServer = new SSHTestServer(rootPath);
         sshTestServer.startServer();
+        serverRootPath = rootPath;
 
         runner = TestRunners.newTestRunner(PutSFTP.class);
-        runner.setProperty(SFTPTransfer.HOSTNAME, LOCALHOST);
+        runner.setProperty(SFTPTransfer.HOSTNAME, sshTestServer.getHost());
         runner.setProperty(SFTPTransfer.PORT, Integer.toString(sshTestServer.getSSHPort()));
         runner.setProperty(SFTPTransfer.USERNAME, sshTestServer.getUsername());
         runner.setProperty(SFTPTransfer.PASSWORD, sshTestServer.getPassword());
@@ -76,14 +84,11 @@ class TestPutSFTP {
         runner.setProperty(SFTPTransfer.CONFLICT_RESOLUTION, FileTransfer.CONFLICT_RESOLUTION_REPLACE);
         runner.setProperty(SFTPTransfer.CREATE_DIRECTORY, Boolean.TRUE.toString());
         runner.setProperty(SFTPTransfer.DATA_TIMEOUT, "30 sec");
-        runner.setValidateExpressionUsage(false);
     }
 
     @AfterEach
     void clearDirectory() throws IOException {
         sshTestServer.stopServer();
-        final Path fileSystemPath = Paths.get(sshTestServer.getVirtualFileSystemPath());
-        FileUtils.deleteQuietly(fileSystemPath.toFile());
     }
 
     @Test
@@ -93,11 +98,10 @@ class TestPutSFTP {
 
         runner.assertTransferCount(PutSFTP.REL_SUCCESS, 1);
 
-        Path newDirectory = Paths.get(sshTestServer.getVirtualFileSystemPath() + REMOTE_DIRECTORY);
-        Path newFile = Paths.get(sshTestServer.getVirtualFileSystemPath() + REMOTE_DIRECTORY + FIRST_FILENAME);
+        final Path newDirectory = sshTestServer.getRootPath().resolve(REMOTE_DIRECTORY);
+        final Path newFile = sshTestServer.getRootPath().resolve(REMOTE_DIRECTORY).resolve(FIRST_FILENAME);
         assertTrue(newDirectory.toAbsolutePath().toFile().exists(), "New Directory not created");
         assertTrue(newFile.toAbsolutePath().toFile().exists(), "New File not created");
-        runner.clearTransferState();
     }
 
     @Test
@@ -118,9 +122,7 @@ class TestPutSFTP {
     }
 
     @Test
-    void testRunConflictResolutionReplaceStrategy() throws IOException {
-        createRemoteFile();
-
+    void testRunConflictResolutionReplaceStrategy() {
         runner.setProperty(SFTPTransfer.CONFLICT_RESOLUTION, FileTransfer.CONFLICT_RESOLUTION_REPLACE);
         runner.enqueue(FLOW_FILE_CONTENTS, Collections.singletonMap(CoreAttributes.FILENAME.key(), FIRST_FILENAME));
         runner.run();
@@ -132,7 +134,10 @@ class TestPutSFTP {
 
     @Test
     void testRunConflictResolutionRejectStrategy() throws IOException {
-        createRemoteFile();
+        final Path remoteDirectory = sshTestServer.getRootPath().resolve(REMOTE_DIRECTORY);
+        Files.createDirectory(remoteDirectory);
+        final Path filePath = remoteDirectory.resolve(FIRST_FILENAME);
+        Files.createFile(filePath);
 
         runner.setProperty(SFTPTransfer.CONFLICT_RESOLUTION, FileTransfer.CONFLICT_RESOLUTION_REJECT);
         runner.enqueue(FLOW_FILE_CONTENTS, Collections.singletonMap(CoreAttributes.FILENAME.key(), FIRST_FILENAME));
@@ -144,9 +149,7 @@ class TestPutSFTP {
     }
 
     @Test
-    void testRunConflictResolutionIgnoreStrategy() throws IOException {
-        createRemoteFile();
-
+    void testRunConflictResolutionIgnoreStrategy() {
         runner.setProperty(SFTPTransfer.CONFLICT_RESOLUTION, FileTransfer.CONFLICT_RESOLUTION_IGNORE);
         runner.enqueue(FLOW_FILE_CONTENTS, Collections.singletonMap(CoreAttributes.FILENAME.key(), FIRST_FILENAME));
         runner.run();
@@ -158,7 +161,10 @@ class TestPutSFTP {
 
     @Test
     void testRunConflictResolutionFailStrategy() throws IOException {
-        createRemoteFile();
+        final Path remoteDirectory = sshTestServer.getRootPath().resolve(REMOTE_DIRECTORY);
+        Files.createDirectory(remoteDirectory);
+        final Path filePath = remoteDirectory.resolve(FIRST_FILENAME);
+        Files.createFile(filePath);
 
         runner.setProperty(SFTPTransfer.CONFLICT_RESOLUTION, FileTransfer.CONFLICT_RESOLUTION_FAIL);
         runner.enqueue(FLOW_FILE_CONTENTS, Collections.singletonMap(CoreAttributes.FILENAME.key(), FIRST_FILENAME));
@@ -197,15 +203,27 @@ class TestPutSFTP {
         final List<ProvenanceEventRecord> records = runner.getProvenanceEvents();
         assertFalse(records.isEmpty());
 
-        final ProvenanceEventRecord record = records.iterator().next();
-        final String firstTransitUri = String.format(TRANSIT_URI_FORMAT, LOCALHOST);
+        final ProvenanceEventRecord record = records.getFirst();
+        final String firstTransitUri = String.format(TRANSIT_URI_FORMAT, sshTestServer.getHost());
         assertTrue(record.getTransitUri().startsWith(firstTransitUri), "Transit URI not found");
     }
 
-    private void createRemoteFile() throws IOException {
-        final Path directory = Paths.get(sshTestServer.getVirtualFileSystemPath() + REMOTE_DIRECTORY);
-        final Path subDirectory = Paths.get(directory.toString(), FIRST_FILENAME);
-        Files.createDirectory(directory);
-        Files.createFile(subDirectory);
+    @Test
+    void testRunSetLastModifiedTime() throws IOException {
+        final DateTimeFormatter formatter = DateTimeFormatter.ofPattern(SFTPTransfer.FILE_MODIFY_DATE_ATTR_FORMAT);
+        final String lastModifiedTimeConfigured = formatter.format(LAST_MODIFIED_TIME_CONFIGURED);
+
+        runner.setProperty(SFTPTransfer.LAST_MODIFIED_TIME, lastModifiedTimeConfigured);
+        runner.enqueue(FLOW_FILE_CONTENTS, Collections.singletonMap(CoreAttributes.FILENAME.key(), FIRST_FILENAME));
+        runner.run();
+
+        runner.assertAllFlowFilesTransferred(PutSFTP.REL_SUCCESS);
+
+        final Path serverPath = serverRootPath.resolve(REMOTE_DIRECTORY).resolve(FIRST_FILENAME);
+        assertTrue(Files.exists(serverPath), "Server file not found [%s]".formatted(serverPath));
+
+        final FileTime lastModifiedTime = Files.getLastModifiedTime(serverPath);
+        final FileTime expectedLastModifiedTime = FileTime.from(LAST_MODIFIED_TIME_CONFIGURED.toInstant());
+        assertEquals(expectedLastModifiedTime, lastModifiedTime);
     }
 }

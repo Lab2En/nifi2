@@ -16,7 +16,7 @@
  */
 package org.apache.nifi.processors.hadoop;
 
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -56,7 +56,6 @@ import java.io.UncheckedIOException;
 import java.security.PrivilegedAction;
 import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -69,6 +68,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * This processor renames files on HDFS.
@@ -97,8 +97,6 @@ public class MoveHDFS extends AbstractHadoopProcessor {
     public static final String REPLACE_RESOLUTION = "replace";
     public static final String IGNORE_RESOLUTION = "ignore";
     public static final String FAIL_RESOLUTION = "fail";
-
-    private static final Set<Relationship> relationships;
 
     public static final AllowableValue REPLACE_RESOLUTION_AV = new AllowableValue(REPLACE_RESOLUTION,
             REPLACE_RESOLUTION, "Replaces the existing file if any.");
@@ -185,12 +183,24 @@ public class MoveHDFS extends AbstractHadoopProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
-    static {
-        final Set<Relationship> rels = new HashSet<>();
-        rels.add(REL_SUCCESS);
-        rels.add(REL_FAILURE);
-        relationships = Collections.unmodifiableSet(rels);
-    }
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                CONFLICT_RESOLUTION,
+                INPUT_DIRECTORY_OR_FILE,
+                OUTPUT_DIRECTORY,
+                OPERATION,
+                FILE_FILTER_REGEX,
+                IGNORE_DOTTED_FILES,
+                REMOTE_OWNER,
+                REMOTE_GROUP
+            )
+    ).toList();
 
     // non-static global
     protected ProcessorConfiguration processorConfig;
@@ -205,21 +215,12 @@ public class MoveHDFS extends AbstractHadoopProcessor {
     // methods
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        List<PropertyDescriptor> props = new ArrayList<>(properties);
-        props.add(CONFLICT_RESOLUTION);
-        props.add(INPUT_DIRECTORY_OR_FILE);
-        props.add(OUTPUT_DIRECTORY);
-        props.add(OPERATION);
-        props.add(FILE_FILTER_REGEX);
-        props.add(IGNORE_DOTTED_FILES);
-        props.add(REMOTE_OWNER);
-        props.add(REMOTE_GROUP);
-        return props;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled
@@ -295,7 +296,7 @@ public class MoveHDFS extends AbstractHadoopProcessor {
                 } finally {
                     queueLock.unlock();
                 }
-                if (listedFiles.size() > 0) {
+                if (!listedFiles.isEmpty()) {
                     logEmptyListing.set(3L);
                 }
                 if (logEmptyListing.getAndDecrement() > 0) {
@@ -377,20 +378,20 @@ public class MoveHDFS extends AbstractHadoopProcessor {
                                 // Remove destination file (newFile) to replace
                                 if (hdfs.delete(newFile, false)) {
                                     getLogger().info("deleted {} in order to replace with the contents of {}",
-                                            new Object[]{newFile, flowFile});
+                                            newFile, flowFile);
                                 }
                                 break;
                             case IGNORE_RESOLUTION:
                                 session.transfer(flowFile, REL_SUCCESS);
                                 getLogger().info(
                                         "transferring {} to success because file with same name already exists",
-                                        new Object[]{flowFile});
+                                        flowFile);
                                 return null;
                             case FAIL_RESOLUTION:
                                 session.transfer(session.penalize(flowFile), REL_FAILURE);
                                 getLogger().warn(
                                         "penalizing {} and routing to failure because file with same name already exists",
-                                        new Object[]{flowFile});
+                                        flowFile);
                                 return null;
                             default:
                                 break;
@@ -437,7 +438,7 @@ public class MoveHDFS extends AbstractHadoopProcessor {
                     flowFile = session.putAttribute(flowFile, ABSOLUTE_HDFS_PATH_ATTRIBUTE, hdfsPath);
                     final Path qualifiedPath = newFile.makeQualified(hdfs.getUri(), hdfs.getWorkingDirectory());
                     flowFile = session.putAttribute(flowFile, HADOOP_FILE_URL_ATTRIBUTE, qualifiedPath.toString());
-                    final String transitUri = hdfs.getUri() + StringUtils.prependIfMissing(outputPath, "/");
+                    final String transitUri = hdfs.getUri() + Strings.CS.prependIfMissing(outputPath, "/");
                     session.getProvenanceReporter().send(flowFile, transitUri);
                     session.transfer(flowFile, REL_SUCCESS);
 
@@ -526,10 +527,10 @@ public class MoveHDFS extends AbstractHadoopProcessor {
 
     protected static class ProcessorConfiguration {
 
-        final private String conflictResolution;
-        final private String operation;
-        final private Pattern fileFilterPattern;
-        final private boolean ignoreDottedFiles;
+        private final String conflictResolution;
+        private final String operation;
+        private final Pattern fileFilterPattern;
+        private final boolean ignoreDottedFiles;
 
         ProcessorConfiguration(final ProcessContext context) {
             conflictResolution = context.getProperty(CONFLICT_RESOLUTION).getValue();
@@ -548,27 +549,22 @@ public class MoveHDFS extends AbstractHadoopProcessor {
         }
 
         protected PathFilter getPathFilter(final Path dir) {
-            return new PathFilter() {
-
-                @Override
-                public boolean accept(Path path) {
-                    if (ignoreDottedFiles && path.getName().startsWith(".")) {
-                        return false;
-                    }
-                    final String pathToCompare;
-                    String relativePath = getPathDifference(dir, path);
-                    if (relativePath.length() == 0) {
-                        pathToCompare = path.getName();
-                    } else {
-                        pathToCompare = relativePath + Path.SEPARATOR + path.getName();
-                    }
-
-                    if (fileFilterPattern != null && !fileFilterPattern.matcher(pathToCompare).matches()) {
-                        return false;
-                    }
-                    return true;
+            return path -> {
+                if (ignoreDottedFiles && path.getName().startsWith(".")) {
+                    return false;
+                }
+                final String pathToCompare;
+                String relativePath = getPathDifference(dir, path);
+                if (relativePath.length() == 0) {
+                    pathToCompare = path.getName();
+                } else {
+                    pathToCompare = relativePath + Path.SEPARATOR + path.getName();
                 }
 
+                if (fileFilterPattern != null && !fileFilterPattern.matcher(pathToCompare).matches()) {
+                    return false;
+                }
+                return true;
             };
         }
     }

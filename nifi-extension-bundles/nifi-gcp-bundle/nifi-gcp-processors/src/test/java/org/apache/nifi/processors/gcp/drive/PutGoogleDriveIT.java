@@ -16,26 +16,28 @@
  */
 package org.apache.nifi.processors.gcp.drive;
 
-import static org.apache.nifi.processors.conflict.resolution.ConflictResolutionStrategy.IGNORE;
-import static org.apache.nifi.processors.conflict.resolution.ConflictResolutionStrategy.REPLACE;
-import static org.apache.nifi.processors.gcp.drive.PutGoogleDrive.FILE_NAME;
-import static org.apache.nifi.processors.gcp.drive.PutGoogleDrive.FOLDER_ID;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.util.MockFlowFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.apache.nifi.processors.conflict.resolution.ConflictResolutionStrategy.IGNORE;
+import static org.apache.nifi.processors.conflict.resolution.ConflictResolutionStrategy.REPLACE;
+import static org.apache.nifi.processors.gcp.drive.PutGoogleDrive.FILE_NAME;
+import static org.apache.nifi.processors.gcp.drive.PutGoogleDrive.FOLDER_ID;
+
 /**
  * See Javadoc {@link AbstractGoogleDriveIT} for instructions how to run this test.
  */
-public class PutGoogleDriveIT extends AbstractGoogleDriveIT<PutGoogleDrive> implements OutputChecker {
+public class PutGoogleDriveIT extends AbstractGoogleDriveIT<PutGoogleDrive> {
 
     public static final String TEST_FILENAME = "testFileName";
 
+    @Override
     @BeforeEach
     public void init() throws Exception {
         super.init();
@@ -56,7 +58,7 @@ public class PutGoogleDriveIT extends AbstractGoogleDriveIT<PutGoogleDrive> impl
         testRunner.assertTransferCount(PutGoogleDrive.REL_SUCCESS, 1);
         testRunner.assertTransferCount(PutGoogleDrive.REL_FAILURE, 0);
         final List<MockFlowFile> flowFiles = testRunner.getFlowFilesForRelationship(PutGoogleDrive.REL_SUCCESS);
-        final MockFlowFile ff0 = flowFiles.get(0);
+        final MockFlowFile ff0 = flowFiles.getFirst();
         assertFlowFileAttributes(ff0);
     }
 
@@ -96,7 +98,7 @@ public class PutGoogleDriveIT extends AbstractGoogleDriveIT<PutGoogleDrive> impl
         testRunner.assertTransferCount(PutGoogleDrive.REL_FAILURE, 0);
 
         final List<MockFlowFile> flowFiles = testRunner.getFlowFilesForRelationship(PutGoogleDrive.REL_SUCCESS);
-        final MockFlowFile ff0 = flowFiles.get(0);
+        final MockFlowFile ff0 = flowFiles.getFirst();
         ff0.assertAttributeEquals(GoogleDriveAttributes.SIZE, "9");
     }
 
@@ -133,7 +135,7 @@ public class PutGoogleDriveIT extends AbstractGoogleDriveIT<PutGoogleDrive> impl
 
 
     private void runWithFileContent() {
-       runWithFileContent(DEFAULT_FILE_CONTENT);
+        runWithFileContent(DEFAULT_FILE_CONTENT);
     }
 
     private void runWithFileContent(String content) {
@@ -147,7 +149,10 @@ public class PutGoogleDriveIT extends AbstractGoogleDriveIT<PutGoogleDrive> impl
         flowFile.assertAttributeExists(GoogleDriveAttributes.ID);
         flowFile.assertAttributeEquals(GoogleDriveAttributes.FILENAME, TEST_FILENAME);
         flowFile.assertAttributeExists(GoogleDriveAttributes.TIMESTAMP);
+        flowFile.assertAttributeExists(GoogleDriveAttributes.CREATED_TIME);
+        flowFile.assertAttributeExists(GoogleDriveAttributes.MODIFIED_TIME);
         flowFile.assertAttributeEquals(GoogleDriveAttributes.SIZE, String.valueOf(DEFAULT_FILE_CONTENT.length()));
+        flowFile.assertAttributeEquals(GoogleDriveAttributes.SIZE_AVAILABLE, "true");
         flowFile.assertAttributeEquals(GoogleDriveAttributes.MIME_TYPE, "text/plain");
     }
 }

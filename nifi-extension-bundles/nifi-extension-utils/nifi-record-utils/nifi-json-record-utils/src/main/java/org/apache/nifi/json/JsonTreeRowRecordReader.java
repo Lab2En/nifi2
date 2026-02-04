@@ -17,10 +17,8 @@
 
 package org.apache.nifi.json;
 
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.SimpleRecordSchema;
@@ -53,15 +51,21 @@ public class JsonTreeRowRecordReader extends AbstractJsonRowRecordReader {
 
     private final RecordSchema schema;
 
-    public JsonTreeRowRecordReader(final InputStream in, final ComponentLog logger, final RecordSchema schema,
-                                   final String dateFormat, final String timeFormat, final String timestampFormat,
-                                   final StartingFieldStrategy startingFieldStrategy, final String startingFieldName,
-                                   final SchemaApplicationStrategy schemaApplicationStrategy, final BiPredicate<String, String> captureFieldPredicate,
-                                   final boolean allowComments, final StreamReadConstraints streamReadConstraints, final TokenParserFactory tokenParserFactory)
-            throws IOException, MalformedRecordException {
+    public JsonTreeRowRecordReader(
+            final InputStream in,
+            final ComponentLog logger,
+            final RecordSchema schema,
+            final String dateFormat,
+            final String timeFormat,
+            final String timestampFormat,
+            final StartingFieldStrategy startingFieldStrategy,
+            final String startingFieldName,
+            final SchemaApplicationStrategy schemaApplicationStrategy,
+            final BiPredicate<String, String> captureFieldPredicate,
+            final TokenParserFactory tokenParserFactory
+    ) throws IOException, MalformedRecordException {
 
-        super(in, logger, dateFormat, timeFormat, timestampFormat, startingFieldStrategy, startingFieldName, captureFieldPredicate,
-                allowComments, streamReadConstraints, tokenParserFactory);
+        super(in, logger, dateFormat, timeFormat, timestampFormat, startingFieldStrategy, startingFieldName, captureFieldPredicate, tokenParserFactory);
 
         if (startingFieldStrategy == StartingFieldStrategy.NESTED_FIELD && schemaApplicationStrategy == SchemaApplicationStrategy.WHOLE_JSON) {
             this.schema = getSelectedSchema(schema, startingFieldName);
@@ -94,8 +98,9 @@ public class JsonTreeRowRecordReader extends AbstractJsonRowRecordReader {
             return ((RecordDataType) ((ArrayDataType) recordField.getDataType()).getElementType()).getChildSchema();
         } else if (recordField.getDataType() instanceof RecordDataType) {
             return ((RecordDataType) recordField.getDataType()).getChildSchema();
-        } else
+        } else {
             throw new RuntimeException(String.format("Selected schema field [%s] is not record or array type.", recordField.getFieldName()));
+        }
     }
 
     @Override
@@ -131,13 +136,10 @@ public class JsonTreeRowRecordReader extends AbstractJsonRowRecordReader {
                                            final boolean coerceTypes, final boolean dropUnknown) throws IOException, MalformedRecordException {
 
         final Map<String, Object> values = new LinkedHashMap<>(schema.getFieldCount() * 2);
-        final JsonNode jsonNodeForSerialization;
 
         if (dropUnknown) {
-            jsonNodeForSerialization = jsonNode.deepCopy();
-
             // Delete unknown fields for updated serialized representation
-            final Iterator<Map.Entry<String, JsonNode>> fields = jsonNodeForSerialization.fields();
+            final Iterator<Map.Entry<String, JsonNode>> fields = jsonNode.properties().iterator();
             while (fields.hasNext()) {
                 final Map.Entry<String, JsonNode> field = fields.next();
                 final String fieldName = field.getKey();
@@ -167,8 +169,6 @@ public class JsonTreeRowRecordReader extends AbstractJsonRowRecordReader {
                 values.put(fieldName, value);
             }
         } else {
-            jsonNodeForSerialization = jsonNode;
-
             final Iterator<String> fieldNames = jsonNode.fieldNames();
             while (fieldNames.hasNext()) {
                 final String fieldName = fieldNames.next();
@@ -189,7 +189,7 @@ public class JsonTreeRowRecordReader extends AbstractJsonRowRecordReader {
             }
         }
 
-        final Supplier<String> supplier = jsonNodeForSerialization::toString;
+        final Supplier<String> supplier = jsonNode::toString;
         return new MapRecord(schema, values, SerializedForm.of(supplier, "application/json"), false, dropUnknown);
     }
 

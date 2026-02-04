@@ -15,24 +15,23 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Output } from '@angular/core';
+import { Component, EventEmitter, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { CancelDialogRequest } from '../../../state/shared';
 
 @Component({
     selector: 'cancel-dialog',
-    standalone: true,
     imports: [MatDialogModule, MatButtonModule],
     templateUrl: './cancel-dialog.component.html',
     styleUrls: ['./cancel-dialog.component.scss']
 })
 export class CancelDialog {
-    @Output() cancel: EventEmitter<void> = new EventEmitter<void>();
+    request = inject<CancelDialogRequest>(MAT_DIALOG_DATA);
 
-    constructor(@Inject(MAT_DIALOG_DATA) public request: CancelDialogRequest) {}
+    @Output() exit: EventEmitter<void> = new EventEmitter<void>();
 
     cancelClicked(): void {
-        this.cancel.next();
+        this.exit.next();
     }
 }

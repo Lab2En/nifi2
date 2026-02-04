@@ -15,8 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
-import { ClusterSystemTable } from '../cluster-system-listing/cluster-system-table/cluster-system-table.component';
+import { Component, computed, inject } from '@angular/core';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { ClusterJvmTable } from './cluster-jvm-table/cluster-jvm-table.component';
 import {
@@ -24,31 +23,37 @@ import {
     selectClusterListingStatus,
     selectClusterNodeIdFromRoute
 } from '../../state/cluster-listing/cluster-listing.selectors';
-import { selectSystemNodeSnapshots } from '../../../../state/system-diagnostics/system-diagnostics.selectors';
+import {
+    selectSystemDiagnosticsLoadedTimestamp,
+    selectSystemNodeSnapshots
+} from '../../../../state/system-diagnostics/system-diagnostics.selectors';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
 import { initialClusterState } from '../../state/cluster-listing/cluster-listing.reducer';
 import { NodeSnapshot } from '../../../../state/system-diagnostics';
 import { clearJvmNodeSelection, selectJvmNode } from '../../state/cluster-listing/cluster-listing.actions';
+import { initialSystemDiagnosticsState } from '../../../../state/system-diagnostics/system-diagnostics.reducer';
 
 @Component({
     selector: 'cluster-jvm-listing',
-    standalone: true,
-    imports: [ClusterSystemTable, NgxSkeletonLoaderModule, ClusterJvmTable],
+    imports: [NgxSkeletonLoaderModule, ClusterJvmTable],
     templateUrl: './cluster-jvm-listing.component.html',
     styleUrl: './cluster-jvm-listing.component.scss'
 })
 export class ClusterJvmListing {
+    private store = inject<Store<NiFiState>>(Store);
+
     loadedTimestamp = this.store.selectSignal(selectClusterListingLoadedTimestamp);
+    systemDiagnosticsLoadedTimestamp = this.store.selectSignal(selectSystemDiagnosticsLoadedTimestamp);
     listingStatus = this.store.selectSignal(selectClusterListingStatus);
     selectedClusterNodeId = this.store.selectSignal(selectClusterNodeIdFromRoute);
     nodes = this.store.selectSignal(selectSystemNodeSnapshots);
 
-    constructor(private store: Store<NiFiState>) {}
-
-    isInitialLoading(loadedTimestamp: string): boolean {
-        return loadedTimestamp == initialClusterState.loadedTimestamp;
-    }
+    isInitialLoading = computed(
+        () =>
+            this.loadedTimestamp() == initialClusterState.loadedTimestamp ||
+            this.systemDiagnosticsLoadedTimestamp() == initialSystemDiagnosticsState.loadedTimestamp
+    );
 
     selectNode(node: NodeSnapshot): void {
         this.store.dispatch(selectJvmNode({ request: { id: node.nodeId } }));

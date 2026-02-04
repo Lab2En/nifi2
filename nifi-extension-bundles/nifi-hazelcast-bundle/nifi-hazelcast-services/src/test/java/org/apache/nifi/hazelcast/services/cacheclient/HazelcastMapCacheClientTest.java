@@ -16,7 +16,6 @@
  */
 package org.apache.nifi.hazelcast.services.cacheclient;
 
-
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.controller.ControllerServiceInitializationContext;
@@ -35,7 +34,9 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,14 +48,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @ExtendWith(MockitoExtension.class)
 public class HazelcastMapCacheClientTest {
 
-    private final static long TTL = 0;
-    private final static String CACHE_NAME = "cache";
-    private final static String KEY = "key";
-    private final static String VALUE = "lorem ipsum";
-    private final static String VALUE_2 = "lorem ipsum dolor sit amet";
-    private final static String VALUE_3 = "cras ac felis tincidunt";
+    private static final long TTL = 0;
+    private static final String CACHE_NAME = "cache";
+    private static final String KEY = "key";
+    private static final String VALUE = "lorem ipsum";
+    private static final String VALUE_2 = "lorem ipsum dolor sit amet";
+    private static final String VALUE_3 = "cras ac felis tincidunt";
 
-    private final static DummyStringSerializer SERIALIZER = new DummyStringSerializer();
+    private static final DummyStringSerializer SERIALIZER = new DummyStringSerializer();
 
     @Mock
     private HazelcastCacheManager hazelcastCacheService;
@@ -291,6 +292,40 @@ public class HazelcastMapCacheClientTest {
         assertEquals(value, result);
     }
 
+    @Test
+    void testKeySetOnEmptyCache() throws IOException {
+        thenKeySetEquals(Set.of(), SERIALIZER);
+    }
+
+    @Test
+    void testKeySetOnNonEmptyCache() throws IOException {
+        //when
+        whenPutEntry("key1", "1-value");
+        whenPutEntry("key2", "2-value");
+        whenPutEntry("key3", "3-value");
+        whenPutEntry("key4", "4-value");
+
+        // then
+        thenKeySetEquals(Set.of("key1", "key2", "key3", "key4"), SERIALIZER);
+    }
+
+    @Test
+    void testKeyWithNonStringKeys() throws IOException {
+        // given
+        final Serializer<Integer> nonStringKeySerializer =
+                (value, output) -> output.write(ByteBuffer.allocate(4).putInt(value).array());
+        final Deserializer<Integer> nonStringKeyDeserializer = input -> ByteBuffer.wrap(input).getInt();
+
+        // when
+        testSubject.put(1, "1-value", nonStringKeySerializer, SERIALIZER);
+        testSubject.put(2, "2-value", nonStringKeySerializer, SERIALIZER);
+        testSubject.put(3, "3-value", nonStringKeySerializer, SERIALIZER);
+        testSubject.put(4, "4-value", nonStringKeySerializer, SERIALIZER);
+
+        // then
+        thenKeySetEquals(Set.of(1, 2, 3, 4), nonStringKeyDeserializer);
+    }
+
     private void whenRemoveEntryIsSuccessful() throws IOException {
         assertTrue(testSubject.remove(KEY, SERIALIZER));
     }
@@ -327,6 +362,10 @@ public class HazelcastMapCacheClientTest {
     private void whenReplaceEntryIsFailed(final Long version, final String newValue) throws IOException {
         final AtomicCacheEntry<String, String, Long> cacheEntry = new AtomicCacheEntry<>(KEY, newValue, version);
         assertFalse(testSubject.replace(cacheEntry, SERIALIZER, SERIALIZER));
+    }
+
+    private <K> void thenKeySetEquals(final Set<K> keys, final Deserializer<K> keyDeserializer) throws IOException {
+        assertEquals(testSubject.keySet(keyDeserializer), keys);
     }
 
     private void thenEntryIsNotInCache(final String key) throws IOException {

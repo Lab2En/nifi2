@@ -68,7 +68,7 @@ public class BootstrapProperties extends StandardReadableProperties {
     private void filterProperties(final Properties properties) {
         getRawProperties().clear();
         final Properties filteredProperties = new Properties();
-        for (final Enumeration<Object> e = properties.keys(); e.hasMoreElements(); ) {
+        for (final Enumeration<Object> e = properties.keys(); e.hasMoreElements();) {
             final String key = e.nextElement().toString();
             if (key.startsWith(propertyPrefix)) {
                 filteredProperties.put(key, properties.getProperty(key));
@@ -83,6 +83,6 @@ public class BootstrapProperties extends StandardReadableProperties {
     }
 
     private static boolean isBlank(final String string) {
-        return (string == null) || string.isEmpty() || string.trim().isEmpty();
+        return (string == null) || string.isBlank();
     }
 }

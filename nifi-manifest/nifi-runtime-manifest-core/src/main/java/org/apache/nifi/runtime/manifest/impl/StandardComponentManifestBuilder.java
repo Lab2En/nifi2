@@ -19,6 +19,7 @@ package org.apache.nifi.runtime.manifest.impl;
 import org.apache.nifi.c2.protocol.component.api.ComponentManifest;
 import org.apache.nifi.c2.protocol.component.api.ControllerServiceDefinition;
 import org.apache.nifi.c2.protocol.component.api.FlowAnalysisRuleDefinition;
+import org.apache.nifi.c2.protocol.component.api.FlowRegistryClientDefinition;
 import org.apache.nifi.c2.protocol.component.api.ParameterProviderDefinition;
 import org.apache.nifi.c2.protocol.component.api.ProcessorDefinition;
 import org.apache.nifi.c2.protocol.component.api.ReportingTaskDefinition;
@@ -37,6 +38,7 @@ public class StandardComponentManifestBuilder implements ComponentManifestBuilde
     private final List<ReportingTaskDefinition> reportingTasks = new ArrayList<>();
     private final List<ParameterProviderDefinition> parameterProviders = new ArrayList<>();
     private final List<FlowAnalysisRuleDefinition> flowAnalysisRules = new ArrayList<>();
+    private final List<FlowRegistryClientDefinition> flowRegistryClients = new ArrayList<>();
 
     @Override
     public ComponentManifestBuilder addProcessor(final ProcessorDefinition processorDefinition) {
@@ -84,13 +86,23 @@ public class StandardComponentManifestBuilder implements ComponentManifestBuilde
     }
 
     @Override
+    public ComponentManifestBuilder addFlowRegistryClient(final FlowRegistryClientDefinition flowRegistryClientDefinition) {
+        if (flowRegistryClientDefinition == null) {
+            throw new IllegalArgumentException("Flow Registry Client definition cannot be null");
+        }
+        flowRegistryClients.add(flowRegistryClientDefinition);
+        return this;
+    }
+
+    @Override
     public ComponentManifest build() {
         final ComponentManifest componentManifest = new ComponentManifest();
-        componentManifest.setProcessors(new ArrayList<ProcessorDefinition>(processors));
-        componentManifest.setControllerServices(new ArrayList<ControllerServiceDefinition>(controllerServices));
-        componentManifest.setReportingTasks(new ArrayList<ReportingTaskDefinition>(reportingTasks));
-        componentManifest.setParameterProviders(new ArrayList<ParameterProviderDefinition>(parameterProviders));
-        componentManifest.setFlowAnalysisRules(new ArrayList<FlowAnalysisRuleDefinition>(flowAnalysisRules));
+        componentManifest.setProcessors(new ArrayList<>(processors));
+        componentManifest.setControllerServices(new ArrayList<>(controllerServices));
+        componentManifest.setReportingTasks(new ArrayList<>(reportingTasks));
+        componentManifest.setParameterProviders(new ArrayList<>(parameterProviders));
+        componentManifest.setFlowAnalysisRules(new ArrayList<>(flowAnalysisRules));
+        componentManifest.setFlowRegistryClients(new ArrayList<>(flowRegistryClients));
         return componentManifest;
     }
 

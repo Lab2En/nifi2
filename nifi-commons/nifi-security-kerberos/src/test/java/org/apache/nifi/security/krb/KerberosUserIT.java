@@ -24,24 +24,22 @@ import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.security.auth.Subject;
-import javax.security.auth.kerberos.KerberosPrincipal;
-import javax.security.auth.kerberos.KerberosTicket;
 import java.io.File;
 import java.nio.file.Path;
-import java.security.AccessControlContext;
-import java.security.AccessController;
 import java.security.Principal;
 import java.security.PrivilegedAction;
 import java.security.PrivilegedExceptionAction;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.security.auth.Subject;
+import javax.security.auth.kerberos.KerberosPrincipal;
+import javax.security.auth.kerberos.KerberosTicket;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class KerberosUserIT {
     private static final Logger logger = LoggerFactory.getLogger(KerberosUserIT.class);
@@ -169,10 +167,7 @@ public class KerberosUserIT {
         }
         assertTrue(performedRelogin);
 
-        Subject subject = user1.doAs((PrivilegedAction<Subject>) () -> {
-            AccessControlContext context = AccessController.getContext();
-            return Subject.getSubject(context);
-        });
+        Subject subject = user1.doAs((PrivilegedAction<Subject>) Subject::current);
 
         // verify only a single KerberosTicket exists in the Subject after relogin
         Set<KerberosTicket> kerberosTickets = subject.getPrivateCredentials(KerberosTicket.class);

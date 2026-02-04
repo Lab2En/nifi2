@@ -30,6 +30,7 @@ import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -66,16 +67,14 @@ public class PutAzureCosmosDBRecord extends AbstractAzureCosmosDBProcessor {
     static final AllowableValue UPSERT_CONFLICT = new AllowableValue("UPSERT", "Upsert", "Conflicting records will be upserted, and FlowFile will not be routed to failure");
 
     static final PropertyDescriptor RECORD_READER_FACTORY = new PropertyDescriptor.Builder()
-            .name("record-reader")
-            .displayName("Record Reader")
+            .name("Record Reader")
             .description("Specifies the Controller Service to use for parsing incoming data and determining the data's schema")
             .identifiesControllerService(RecordReaderFactory.class)
             .required(true)
             .build();
 
     static final PropertyDescriptor INSERT_BATCH_SIZE = new PropertyDescriptor.Builder()
-            .name("insert-batch-size")
-            .displayName("Insert Batch Size")
+            .name("Insert Batch Size")
             .description("The number of records to group together for one single insert operation against Cosmos DB")
             .defaultValue("20")
             .required(false)
@@ -83,8 +82,7 @@ public class PutAzureCosmosDBRecord extends AbstractAzureCosmosDBProcessor {
             .build();
 
     static final PropertyDescriptor CONFLICT_HANDLE_STRATEGY = new PropertyDescriptor.Builder()
-            .name("azure-cosmos-db-conflict-handling-strategy")
-            .displayName("Cosmos DB Conflict Handling Strategy")
+            .name("Cosmos DB Conflict Handling Strategy")
             .description("Choose whether to ignore or upsert when conflict error occurs during insertion")
             .required(false)
             .allowableValues(IGNORE_CONFLICT, UPSERT_CONFLICT)
@@ -92,20 +90,28 @@ public class PutAzureCosmosDBRecord extends AbstractAzureCosmosDBProcessor {
             .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
             .build();
 
-    private final static Set<Relationship> relationships = Set.of(REL_SUCCESS, REL_FAILURE);
-    private final static List<PropertyDescriptor> propertyDescriptors = Stream.concat(
-            descriptors.stream(),
-            Stream.of(RECORD_READER_FACTORY, INSERT_BATCH_SIZE, CONFLICT_HANDLE_STRATEGY)
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                    RECORD_READER_FACTORY,
+                    INSERT_BATCH_SIZE,
+                    CONFLICT_HANDLE_STRATEGY
+            )
     ).toList();
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     protected void bulkInsert(final List<Map<String, Object>> records) throws CosmosException {
@@ -178,7 +184,7 @@ public class PutAzureCosmosDBRecord extends AbstractAzureCosmosDBProcessor {
                     batch = new ArrayList<>();
                 }
             }
-            if (!error && batch.size() > 0) {
+            if (!error && !batch.isEmpty()) {
                 bulkInsert(batch);
             }
         } catch (SchemaNotFoundException | MalformedRecordException | IOException | CosmosException e) {
@@ -195,10 +201,19 @@ public class PutAzureCosmosDBRecord extends AbstractAzureCosmosDBProcessor {
     }
 
     @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("record-reader", RECORD_READER_FACTORY.getName());
+        config.renameProperty("insert-batch-size", INSERT_BATCH_SIZE.getName());
+        config.renameProperty("azure-cosmos-db-conflict-handling-strategy", CONFLICT_HANDLE_STRATEGY.getName());
+    }
+
+    @Override
     protected void doPostActionOnSchedule(final ProcessContext context) {
         conflictHandlingStrategy = context.getProperty(CONFLICT_HANDLE_STRATEGY).getValue();
-        if (conflictHandlingStrategy == null)
+        if (conflictHandlingStrategy == null) {
             conflictHandlingStrategy = IGNORE_CONFLICT.getValue();
+        }
     }
 
 }

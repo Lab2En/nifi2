@@ -15,17 +15,14 @@
  * limitations under the License.
  */
 
+import { Bundle, ComponentHistory, ParameterEntity, PropertyDescriptor } from '../../../../state/shared';
 import {
     AffectedComponentEntity,
-    Bundle,
-    ComponentHistory,
-    DocumentedType,
+    BulletinEntity,
     ParameterContextReferenceEntity,
-    ParameterEntity,
     Permissions,
-    PropertyDescriptor,
     Revision
-} from '../../../../state/shared';
+} from '@nifi/shared';
 
 export const parameterProvidersFeatureKey = 'parameterProviders';
 
@@ -76,7 +73,7 @@ export interface ParameterProvider {
 
 export interface ParameterProviderEntity {
     id: string;
-    bulletins: [];
+    bulletins: BulletinEntity[];
     component: ParameterProvider;
     permissions: Permissions;
     revision: Revision;
@@ -132,10 +129,6 @@ export interface LoadParameterProvidersResponse {
 
 export interface SelectParameterProviderRequest {
     id: string;
-}
-
-export interface CreateParameterProviderDialogRequest {
-    parameterProviderTypes: DocumentedType[];
 }
 
 export interface CreateParameterProviderRequest {

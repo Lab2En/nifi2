@@ -23,6 +23,7 @@ import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.controller.VerifiableControllerService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.ssl.SSLContextService;
 
@@ -37,8 +38,7 @@ public interface HashiCorpVaultClientService extends ControllerService, Verifiab
             "Use one or more '.properties' files to configure the client");
 
     PropertyDescriptor CONFIGURATION_STRATEGY = new PropertyDescriptor.Builder()
-            .displayName("Configuration Strategy")
-            .name("configuration-strategy")
+            .name("Configuration Strategy")
             .required(true)
             .allowableValues(DIRECT_PROPERTIES, PROPERTIES_FILES)
             .defaultValue(DIRECT_PROPERTIES.getValue())
@@ -112,4 +112,8 @@ public interface HashiCorpVaultClientService extends ControllerService, Verifiab
      */
     HashiCorpVaultCommunicationService getHashiCorpVaultCommunicationService();
 
+    @Override
+    default void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("configuration-strategy", CONFIGURATION_STRATEGY.getName());
+    }
 }

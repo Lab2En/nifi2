@@ -23,8 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,9 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestExecuteGroovy extends BaseScriptTest {
 
-    private final String TEST_CSV_DATA = "gender,title,first,last\n"
-            + "female,miss,marlene,shaw\n"
-            + "male,mr,todd,graham";
+    private final String TEST_CSV_DATA = """
+            gender,title,first,last
+            female,miss,marlene,shaw
+            male,mr,todd,graham""";
 
     @BeforeEach
     public void setup() throws Exception {
@@ -44,10 +45,9 @@ public class TestExecuteGroovy extends BaseScriptTest {
     /**
      * Tests a script file that has provides the body of an onTrigger() function.
      *
-     * @throws Exception Any error encountered while testing
      */
     @Test
-    public void testReadFlowFileContentAndStoreInFlowFileAttributeWithScriptFile() throws Exception {
+    public void testReadFlowFileContentAndStoreInFlowFileAttributeWithScriptFile() {
         runner.setValidateExpressionUsage(false);
         runner.setProperty(scriptingComponent.getScriptingComponentHelper().SCRIPT_ENGINE, "Groovy");
         runner.setProperty(ScriptingComponentUtils.SCRIPT_FILE, TEST_RESOURCE_LOCATION + "groovy/test_onTrigger.groovy");
@@ -59,16 +59,15 @@ public class TestExecuteGroovy extends BaseScriptTest {
 
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        result.get(0).assertAttributeEquals("from-content", "test content");
+        result.getFirst().assertAttributeEquals("from-content", "test content");
     }
 
     /**
      * Tests a script file that has provides the body of an onTrigger() function.
      *
-     * @throws Exception Any error encountered while testing
      */
     @Test
-    public void testNoIncomingFlowFile() throws Exception {
+    public void testNoIncomingFlowFile() {
         runner.setValidateExpressionUsage(false);
         runner.setProperty(scriptingComponent.getScriptingComponentHelper().SCRIPT_ENGINE, "Groovy");
         runner.setProperty(ScriptingComponentUtils.SCRIPT_FILE, TEST_RESOURCE_LOCATION + "groovy/test_onTrigger.groovy");
@@ -114,7 +113,7 @@ public class TestExecuteGroovy extends BaseScriptTest {
         assertEquals(1, runner.getRemovedCount());
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        result.get(0).assertAttributeEquals("filename", "split_cols.txt");
+        result.getFirst().assertAttributeEquals("filename", "split_cols.txt");
     }
 
     /**
@@ -134,7 +133,7 @@ public class TestExecuteGroovy extends BaseScriptTest {
 
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        result.get(0).assertAttributeEquals("filename", "newfile");
+        result.getFirst().assertAttributeEquals("filename", "newfile");
     }
 
     /**
@@ -149,15 +148,12 @@ public class TestExecuteGroovy extends BaseScriptTest {
         runner.setProperty("myProp", "${myAttr}");
 
         runner.assertValid();
-        runner.enqueue(TEST_CSV_DATA.getBytes(StandardCharsets.UTF_8),
-                new HashMap<String, String>(1) {{
-                    put("myAttr", "testValue");
-                }});
+        runner.enqueue(TEST_CSV_DATA.getBytes(StandardCharsets.UTF_8), Map.of("myAttr", "testValue"));
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        result.get(0).assertAttributeEquals("from-content", "testValue");
+        result.getFirst().assertAttributeEquals("from-content", "testValue");
     }
 
     /**
@@ -177,7 +173,7 @@ public class TestExecuteGroovy extends BaseScriptTest {
 
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        MockFlowFile resultFile = result.get(0);
+        MockFlowFile resultFile = result.getFirst();
         resultFile.assertAttributeEquals("selected.columns", "first,last");
         resultFile.assertContentEquals("Marlene Shaw\nTodd Graham\n");
     }
@@ -202,7 +198,7 @@ public class TestExecuteGroovy extends BaseScriptTest {
 
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        result.get(0).assertAttributeEquals("from-content", "test content");
+        result.getFirst().assertAttributeEquals("from-content", "test content");
     }
 
     /**
@@ -223,7 +219,7 @@ public class TestExecuteGroovy extends BaseScriptTest {
 
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        result.get(0).assertAttributeEquals("from-content", "test content");
+        result.getFirst().assertAttributeEquals("from-content", "test content");
     }
 
     /**
@@ -262,7 +258,7 @@ public class TestExecuteGroovy extends BaseScriptTest {
 
         runner.assertAllFlowFilesTransferred(ExecuteScript.REL_SUCCESS, 1);
         final List<MockFlowFile> result = runner.getFlowFilesForRelationship(ExecuteScript.REL_SUCCESS);
-        result.get(0).assertAttributeEquals("from-content", "test content");
+        result.getFirst().assertAttributeEquals("from-content", "test content");
     }
 
     /**

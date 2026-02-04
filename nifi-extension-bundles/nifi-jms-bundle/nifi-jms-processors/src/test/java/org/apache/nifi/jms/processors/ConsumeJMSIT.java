@@ -20,35 +20,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import org.apache.activemq.ActiveMQConnectionFactory;
-import org.apache.activemq.broker.BrokerService;
-import org.apache.activemq.broker.TransportConnector;
-import org.apache.activemq.command.ActiveMQMessage;
-import org.apache.activemq.transport.tcp.TcpTransport;
-import org.apache.activemq.transport.tcp.TcpTransportFactory;
-import org.apache.activemq.wireformat.WireFormat;
-import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.jms.cf.JMSConnectionFactoryProperties;
-import org.apache.nifi.jms.cf.JMSConnectionFactoryProvider;
-import org.apache.nifi.jms.cf.JMSConnectionFactoryProviderDefinition;
-import org.apache.nifi.jms.processors.ioconcept.writer.record.OutputStrategy;
-import org.apache.nifi.logging.ComponentLog;
-import org.apache.nifi.processor.ProcessContext;
-import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.OutputStreamCallback;
-import org.apache.nifi.reporting.InitializationException;
-import org.apache.nifi.util.MockFlowFile;
-import org.apache.nifi.util.MockProcessContext;
-import org.apache.nifi.util.TestRunner;
-import org.apache.nifi.util.TestRunners;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.springframework.jms.connection.CachingConnectionFactory;
-import org.springframework.jms.core.JmsTemplate;
-import org.springframework.jms.core.MessageCreator;
-import org.springframework.jms.support.JmsHeaders;
-
 import jakarta.jms.BytesMessage;
 import jakarta.jms.Connection;
 import jakarta.jms.ConnectionFactory;
@@ -60,7 +31,37 @@ import jakarta.jms.ObjectMessage;
 import jakarta.jms.Session;
 import jakarta.jms.StreamMessage;
 import jakarta.jms.TextMessage;
-import javax.net.SocketFactory;
+import org.apache.activemq.ActiveMQConnectionFactory;
+import org.apache.activemq.broker.BrokerService;
+import org.apache.activemq.broker.TransportConnector;
+import org.apache.activemq.command.ActiveMQMessage;
+import org.apache.activemq.transport.tcp.TcpTransport;
+import org.apache.activemq.transport.tcp.TcpTransportFactory;
+import org.apache.activemq.wireformat.WireFormat;
+import org.apache.nifi.annotation.notification.PrimaryNodeState;
+import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.jms.cf.JMSConnectionFactoryProperties;
+import org.apache.nifi.jms.cf.JMSConnectionFactoryProvider;
+import org.apache.nifi.jms.cf.JMSConnectionFactoryProviderDefinition;
+import org.apache.nifi.jms.processors.ioconcept.writer.record.OutputStrategy;
+import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processor.io.OutputStreamCallback;
+import org.apache.nifi.reporting.InitializationException;
+import org.apache.nifi.scheduling.ExecutionNode;
+import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.MockProcessContext;
+import org.apache.nifi.util.TestRunner;
+import org.apache.nifi.util.TestRunners;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.jms.connection.CachingConnectionFactory;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.core.MessageCreator;
+import org.springframework.jms.support.JmsHeaders;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -69,6 +70,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.net.SocketFactory;
 
 import static java.util.Arrays.asList;
 import static org.apache.nifi.jms.processors.helpers.AssertionUtils.assertCausedBy;
@@ -111,7 +113,7 @@ public class ConsumeJMSIT {
 
             runner.run(1, false);
             //
-            final MockFlowFile successFF = runner.getFlowFilesForRelationship(PublishJMS.REL_SUCCESS).get(0);
+            final MockFlowFile successFF = runner.getFlowFilesForRelationship(PublishJMS.REL_SUCCESS).getFirst();
             assertNotNull(successFF);
             successFF.assertAttributeExists(JmsHeaders.DESTINATION);
             successFF.assertAttributeEquals(JmsHeaders.DESTINATION, destinationName);
@@ -254,7 +256,7 @@ public class ConsumeJMSIT {
             runner.setProperty(ConsumeJMS.DESTINATION_TYPE, ConsumeJMS.QUEUE);
             runner.run(1, false);
             //
-            final MockFlowFile successFF = runner.getFlowFilesForRelationship(PublishJMS.REL_SUCCESS).get(0);
+            final MockFlowFile successFF = runner.getFlowFilesForRelationship(PublishJMS.REL_SUCCESS).getFirst();
             assertNotNull(successFF);
 
             successFF.assertAttributeExists(ConsumeJMS.JMS_MESSAGETYPE);
@@ -299,7 +301,7 @@ public class ConsumeJMSIT {
             final String destinationName = "validateNifi6915";
 
             TestRunner c1Consumer = createNonSharedDurableConsumer(cf, destinationName);
-            // 1. Start a durable non shared consumer C1 with client id client1 subscribed to topic T.
+            // 1. Start a durable non-shared consumer C1 with client id client1 subscribed to topic T.
             boolean stopConsumer = true;
             c1Consumer.run(1, stopConsumer);
             List<MockFlowFile> flowFiles = c1Consumer.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS);
@@ -312,7 +314,7 @@ public class ConsumeJMSIT {
             assertEquals(1, flowFiles.size());
 
             // It is expected C1 receives message M1.
-            final MockFlowFile successFF = flowFiles.get(0);
+            final MockFlowFile successFF = flowFiles.getFirst();
             assertNotNull(successFF);
             successFF.assertAttributeExists(JmsHeaders.DESTINATION);
             successFF.assertAttributeEquals(JmsHeaders.DESTINATION, destinationName);
@@ -376,10 +378,10 @@ public class ConsumeJMSIT {
 
             ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("validateNIFI7034://127.0.0.1:" + port);
             final String destinationName = "nifi7034";
-            final AtomicReference<TcpTransport> tcpTransport = new AtomicReference<TcpTransport>();
+            final AtomicReference<TcpTransport> tcpTransport = new AtomicReference<>();
             TcpTransportFactory.registerTransportFactory("validateNIFI7034", new TcpTransportFactory() {
                 @Override
-                protected TcpTransport createTcpTransport(WireFormat wf, SocketFactory socketFactory, URI location, URI localLocation) throws UnknownHostException, IOException {
+                protected TcpTransport createTcpTransport(WireFormat wf, SocketFactory socketFactory, URI location, URI localLocation) throws IOException {
                     TcpTransport transport = super.createTcpTransport(wf, socketFactory, location, localLocation);
                     tcpTransport.set(transport);
                     return transport;
@@ -509,7 +511,7 @@ public class ConsumeJMSIT {
 
             List<MockFlowFile> successFlowFiles = testRunner.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS);
             assertEquals(1, successFlowFiles.size());
-            assertEquals(expectedRecordSet.toString(), new String(successFlowFiles.get(0).toByteArray()));
+            assertEquals(expectedRecordSet.toString(), new String(successFlowFiles.getFirst().toByteArray()));
 
             List<MockFlowFile> parseFailedFlowFiles = testRunner.getFlowFilesForRelationship(ConsumeJMS.REL_PARSE_FAILURE);
             assertEquals(0, parseFailedFlowFiles.size());
@@ -544,7 +546,7 @@ public class ConsumeJMSIT {
             // checking whether the processor was able to construct a valid recordSet from the properly formatted messages
             List<MockFlowFile> successFlowFiles = testRunner.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS);
             assertEquals(1, successFlowFiles.size());
-            assertEquals(expectedRecordSet.toString(), new String(successFlowFiles.get(0).toByteArray()));
+            assertEquals(expectedRecordSet.toString(), new String(successFlowFiles.getFirst().toByteArray()));
 
             // and checking whether it creates separate FlowFiles for the malformed messages
             List<MockFlowFile> parseFailedFlowFiles = testRunner.getFlowFilesForRelationship(ConsumeJMS.REL_PARSE_FAILURE);
@@ -577,7 +579,7 @@ public class ConsumeJMSIT {
 
             List<MockFlowFile> successFlowFiles = testRunner.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS);
             assertEquals(1, successFlowFiles.size());
-            JsonNode flowFileContentAsJson = deserializeToJsonNode(new String(successFlowFiles.get(0).toByteArray()));
+            JsonNode flowFileContentAsJson = deserializeToJsonNode(new String(successFlowFiles.getFirst().toByteArray()));
             // checking that the output contains at least a part of the original input
             assertEquals(inputRecordSet.get(0).get("firstAttribute").asText(), flowFileContentAsJson.get(0).get("firstAttribute").asText());
             assertEquals(inputRecordSet.get(1).get("firstAttribute").asText(), flowFileContentAsJson.get(1).get("firstAttribute").asText());
@@ -619,7 +621,7 @@ public class ConsumeJMSIT {
 
             List<MockFlowFile> successFlowFiles = testRunner.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS);
             assertEquals(1, successFlowFiles.size());
-            JsonNode flowFileContentAsJson = deserializeToJsonNode(new String(successFlowFiles.get(0).toByteArray()));
+            JsonNode flowFileContentAsJson = deserializeToJsonNode(new String(successFlowFiles.getFirst().toByteArray()));
             // checking that the original json is equal to the leaf
             assertEquals(inputRecordSet.get(0), flowFileContentAsJson.get(0).get(valueKey));
             assertEquals(inputRecordSet.get(1), flowFileContentAsJson.get(1).get(valueKey));
@@ -635,6 +637,56 @@ public class ConsumeJMSIT {
             assertEquals(0, parseFailedFlowFiles.size());
         } finally {
             ((CachingConnectionFactory) jmsTemplate.getConnectionFactory()).destroy();
+        }
+    }
+
+    @Test
+    public void validateConnectionClosedOnPrimaryOnlyNodeChange() throws Exception {
+        BrokerService broker = new BrokerService();
+        try {
+            broker.setPersistent(false);
+            broker.setBrokerName("broker");
+            broker.start();
+
+            ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("vm:localhost");
+            final String destinationName = "validateConnectionClosing";
+            TestRunner consumer = createNonSharedDurableConsumer(cf, destinationName);
+            consumer.setIsConfiguredForClustering(true);
+            consumer.setConnected(true);
+            consumer.setClustered(true);
+            consumer.setPrimaryNode(true);
+
+            final ProcessContext processContext = spy(consumer.getProcessContext());
+            when(processContext.getExecutionNode()).thenReturn(ExecutionNode.PRIMARY);
+
+            final ConsumeJMS processor = (ConsumeJMS) consumer.getProcessor();
+            processor.onSchedule(processContext);
+            processor.setup(processContext);
+            processor.updateScheduledTrue();
+
+            // running ConsumeJMS.  There is nothing to consume yet, but it sets up the durable consumer
+            consumer.run(1, false, false);
+            List<MockFlowFile> flowFiles = consumer.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS);
+            assertEquals(0, flowFiles.size());
+
+            String message = "Hello World";
+            publishAMessage(cf, destinationName, message);
+
+            consumer.run(1, false, false);
+            flowFiles = consumer.getFlowFilesForRelationship(ConsumeJMS.REL_SUCCESS);
+            assertEquals(1, flowFiles.size());
+            assertEquals(1, broker.getCurrentConnections());
+
+            final MockFlowFile successFF = flowFiles.getFirst();
+            successFF.assertContentEquals(message.getBytes());
+
+            processor.onPrimaryNodeChange(PrimaryNodeState.PRIMARY_NODE_REVOKED);
+
+            assertEquals(0, broker.getCurrentConnections());
+        } finally {
+            if (broker != null) {
+                broker.stop();
+            }
         }
     }
 

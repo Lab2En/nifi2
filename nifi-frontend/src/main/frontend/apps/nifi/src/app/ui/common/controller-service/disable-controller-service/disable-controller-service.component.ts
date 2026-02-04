@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Inject, Input, OnDestroy, TemplateRef, ViewChild } from '@angular/core';
+import { Component, Input, OnDestroy, TemplateRef, ViewChild, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import {
     ControllerServiceReferencingComponent,
@@ -28,9 +28,7 @@ import { AsyncPipe, NgTemplateOutlet } from '@angular/common';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
-import { ControllerServiceApi } from '../controller-service-api/controller-service-api.component';
 import { ControllerServiceReferences } from '../controller-service-references/controller-service-references.component';
-import { NifiSpinnerDirective } from '../../spinner/nifi-spinner.directive';
 import { NifiTooltipDirective, TextTip, CloseOnEscapeDialog } from '@nifi/shared';
 import { ControllerServiceState, SetEnableRequest, SetEnableStep } from '../../../../state/contoller-service-state';
 import { Store } from '@ngrx/store';
@@ -47,7 +45,6 @@ import {
 
 @Component({
     selector: 'disable-controller-service',
-    standalone: true,
     templateUrl: './disable-controller-service.component.html',
     imports: [
         MatDialogModule,
@@ -57,16 +54,17 @@ import {
         MatTabsModule,
         MatOptionModule,
         MatSelectModule,
-        ControllerServiceApi,
         ControllerServiceReferences,
         AsyncPipe,
-        NifiSpinnerDirective,
         NifiTooltipDirective,
         NgTemplateOutlet
     ],
     styleUrls: ['./disable-controller-service.component.scss']
 })
 export class DisableControllerService extends CloseOnEscapeDialog implements OnDestroy {
+    request = inject<SetEnableControllerServiceDialogRequest>(MAT_DIALOG_DATA);
+    private store = inject<Store<ControllerServiceState>>(Store);
+
     @Input() goToReferencingComponent!: (component: ControllerServiceReferencingComponent) => void;
 
     protected readonly TextTip = TextTip;
@@ -80,11 +78,10 @@ export class DisableControllerService extends CloseOnEscapeDialog implements OnD
     @ViewChild('stepInProgress') stepInProgress!: TemplateRef<any>;
     @ViewChild('stepNotStarted') stepNotStarted!: TemplateRef<any>;
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: SetEnableControllerServiceDialogRequest,
-        private store: Store<ControllerServiceState>
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         this.store.dispatch(
             setControllerService({
                 request: {

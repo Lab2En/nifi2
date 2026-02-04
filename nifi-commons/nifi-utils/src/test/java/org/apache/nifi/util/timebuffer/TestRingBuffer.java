@@ -27,7 +27,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-
 /**
  *
  */
@@ -81,7 +80,7 @@ public class TestRingBuffer {
         }
 
         final AtomicInteger countHolder = new AtomicInteger(0);
-        ringBuffer.forEach(new ForEachEvaluator<Integer>() {
+        ringBuffer.forEach(new ForEachEvaluator<>() {
             int counter = 0;
 
             @Override
@@ -110,7 +109,7 @@ public class TestRingBuffer {
             ringBuffer.add(v);
         }
 
-        ringBuffer.forEach(new ForEachEvaluator<Integer>() {
+        ringBuffer.forEach(new ForEachEvaluator<>() {
             int counter = 0;
 
             @Override
@@ -139,7 +138,7 @@ public class TestRingBuffer {
         }
 
         final AtomicInteger countHolder = new AtomicInteger(0);
-        ringBuffer.forEach(new ForEachEvaluator<Integer>() {
+        ringBuffer.forEach(new ForEachEvaluator<>() {
             int counter = 0;
 
             @Override
@@ -171,7 +170,7 @@ public class TestRingBuffer {
             ringBuffer.add(v);
         }
 
-        ringBuffer.forEach(new ForEachEvaluator<Integer>() {
+        ringBuffer.forEach(new ForEachEvaluator<>() {
             int counter = 0;
 
             @Override

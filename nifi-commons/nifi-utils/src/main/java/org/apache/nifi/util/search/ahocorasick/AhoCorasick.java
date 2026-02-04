@@ -16,26 +16,18 @@
  */
 package org.apache.nifi.util.search.ahocorasick;
 
+import org.apache.nifi.util.search.Search;
+import org.apache.nifi.util.search.SearchTerm;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Set;
 
-import org.apache.nifi.util.search.Search;
-import org.apache.nifi.util.search.SearchTerm;
-
 public class AhoCorasick<T> implements Search<T> {
 
     private Node root = null;
-
-    /**
-     * Constructs a new search object.
-     *
-     * @throws IllegalArgumentException if given terms are null or empty
-     */
-    public AhoCorasick() {
-    }
 
     @Override
     public void initializeDictionary(final Set<SearchTerm<T>> terms) {
@@ -111,7 +103,7 @@ public class AhoCorasick<T> implements Search<T> {
         if (root == null) {
             throw new IllegalStateException();
         }
-        final SearchState<T> currentState = (state == null) ? new SearchState(root) : state;
+        final SearchState<T> currentState = (state == null) ? new SearchState<>(root) : state;
         if (!findAll && currentState.foundMatch()) {
             throw new IllegalStateException("A match has already been found yet we're being asked to keep searching");
         }

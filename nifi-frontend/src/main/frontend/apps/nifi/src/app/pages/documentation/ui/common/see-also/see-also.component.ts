@@ -15,10 +15,10 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
-import { ComponentType, NiFiCommon, NifiTooltipDirective, TextTip } from '@nifi/shared';
+import { Component, Input, inject } from '@angular/core';
+import { ComponentType, NiFiCommon, TextTip } from '@nifi/shared';
 import { Observable } from 'rxjs';
-import { AsyncPipe, NgTemplateOutlet } from '@angular/common';
+import { AsyncPipe } from '@angular/common';
 import { NiFiState } from '../../../../../state';
 import { Store } from '@ngrx/store';
 import { selectExtensionFromTypes } from '../../../../../state/extension-types/extension-types.selectors';
@@ -29,18 +29,15 @@ import { DocumentedType } from '../../../../../state/shared';
 
 @Component({
     selector: 'see-also',
-    standalone: true,
     templateUrl: './see-also.component.html',
-    imports: [RouterLink, NifiTooltipDirective, AsyncPipe, NgTemplateOutlet],
+    imports: [RouterLink, AsyncPipe],
     styleUrl: './see-also.component.scss'
 })
 export class SeeAlsoComponent {
-    @Input() extensionTypes: string[] | null = null;
+    private store = inject<Store<NiFiState>>(Store);
+    private nifiCommon = inject(NiFiCommon);
 
-    constructor(
-        private store: Store<NiFiState>,
-        private nifiCommon: NiFiCommon
-    ) {}
+    @Input() extensionTypes: string[] | null = null;
 
     getProcessorFromType(extensionTypes: string[]): Observable<LoadExtensionTypesForDocumentationResponse> {
         return this.store.select(selectExtensionFromTypes(extensionTypes));
@@ -77,6 +74,16 @@ export class SeeAlsoComponent {
             return {
                 documentedType,
                 componentType: ComponentType.ReportingTask
+            };
+        }
+
+        documentedType = documentedTypes.registryClientTypes.find(
+            (documentedType) => extensionType === documentedType.type
+        );
+        if (documentedType) {
+            return {
+                documentedType,
+                componentType: ComponentType.FlowRegistryClient
             };
         }
 

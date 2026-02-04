@@ -46,7 +46,6 @@ export interface Tenants {
 
 @Component({
     selector: 'user-table',
-    standalone: true,
     templateUrl: './user-table.component.html',
     imports: [
         ReactiveFormsModule,
@@ -63,6 +62,9 @@ export interface Tenants {
     styleUrls: ['./user-table.component.scss']
 })
 export class UserTable implements AfterViewInit {
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+
     filterTerm = '';
     filterColumn: 'user' | 'membership' = 'user';
     totalCount = 0;
@@ -138,10 +140,7 @@ export class UserTable implements AfterViewInit {
         direction: 'asc'
     };
 
-    constructor(
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         this.filterForm = this.formBuilder.group({ filterTerm: '', filterColumn: 'user' });
     }
 

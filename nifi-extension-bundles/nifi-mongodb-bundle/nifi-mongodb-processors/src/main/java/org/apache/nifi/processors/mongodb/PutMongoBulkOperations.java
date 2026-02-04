@@ -92,18 +92,24 @@ public class PutMongoBulkOperations extends AbstractMongoProcessor {
         .defaultValue("UTF-8")
         .build();
 
-    private final static Set<Relationship> relationships = Set.of(REL_SUCCESS, REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
-    private final static List<PropertyDescriptor> propertyDescriptors = Stream.concat(descriptors.stream(), Stream.of(ORDERED, CHARACTER_SET)).toList();
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(ORDERED, CHARACTER_SET)
+    ).toList();
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -121,7 +127,7 @@ public class PutMongoBulkOperations extends AbstractMongoProcessor {
 
             final BsonArrayCodec arrayCodec = new BsonArrayCodec();
             final DecoderContext decoderContext = DecoderContext.builder().build();
-            final BsonArray updateItems;
+            final BsonArray updateItems; //NOPMD
             try (final Reader reader = new InputStreamReader(session.read(flowFile), charset)) {
                 updateItems = arrayCodec.decode(new JsonReader(reader), decoderContext);
             }

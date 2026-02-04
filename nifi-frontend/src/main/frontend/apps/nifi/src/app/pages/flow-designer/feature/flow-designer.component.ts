@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { loadExtensionTypesForCanvas } from '../../../state/extension-types/extension-types.actions';
 import { NiFiState } from '../../../state';
@@ -23,10 +23,11 @@ import { NiFiState } from '../../../state';
 @Component({
     selector: 'flow-designer',
     templateUrl: './flow-designer.component.html',
-    styleUrls: ['./flow-designer.component.scss']
+    styleUrls: ['./flow-designer.component.scss'],
+    standalone: false
 })
 export class FlowDesigner implements OnInit {
-    constructor(private store: Store<NiFiState>) {}
+    private store = inject<Store<NiFiState>>(Store);
 
     ngOnInit(): void {
         this.store.dispatch(loadExtensionTypesForCanvas());

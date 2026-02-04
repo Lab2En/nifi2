@@ -90,7 +90,6 @@ import org.apache.nifi.web.api.dto.FlowSnippetDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.net.ssl.SSLContext;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -105,6 +104,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import javax.net.ssl.SSLContext;
 
 import static java.util.Objects.requireNonNull;
 
@@ -139,6 +139,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         this.isSiteToSiteSecure = Boolean.TRUE.equals(nifiProperties.isSiteToSiteSecure());
     }
 
+    @Override
     public Port createPublicInputPort(String id, String name) {
         id = requireNonNull(id).intern();
         name = requireNonNull(name).intern();
@@ -149,6 +150,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             IdentityMappingUtil.getIdentityMappings(nifiProperties));
     }
 
+    @Override
     public Port createPublicOutputPort(String id, String name) {
         id = requireNonNull(id).intern();
         name = requireNonNull(name).intern();
@@ -164,6 +166,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
      *
      * @return input ports
      */
+    @Override
     public Set<Port> getPublicInputPorts() {
         return getPublicPorts(ProcessGroup::getInputPorts);
     }
@@ -173,6 +176,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
      *
      * @return output ports
      */
+    @Override
     public Set<Port> getPublicOutputPorts() {
         return getPublicPorts(ProcessGroup::getOutputPorts);
     }
@@ -214,6 +218,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         return Optional.empty();
     }
 
+    @Override
     public RemoteProcessGroup createRemoteProcessGroup(final String id, final String uris) {
         final String expirationPeriod = nifiProperties.getProperty(NiFiProperties.REMOTE_CONTENTS_CACHE_EXPIRATION, "30 secs");
         final long remoteContentsCacheExpirationMillis = FormatUtils.getTimeDuration(expirationPeriod, TimeUnit.MILLISECONDS);
@@ -235,10 +240,12 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         }
     }
 
+    @Override
     public Label createLabel(final String id, final String text) {
         return new StandardLabel(requireNonNull(id).intern(), text);
     }
 
+    @Override
     public Funnel createFunnel(final String id) {
         final int maxConcurrentTasks = Integer.parseInt(nifiProperties.getProperty(MAX_CONCURRENT_TASKS_PROP_NAME, "1"));
         final int maxBatchSize = Integer.parseInt(nifiProperties.getProperty(MAX_TRANSFERRED_FLOWFILES_PROP_NAME, "10000"));
@@ -246,6 +253,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         return new StandardFunnel(id.intern(), maxConcurrentTasks, maxBatchSize);
     }
 
+    @Override
     public Port createLocalInputPort(String id, String name) {
         id = requireNonNull(id).intern();
         name = requireNonNull(name).intern();
@@ -258,6 +266,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         return new LocalPort(id, name, ConnectableType.INPUT_PORT, processScheduler, maxConcurrentTasks, maxTransferredFlowFiles, boredYieldDuration);
     }
 
+    @Override
     public Port createLocalOutputPort(String id, String name) {
         id = requireNonNull(id).intern();
         name = requireNonNull(name).intern();
@@ -270,6 +279,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         return new LocalPort(id, name, ConnectableType.OUTPUT_PORT, processScheduler, maxConcurrentTasks, maxTransferredFlowFiles, boredYieldDuration);
     }
 
+    @Override
     public ProcessGroup createProcessGroup(final String id) {
         final StatelessGroupNodeFactory statelessGroupNodeFactory = new StandardStatelessGroupNodeFactory(flowController, sslContext, flowController.createKerberosConfig(nifiProperties));
 
@@ -282,7 +292,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         return group;
     }
 
-
+    @Override
     public void instantiateSnippet(final ProcessGroup group, final FlowSnippetDTO dto) throws ProcessorInstantiationException {
         requireNonNull(group);
         requireNonNull(dto);
@@ -294,13 +304,14 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         group.findAllRemoteProcessGroups().forEach(RemoteProcessGroup::initialize);
     }
 
+    @Override
     public FlowFilePrioritizer createPrioritizer(final String type) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         FlowFilePrioritizer prioritizer;
 
         final ClassLoader ctxClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             final List<Bundle> prioritizerBundles = flowController.getExtensionManager().getBundles(type);
-            if (prioritizerBundles.size() == 0) {
+            if (prioritizerBundles.isEmpty()) {
                 throw new IllegalStateException(String.format("The specified class '%s' is not known to this nifi.", type));
             }
             if (prioritizerBundles.size() > 1) {
@@ -347,8 +358,10 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             .nodeTypeProvider(flowController)
             .validationTrigger(flowController.getValidationTrigger())
             .reloadComponent(flowController.getReloadComponent())
+            .verifiableComponentFactory(flowController.getVerifiableComponentFactory())
             .addClasspathUrls(additionalUrls)
             .kerberosConfig(flowController.createKerberosConfig(nifiProperties))
+            .stateManagerProvider(flowController.getStateManagerProvider())
             .extensionManager(extensionManager)
             .flowAnalyzer(getFlowAnalyzer().orElse(null))
             .ruleViolationsManager(getRuleViolationsManager().orElse(null))
@@ -363,7 +376,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
 
         if (firstTimeAdded) {
             final Processor processor = procNode.getProcessor();
-            try (final NarCloseable x = NarCloseable.withComponentNarLoader(extensionManager, processor.getClass(), processor.getIdentifier())) {
+            try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, processor.getClass(), processor.getIdentifier())) {
                 ReflectionUtils.invokeMethodsWithAnnotation(OnAdded.class, processor);
                 logDeprecationNotice(processor);
             } catch (final Exception e) {
@@ -377,6 +390,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         return procNode;
     }
 
+    @Override
     public Connection createConnection(final String id, final String name, final Connectable source, final Connectable destination, final Collection<String> relationshipNames) {
         return flowController.createConnection(id, name, source, destination, relationshipNames);
     }
@@ -419,7 +433,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             final Class<?> clientClass = clientNode.getComponent().getClass();
             final String identifier = clientNode.getComponent().getIdentifier();
 
-            try (final NarCloseable x = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), clientClass, identifier)) {
+            try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), clientClass, identifier)) {
                 ReflectionUtils.invokeMethodsWithAnnotation(OnAdded.class, clientNode.getComponent());
 
                 if (flowController.isInitialized()) {
@@ -452,7 +466,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         }
 
         final Class<?> clientClass = clientNode.getComponent().getClass();
-        try (final NarCloseable x = NarCloseable.withComponentNarLoader(getExtensionManager(), clientClass, clientNode.getComponent().getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(getExtensionManager(), clientClass, clientNode.getComponent().getIdentifier())) {
             final ConfigurationContext configurationContext = new StandardConfigurationContext(clientNode, flowController.getControllerServiceProvider(), null);
             ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnRemoved.class, clientNode.getComponent(), configurationContext);
         }
@@ -464,6 +478,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         getExtensionManager().removeInstanceClassLoader(clientNode.getIdentifier());
     }
 
+    @Override
     public ReportingTaskNode createReportingTask(final String type, final String id, final BundleCoordinate bundleCoordinate, final Set<URL> additionalUrls,
                                                  final boolean firstTimeAdded, final boolean register, final String classloaderIsolationKey) {
         requireNonNull(type);
@@ -485,6 +500,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             .reloadComponent(flowController.getReloadComponent())
             .addClasspathUrls(additionalUrls)
             .kerberosConfig(flowController.createKerberosConfig(nifiProperties))
+            .stateManagerProvider(flowController.getStateManagerProvider())
             .flowController(flowController)
             .extensionManager(extensionManager)
             .classloaderIsolationKey(classloaderIsolationKey)
@@ -497,7 +513,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             final Class<? extends ConfigurableComponent> taskClass = reportingTask.getClass();
             final String identifier = reportingTask.getIdentifier();
 
-            try (final NarCloseable x = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), taskClass, identifier)) {
+            try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), taskClass, identifier)) {
                 ReflectionUtils.invokeMethodsWithAnnotation(OnAdded.class, reportingTask);
                 logDeprecationNotice(reportingTask);
 
@@ -548,6 +564,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             .reloadComponent(flowController.getReloadComponent())
             .addClasspathUrls(additionalUrls)
             .kerberosConfig(flowController.createKerberosConfig(nifiProperties))
+            .stateManagerProvider(flowController.getStateManagerProvider())
             .flowController(flowController)
             .extensionManager(extensionManager)
             .flowAnalyzer(getFlowAnalyzer().orElse(null))
@@ -562,7 +579,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             final Class<? extends ConfigurableComponent> flowAnalysisRuleClass = flowAnalysisRule.getClass();
             final String identifier = flowAnalysisRule.getIdentifier();
 
-            try (final NarCloseable x = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), flowAnalysisRuleClass, identifier)) {
+            try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), flowAnalysisRuleClass, identifier)) {
                 ReflectionUtils.invokeMethodsWithAnnotation(OnAdded.class, flowAnalysisRule);
                 logDeprecationNotice(flowAnalysisRule);
 
@@ -606,6 +623,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
                 .reloadComponent(flowController.getReloadComponent())
                 .addClasspathUrls(additionalUrls)
                 .kerberosConfig(flowController.createKerberosConfig(nifiProperties))
+                .stateManagerProvider(flowController.getStateManagerProvider())
                 .flowController(flowController)
                 .extensionManager(extensionManager)
                 .buildParameterProvider();
@@ -617,7 +635,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             final Class<? extends ConfigurableComponent> parameterProviderClass = parameterProvider.getClass();
             final String identifier = parameterProvider.getIdentifier();
 
-            try (final NarCloseable x = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), parameterProviderClass, identifier)) {
+            try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(flowController.getExtensionManager(), parameterProviderClass, identifier)) {
                 ReflectionUtils.invokeMethodsWithAnnotation(OnAdded.class, parameterProvider);
                 logDeprecationNotice(parameterProvider);
 
@@ -639,10 +657,12 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         return parameterProviderNode;
     }
 
+    @Override
     public Set<ControllerServiceNode> getRootControllerServices() {
         return new HashSet<>(rootControllerServices.values());
     }
 
+    @Override
     public void addRootControllerService(final ControllerServiceNode serviceNode) {
         final ControllerServiceNode existing = rootControllerServices.putIfAbsent(serviceNode.getIdentifier(), serviceNode);
         if (existing != null) {
@@ -650,10 +670,12 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         }
     }
 
+    @Override
     public ControllerServiceNode getRootControllerService(final String serviceIdentifier) {
         return rootControllerServices.get(serviceIdentifier);
     }
 
+    @Override
     public void removeRootControllerService(final ControllerServiceNode service) {
         final ControllerServiceNode existing = rootControllerServices.get(requireNonNull(service).getIdentifier());
         if (existing == null) {
@@ -664,7 +686,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
 
         final ExtensionManager extensionManager = flowController.getExtensionManager();
 
-        try (final NarCloseable x = NarCloseable.withComponentNarLoader(extensionManager, service.getControllerServiceImplementation().getClass(), service.getIdentifier())) {
+        try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, service.getControllerServiceImplementation().getClass(), service.getIdentifier())) {
             final ConfigurationContext configurationContext = new StandardConfigurationContext(service, flowController.getControllerServiceProvider(), null);
             ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnRemoved.class, service.getControllerServiceImplementation(), configurationContext);
         }
@@ -697,6 +719,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
         logger.info("{} removed from Flow Controller", service);
     }
 
+    @Override
     public ControllerServiceNode createControllerService(final String type, final String id, final BundleCoordinate bundleCoordinate, final Set<URL> additionalUrls, final boolean firstTimeAdded,
                                                          final boolean registerLogObserver, final String classloaderIsolationKey) {
         // make sure the first reference to LogRepository happens outside of a NarCloseable so that we use the framework's ClassLoader
@@ -713,6 +736,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             .nodeTypeProvider(flowController)
             .validationTrigger(flowController.getValidationTrigger())
             .reloadComponent(flowController.getReloadComponent())
+            .verifiableComponentFactory(flowController.getVerifiableComponentFactory())
             .addClasspathUrls(additionalUrls)
             .kerberosConfig(flowController.createKerberosConfig(nifiProperties))
             .stateManagerProvider(flowController.getStateManagerProvider())
@@ -731,7 +755,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             final ControllerService service = serviceNode.getControllerServiceImplementation();
 
             if (flowController.isInitialized()) {
-                try (final NarCloseable nc = NarCloseable.withComponentNarLoader(extensionManager, service.getClass(), service.getIdentifier())) {
+                try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, service.getClass(), service.getIdentifier())) {
                     final ConfigurationContext configurationContext =
                             new StandardConfigurationContext(serviceNode, controllerServiceProvider, null);
                     ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnConfigurationRestored.class, service, configurationContext);
@@ -739,7 +763,7 @@ public class StandardFlowManager extends AbstractFlowManager implements FlowMana
             }
 
             final ControllerService serviceImpl = serviceNode.getControllerServiceImplementation();
-            try (final NarCloseable x = NarCloseable.withComponentNarLoader(extensionManager, serviceImpl.getClass(), serviceImpl.getIdentifier())) {
+            try (final NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, serviceImpl.getClass(), serviceImpl.getIdentifier())) {
                 ReflectionUtils.invokeMethodsWithAnnotation(OnAdded.class, serviceImpl);
                 logDeprecationNotice(serviceImpl);
             } catch (final Exception e) {

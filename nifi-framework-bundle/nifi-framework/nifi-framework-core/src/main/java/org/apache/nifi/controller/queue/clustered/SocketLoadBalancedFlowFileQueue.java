@@ -26,7 +26,6 @@ import org.apache.nifi.controller.ProcessScheduler;
 import org.apache.nifi.controller.queue.AbstractFlowFileQueue;
 import org.apache.nifi.controller.queue.DropFlowFileRequest;
 import org.apache.nifi.controller.queue.DropFlowFileState;
-import org.apache.nifi.controller.status.FlowFileAvailability;
 import org.apache.nifi.controller.queue.FlowFileQueueContents;
 import org.apache.nifi.controller.queue.IllegalClusterStateException;
 import org.apache.nifi.controller.queue.LoadBalanceStrategy;
@@ -60,6 +59,7 @@ import org.apache.nifi.controller.repository.StandardRepositoryRecord;
 import org.apache.nifi.controller.repository.SwapSummary;
 import org.apache.nifi.controller.repository.claim.ContentClaim;
 import org.apache.nifi.controller.repository.claim.ResourceClaim;
+import org.apache.nifi.controller.status.FlowFileAvailability;
 import org.apache.nifi.controller.swap.StandardSwapSummary;
 import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.flowfile.FlowFilePrioritizer;
@@ -213,23 +213,12 @@ public class SocketLoadBalancedFlowFileQueue extends AbstractFlowFileQueue imple
     }
 
     private FlowFilePartitioner getPartitionerForLoadBalancingStrategy(LoadBalanceStrategy strategy, String partitioningAttribute) {
-        FlowFilePartitioner partitioner;
-        switch (strategy) {
-            case DO_NOT_LOAD_BALANCE:
-                partitioner = new LocalPartitionPartitioner();
-                break;
-            case PARTITION_BY_ATTRIBUTE:
-                partitioner = new CorrelationAttributePartitioner(partitioningAttribute);
-                break;
-            case ROUND_ROBIN:
-                partitioner = new RoundRobinPartitioner();
-                break;
-            case SINGLE_NODE:
-                partitioner = new FirstNodePartitioner();
-                break;
-            default:
-                throw new IllegalArgumentException();
-        }
+        FlowFilePartitioner partitioner = switch (strategy) {
+            case DO_NOT_LOAD_BALANCE -> new LocalPartitionPartitioner();
+            case PARTITION_BY_ATTRIBUTE -> new CorrelationAttributePartitioner(partitioningAttribute);
+            case ROUND_ROBIN -> new RoundRobinPartitioner();
+            case SINGLE_NODE -> new FirstNodePartitioner();
+        };
         return partitioner;
     }
 

@@ -94,9 +94,18 @@ import java.util.zip.InflaterInputStream;
 @SystemResourceConsideration(resource = SystemResource.MEMORY)
 public class ModifyCompression extends AbstractProcessor {
 
+    public static final Relationship REL_SUCCESS = new Relationship.Builder()
+            .name("success")
+            .description("FlowFiles will be transferred to the success relationship on compression modification success")
+            .build();
+
+    public static final Relationship REL_FAILURE = new Relationship.Builder()
+            .name("failure")
+            .description("FlowFiles will be transferred to the failure relationship on compression modification errors")
+            .build();
+
     public static final PropertyDescriptor INPUT_COMPRESSION_STRATEGY = new PropertyDescriptor.Builder()
             .name("Input Compression Strategy")
-            .displayName("Input Compression Strategy")
             .description("The strategy to use for decompressing input FlowFiles")
             .allowableValues(EnumSet.complementOf(EnumSet.of(CompressionStrategy.SNAPPY_HADOOP)))
             .defaultValue(CompressionStrategy.NONE)
@@ -114,7 +123,6 @@ public class ModifyCompression extends AbstractProcessor {
 
     public static final PropertyDescriptor OUTPUT_COMPRESSION_LEVEL = new PropertyDescriptor.Builder()
             .name("Output Compression Level")
-            .displayName("Output Compression Level")
             .description("The compression level for output FlowFiles for supported formats. A lower value results in faster processing "
                     + "but less compression; a value of 0 indicates no (that is, simple archiving) for gzip or minimal for xz-lzma2 compression."
                     + " Higher levels can mean much larger memory usage such as the case with levels 7-9 for xz-lzma/2 so be careful relative to heap size.")
@@ -132,35 +140,37 @@ public class ModifyCompression extends AbstractProcessor {
 
     public static final PropertyDescriptor OUTPUT_FILENAME_STRATEGY = new PropertyDescriptor.Builder()
             .name("Output Filename Strategy")
-            .displayName("Output Filename Strategy")
             .description("Processing strategy for filename attribute on output FlowFiles")
             .required(true)
             .allowableValues(FilenameStrategy.class)
             .defaultValue(FilenameStrategy.UPDATED)
             .build();
 
-    public static final Relationship REL_SUCCESS = new Relationship.Builder()
-            .name("success")
-            .description("FlowFiles will be transferred to the success relationship on compression modification success")
+    public static final PropertyDescriptor UNKNOWN_MIME_TYPE_ROUTING = new PropertyDescriptor.Builder()
+            .name("Unknown MIME Type Routing")
+            .description("The destination relationship for input FlowFiles when the MIME type does not match a known compression type.")
+            .dependsOn(INPUT_COMPRESSION_STRATEGY, CompressionStrategy.MIME_TYPE_ATTRIBUTE)
+            .required(true)
+            .allowableValues(REL_SUCCESS.getName(), REL_FAILURE.getName())
+            .defaultValue(REL_FAILURE.getName())
             .build();
 
-    public static final Relationship REL_FAILURE = new Relationship.Builder()
-            .name("failure")
-            .description("FlowFiles will be transferred to the failure relationship on compression modification errors")
-            .build();
-
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             INPUT_COMPRESSION_STRATEGY,
             OUTPUT_COMPRESSION_STRATEGY,
             OUTPUT_COMPRESSION_LEVEL,
-            OUTPUT_FILENAME_STRATEGY
+            OUTPUT_FILENAME_STRATEGY,
+            UNKNOWN_MIME_TYPE_ROUTING
     );
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
     private static final Map<String, CompressionStrategy> compressionFormatMimeTypeMap;
 
-    private final static int STREAM_BUFFER_SIZE = 65536;
+    private static final int STREAM_BUFFER_SIZE = 65536;
 
     static {
         final Map<String, CompressionStrategy> mimeTypeMap = new HashMap<>();
@@ -184,7 +194,7 @@ public class ModifyCompression extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -207,7 +217,10 @@ public class ModifyCompression extends AbstractProcessor {
             inputCompressionStrategy = compressionFormatMimeTypeMap.get(mimeType);
             if (inputCompressionStrategy == null) {
                 getLogger().info("Compression Strategy not found for MIME Type [{}] {}", mimeType, flowFile);
-                session.transfer(flowFile, REL_FAILURE);
+                final String unknownMimeTypeRouting = context.getProperty(UNKNOWN_MIME_TYPE_ROUTING).getValue();
+                final Relationship selectedRelationship = REL_SUCCESS.getName().equals(unknownMimeTypeRouting) ? REL_SUCCESS : REL_FAILURE;
+
+                session.transfer(flowFile, selectedRelationship);
                 return;
             }
         } else {
@@ -218,7 +231,7 @@ public class ModifyCompression extends AbstractProcessor {
         final AtomicReference<String> mimeTypeRef = new AtomicReference<>(null);
         final StopWatch stopWatch = new StopWatch(true);
         final long inputFileSize = flowFile.getSize();
-        final int outputCompressionLevel = context.getProperty(OUTPUT_COMPRESSION_LEVEL).asInteger();
+        final Integer outputCompressionLevel = getOutputCompressionLevel(context, outputCompressionStrategy);
         try {
             flowFile = session.write(flowFile, (flowFileInputStream, flowFileOutputStream) -> {
                 try (
@@ -256,15 +269,25 @@ public class ModifyCompression extends AbstractProcessor {
         }
     }
 
+    private static Integer getOutputCompressionLevel(ProcessContext context, CompressionStrategy outputCompressionStrategy) {
+        return switch (outputCompressionStrategy) {
+            case MIME_TYPE_ATTRIBUTE,
+                 GZIP,
+                 DEFLATE,
+                 XZ_LZMA2,
+                 ZSTD,
+                 BROTLI -> context.getProperty(OUTPUT_COMPRESSION_LEVEL).asInteger();
+            case NONE, LZMA, SNAPPY, BZIP2, SNAPPY_HADOOP, SNAPPY_FRAMED, LZ4_FRAMED -> null;
+        };
+    }
+
     private InputStream getCompressionInputStream(final CompressionStrategy compressionFormat, final InputStream parentInputStream) throws IOException {
         return switch (compressionFormat) {
             case LZMA -> new LzmaInputStream(parentInputStream, new Decoder());
             case XZ_LZMA2 -> new XZInputStream(parentInputStream);
-            case BZIP2 -> {
-                // need this two-arg constructor to support concatenated streams
-                yield new BZip2CompressorInputStream(parentInputStream, true);
-            }
-            case GZIP -> new GzipCompressorInputStream(parentInputStream, true);
+            case BZIP2 -> // need this two-arg constructor to support concatenated streams
+                new BZip2CompressorInputStream(parentInputStream, true);
+            case GZIP -> GzipCompressorInputStream.builder().setInputStream(parentInputStream).setDecompressConcatenated(true).get();
             case DEFLATE -> new InflaterInputStream(parentInputStream);
             case SNAPPY -> new SnappyInputStream(parentInputStream);
             case SNAPPY_HADOOP -> throw new IOException("Cannot decompress snappy-hadoop");
@@ -289,7 +312,7 @@ public class ModifyCompression extends AbstractProcessor {
 
     private OutputStream getCompressionOutputStream(
             final CompressionStrategy compressionFormat,
-            final int compressionLevel,
+            final Integer compressionLevel,
             final AtomicReference<String> mimeTypeRef,
             final OutputStream parentOutputStream
     ) throws IOException {
@@ -334,7 +357,7 @@ public class ModifyCompression extends AbstractProcessor {
             }
             case ZSTD -> {
                 final int outputCompressionLevel = compressionLevel * 2;
-                compressionOut = new ZstdCompressorOutputStream(parentOutputStream, outputCompressionLevel);
+                compressionOut = ZstdCompressorOutputStream.builder().setOutputStream(parentOutputStream).setLevel(outputCompressionLevel).get();
                 mimeTypeRef.set(CompressionStrategy.ZSTD.getMimeTypes()[0]);
             }
             case BROTLI -> {

@@ -23,13 +23,14 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 public class TestExceptionHandler {
@@ -89,7 +90,7 @@ public class TestExceptionHandler {
         final Integer nullInput = null;
         ProcessException pe = assertThrows(ProcessException.class, () -> handler.execute(context, nullInput, i -> r.set(p.divide(i, 2))),
                 "Exception should be thrown because input is null.");
-        assertTrue(pe.getCause() instanceof NullPointerException);
+        assertInstanceOf(NullPointerException.class, pe.getCause());
     }
 
     // Reusable Exception mapping function.
@@ -139,22 +140,20 @@ public class TestExceptionHandler {
 
     static <C> ExceptionHandler.OnError<C, Integer> createInputErrorHandler() {
         return (c, i, r, e) -> {
-            switch (r.destination()) {
-                case ProcessException:
-                    throw new ProcessException(String.format("Execution failed due to %s", e), e);
-                default:
-                    logger.warn(String.format("Routing to %s: %d caused %s", r, i, e));
+            if (Objects.requireNonNull(r.destination()) == ErrorTypes.Destination.ProcessException) {
+                throw new ProcessException(String.format("Execution failed due to %s", e), e);
+            } else {
+                logger.warn(String.format("Routing to %s: %d caused %s", r, i, e));
             }
         };
     }
 
     static <C> ExceptionHandler.OnError<C, Integer[]> createArrayInputErrorHandler() {
         return (c, i, r, e) -> {
-            switch (r.destination()) {
-                case ProcessException:
-                    throw new ProcessException(String.format("Execution failed due to %s", e), e);
-                default:
-                    logger.warn(String.format("Routing to %s: %d, %d caused %s", r, i[0], i[1], e));
+            if (Objects.requireNonNull(r.destination()) == ErrorTypes.Destination.ProcessException) {
+                throw new ProcessException(String.format("Execution failed due to %s", e), e);
+            } else {
+                logger.warn(String.format("Routing to %s: %d, %d caused %s", r, i[0], i[1], e));
             }
         };
     }

@@ -33,11 +33,14 @@ import java.io.IOException;
  */
 public class NonCachingDatumReader<T> extends GenericDatumReader<T> {
     public NonCachingDatumReader() {
-        super();
     }
 
     public NonCachingDatumReader(final Schema schema) {
         super(schema);
+    }
+
+    public NonCachingDatumReader(final Schema schema, final GenericData data) {
+        super(schema, schema, data);
     }
 
     @Override
@@ -54,6 +57,7 @@ public class NonCachingDatumReader<T> extends GenericDatumReader<T> {
         return newInstanceFromString(stringClass, in.readString());
     }
 
+    @Override
     protected Class findStringClass(Schema schema) {
         final String name = schema.getProp(GenericData.STRING_PROP);
         if ("String".equals(name)) {

@@ -16,15 +16,15 @@
  */
 package org.apache.nifi.script.impl;
 
+import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.PropertyValue;
+import org.apache.nifi.components.ValidationContext;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-
-import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.components.PropertyValue;
-import org.apache.nifi.components.ValidationContext;
 
 /**
  * Filters properties in the ValidationContext, proxy approach, for removing unwanted properties
@@ -32,7 +32,7 @@ import org.apache.nifi.components.ValidationContext;
  */
 public class FilteredPropertiesValidationContextAdapter extends ValidationContextAdapter {
 
-    private HashMap<PropertyDescriptor, String> properties;
+    private final Map<PropertyDescriptor, String> properties;
 
     public FilteredPropertiesValidationContextAdapter(ValidationContext validationContext, Set<PropertyDescriptor> removedProperties) {
         super(validationContext);

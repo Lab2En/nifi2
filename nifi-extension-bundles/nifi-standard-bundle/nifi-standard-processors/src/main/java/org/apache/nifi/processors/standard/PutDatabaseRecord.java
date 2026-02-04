@@ -16,13 +16,62 @@
  */
 package org.apache.nifi.processors.standard;
 
-import static java.lang.String.format;
-import static org.apache.nifi.expression.ExpressionLanguageScope.ENVIRONMENT;
-import static org.apache.nifi.expression.ExpressionLanguageScope.FLOWFILE_ATTRIBUTES;
-import static org.apache.nifi.expression.ExpressionLanguageScope.NONE;
-
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.annotation.behavior.InputRequirement;
+import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
+import org.apache.nifi.annotation.behavior.ReadsAttribute;
+import org.apache.nifi.annotation.behavior.WritesAttribute;
+import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.annotation.documentation.UseCase;
+import org.apache.nifi.annotation.lifecycle.OnScheduled;
+import org.apache.nifi.components.AllowableValue;
+import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.PropertyDescriptor.Builder;
+import org.apache.nifi.components.ValidationContext;
+import org.apache.nifi.components.ValidationResult;
+import org.apache.nifi.database.dialect.service.api.ColumnDefinition;
+import org.apache.nifi.database.dialect.service.api.DatabaseDialectService;
+import org.apache.nifi.database.dialect.service.api.StandardColumnDefinition;
+import org.apache.nifi.database.dialect.service.api.StandardStatementRequest;
+import org.apache.nifi.database.dialect.service.api.StatementRequest;
+import org.apache.nifi.database.dialect.service.api.StatementResponse;
+import org.apache.nifi.database.dialect.service.api.StatementType;
+import org.apache.nifi.database.dialect.service.api.TableDefinition;
+import org.apache.nifi.dbcp.DBCPService;
+import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.processor.util.pattern.RollbackOnFailure;
+import org.apache.nifi.processors.standard.db.ColumnDescription;
+import org.apache.nifi.processors.standard.db.DatabaseAdapterDescriptor;
+import org.apache.nifi.processors.standard.db.NameNormalizer;
+import org.apache.nifi.processors.standard.db.NameNormalizerFactory;
+import org.apache.nifi.processors.standard.db.TableSchema;
+import org.apache.nifi.processors.standard.db.TranslationStrategy;
+import org.apache.nifi.record.path.FieldValue;
+import org.apache.nifi.record.path.RecordPath;
+import org.apache.nifi.record.path.RecordPathResult;
+import org.apache.nifi.record.path.validation.RecordPathValidator;
+import org.apache.nifi.serialization.MalformedRecordException;
+import org.apache.nifi.serialization.RecordReader;
+import org.apache.nifi.serialization.RecordReaderFactory;
+import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.serialization.record.RecordField;
+import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.nifi.serialization.record.util.DataTypeUtils;
+import org.apache.nifi.serialization.record.util.IllegalTypeConversionException;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -47,53 +96,18 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.ServiceLoader;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.nifi.annotation.behavior.InputRequirement;
-import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
-import org.apache.nifi.annotation.behavior.ReadsAttribute;
-import org.apache.nifi.annotation.behavior.WritesAttribute;
-import org.apache.nifi.annotation.documentation.CapabilityDescription;
-import org.apache.nifi.annotation.documentation.Tags;
-import org.apache.nifi.annotation.documentation.UseCase;
-import org.apache.nifi.annotation.lifecycle.OnScheduled;
-import org.apache.nifi.components.AllowableValue;
-import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.components.PropertyDescriptor.Builder;
-import org.apache.nifi.components.ValidationContext;
-import org.apache.nifi.components.ValidationResult;
-import org.apache.nifi.dbcp.DBCPService;
-import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.logging.ComponentLog;
-import org.apache.nifi.processor.AbstractProcessor;
-import org.apache.nifi.processor.ProcessContext;
-import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.processor.util.pattern.RollbackOnFailure;
-import org.apache.nifi.processors.standard.db.ColumnDescription;
-import org.apache.nifi.processors.standard.db.DatabaseAdapter;
-import org.apache.nifi.processors.standard.db.TableSchema;
-import org.apache.nifi.record.path.FieldValue;
-import org.apache.nifi.record.path.RecordPath;
-import org.apache.nifi.record.path.RecordPathResult;
-import org.apache.nifi.record.path.validation.RecordPathValidator;
-import org.apache.nifi.serialization.MalformedRecordException;
-import org.apache.nifi.serialization.RecordReader;
-import org.apache.nifi.serialization.RecordReaderFactory;
-import org.apache.nifi.serialization.record.DataType;
-import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.RecordField;
-import org.apache.nifi.serialization.record.RecordFieldType;
-import org.apache.nifi.serialization.record.RecordSchema;
-import org.apache.nifi.serialization.record.util.DataTypeUtils;
-import org.apache.nifi.serialization.record.util.IllegalTypeConversionException;
+
+import static java.lang.String.format;
+import static org.apache.nifi.expression.ExpressionLanguageScope.ENVIRONMENT;
+import static org.apache.nifi.expression.ExpressionLanguageScope.FLOWFILE_ATTRIBUTES;
+import static org.apache.nifi.expression.ExpressionLanguageScope.NONE;
 
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @Tags({"sql", "record", "jdbc", "put", "database", "update", "insert", "delete"})
@@ -163,16 +177,14 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
     // Properties
     static final PropertyDescriptor RECORD_READER_FACTORY = new Builder()
-            .name("put-db-record-record-reader")
-            .displayName("Record Reader")
+            .name("Record Reader")
             .description("Specifies the Controller Service to use for parsing incoming data and determining the data's schema.")
             .identifiesControllerService(RecordReaderFactory.class)
             .required(true)
             .build();
 
     static final PropertyDescriptor STATEMENT_TYPE = new Builder()
-            .name("put-db-record-statement-type")
-            .displayName("Statement Type")
+            .name("Statement Type")
             .description("Specifies the type of SQL Statement to generate. "
                     + "Please refer to the database documentation for a description of the behavior of each operation. "
                     + "Please note that some Database Types may not support certain Statement Types. "
@@ -184,47 +196,70 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor STATEMENT_TYPE_RECORD_PATH = new Builder()
-        .name("Statement Type Record Path")
-        .displayName("Statement Type Record Path")
-        .description("Specifies a RecordPath to evaluate against each Record in order to determine the Statement Type. The RecordPath should equate to either INSERT, UPDATE, UPSERT, or DELETE. "
-                + "(Debezium style operation types are also supported: \"r\" and \"c\" for INSERT, \"u\" for UPDATE, and \"d\" for DELETE)")
-        .required(true)
-        .addValidator(new RecordPathValidator())
-        .expressionLanguageSupported(NONE)
-        .dependsOn(STATEMENT_TYPE, USE_RECORD_PATH)
-        .build();
+            .name("Statement Type Record Path")
+            .description("Specifies a RecordPath to evaluate against each Record in order to determine the Statement Type. The RecordPath should equate to either INSERT, UPDATE, UPSERT, or DELETE. "
+                    + "(Debezium style operation types are also supported: \"r\" and \"c\" for INSERT, \"u\" for UPDATE, and \"d\" for DELETE)")
+            .required(true)
+            .addValidator(new RecordPathValidator())
+            .expressionLanguageSupported(NONE)
+            .dependsOn(STATEMENT_TYPE, USE_RECORD_PATH)
+            .build();
 
     static final PropertyDescriptor DATA_RECORD_PATH = new Builder()
-        .name("Data Record Path")
-        .displayName("Data Record Path")
-        .description("If specified, this property denotes a RecordPath that will be evaluated against each incoming Record and the Record that results from evaluating the RecordPath will be sent to" +
-            " the database instead of sending the entire incoming Record. If not specified, the entire incoming Record will be published to the database.")
-        .required(false)
-        .addValidator(new RecordPathValidator())
-        .expressionLanguageSupported(NONE)
-        .build();
+            .name("Data Record Path")
+            .description("If specified, this property denotes a RecordPath that will be evaluated against each incoming" +
+                    " Record and the Record that results from evaluating the RecordPath will be sent to" +
+                    " the database instead of sending the entire incoming Record. If not specified, the entire incoming Record will be published to the database.")
+            .required(false)
+            .addValidator(new RecordPathValidator())
+            .expressionLanguageSupported(NONE)
+            .build();
+
+    static final PropertyDescriptor PRE_PROCESSING_SQL = new Builder()
+            .name("Pre-Processing SQL")
+            .description("""
+                    One or more SQL statements, separated by semicolons, executed on the current database connection,
+                    before processing records for each FlowFile. Literal semicolons can be included in SQL statements
+                    by prefixing the semicolon with a backslash character.
+                    """)
+            .required(false)
+            .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+
+    static final PropertyDescriptor POST_PROCESSING_SQL = new Builder()
+            .name("Post-Processing SQL")
+            .description("""
+                    One or more SQL statements, separated by semicolons, executed on the current database connection,
+                    after processing records for each FlowFile. Literal semicolons can be included in SQL statements
+                    by prefixing the semicolon with a backslash.
+                    """)
+            .required(false)
+            .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
 
     static final PropertyDescriptor DBCP_SERVICE = new Builder()
-            .name("put-db-record-dcbp-service")
-            .displayName("Database Connection Pooling Service")
+            .name("Database Connection Pooling Service")
             .description("The Controller Service that is used to obtain a connection to the database for sending records.")
             .required(true)
             .identifiesControllerService(DBCPService.class)
             .build();
 
     static final PropertyDescriptor CATALOG_NAME = new Builder()
-            .name("put-db-record-catalog-name")
-            .displayName("Catalog Name")
-            .description("The name of the catalog that the statement should update. This may not apply for the database that you are updating. In this case, leave the field empty. Note that if the "
-                    + "property is set and the database is case-sensitive, the catalog name must match the database's catalog name exactly.")
+            .name("Database Name")
+            .description("""
+                    The name of the database (or the name of the catalog, depending on the destination system) that the statement should update. This may not apply
+                    for the database that you are updating. In this case, leave the field empty. Note that if the  property is set and the database is case-sensitive,
+                    the catalog name must match the database's catalog name exactly.
+                    """)
             .required(false)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
     static final PropertyDescriptor SCHEMA_NAME = new Builder()
-            .name("put-db-record-schema-name")
-            .displayName("Schema Name")
+            .name("Schema Name")
             .description("The name of the schema that the table belongs to. This may not apply for the database that you are updating. In this case, leave the field empty. Note that if the "
                     + "property is set and the database is case-sensitive, the schema name must match the database's schema name exactly.")
             .required(false)
@@ -233,8 +268,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor TABLE_NAME = new Builder()
-            .name("put-db-record-table-name")
-            .displayName("Table Name")
+            .name("Table Name")
             .description("The name of the table that the statement should affect. Note that if the database is case-sensitive, the table name must match the database's table name exactly.")
             .required(true)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
@@ -260,43 +294,56 @@ public class PutDatabaseRecord extends AbstractProcessor {
     );
 
     static final PropertyDescriptor BINARY_STRING_FORMAT = new Builder()
-            .name("put-db-record-binary-format")
-            .displayName("Binary String Format")
+            .name("Binary String Format")
             .description("The format to be applied when decoding string values to binary.")
             .required(true)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
             .allowableValues(BINARY_STRING_FORMAT_UTF8, BINARY_STRING_FORMAT_HEXADECIMAL, BINARY_STRING_FORMAT_BASE64)
-            .defaultValue(BINARY_STRING_FORMAT_UTF8.getValue())
+            .defaultValue(BINARY_STRING_FORMAT_UTF8)
             .build();
 
     static final PropertyDescriptor TRANSLATE_FIELD_NAMES = new Builder()
-            .name("put-db-record-translate-field-names")
-            .displayName("Translate Field Names")
+            .name("Translate Field Names")
             .description("If true, the Processor will attempt to translate field names into the appropriate column names for the table specified. "
                     + "If false, the field names must match the column names exactly, or the column will not be updated")
             .allowableValues("true", "false")
             .defaultValue("true")
             .build();
+    public static final PropertyDescriptor TRANSLATION_STRATEGY = new PropertyDescriptor.Builder()
+            .required(true)
+            .name("Column Name Translation Strategy")
+            .description("The strategy used to normalize table column name. Column Name will be uppercased to " +
+                    "do case-insensitive matching irrespective of strategy")
+            .allowableValues(TranslationStrategy.class)
+            .defaultValue(TranslationStrategy.REMOVE_UNDERSCORE)
+            .dependsOn(TRANSLATE_FIELD_NAMES, "true")
+            .build();
+
+    public static final PropertyDescriptor TRANSLATION_PATTERN = new PropertyDescriptor.Builder()
+            .required(true)
+            .name("Column Name Translation Pattern")
+            .description("Column name will be normalized with this regular expression")
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
+            .dependsOn(TRANSLATION_STRATEGY, TranslationStrategy.PATTERN)
+            .build();
 
     static final PropertyDescriptor UNMATCHED_FIELD_BEHAVIOR = new Builder()
-            .name("put-db-record-unmatched-field-behavior")
-            .displayName("Unmatched Field Behavior")
+            .name("Unmatched Field Behavior")
             .description("If an incoming record has a field that does not map to any of the database table's columns, this property specifies how to handle the situation")
             .allowableValues(IGNORE_UNMATCHED_FIELD, FAIL_UNMATCHED_FIELD)
-            .defaultValue(IGNORE_UNMATCHED_FIELD.getValue())
+            .defaultValue(IGNORE_UNMATCHED_FIELD)
             .build();
 
     static final PropertyDescriptor UNMATCHED_COLUMN_BEHAVIOR = new Builder()
-            .name("put-db-record-unmatched-column-behavior")
-            .displayName("Unmatched Column Behavior")
+            .name("Unmatched Column Behavior")
             .description("If an incoming record does not have a field mapping for all of the database table's columns, this property specifies how to handle the situation")
             .allowableValues(IGNORE_UNMATCHED_COLUMN, WARNING_UNMATCHED_COLUMN, FAIL_UNMATCHED_COLUMN)
-            .defaultValue(FAIL_UNMATCHED_COLUMN.getValue())
+            .defaultValue(FAIL_UNMATCHED_COLUMN)
             .build();
 
     static final PropertyDescriptor UPDATE_KEYS = new Builder()
-            .name("put-db-record-update-keys")
-            .displayName("Update Keys")
+            .name("Update Keys")
             .description("A comma-separated list of column names that uniquely identifies a row in the database for UPDATE statements. "
                     + "If the Statement Type is UPDATE and this property is not set, the table's Primary Keys are used. "
                     + "In this case, if no Primary Key exists, the conversion to SQL will fail if Unmatched Column Behaviour is set to FAIL. "
@@ -319,8 +366,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor FIELD_CONTAINING_SQL = new Builder()
-            .name("put-db-record-field-containing-sql")
-            .displayName("Field Containing SQL")
+            .name("Field Containing SQL")
             .description("If the Statement Type is 'SQL' (as set in the statement.type attribute), this field indicates which field in the record(s) contains the SQL statement to execute. The value "
                     + "of the field must be a single SQL statement. If the Statement Type is not 'SQL', this field is ignored.")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -330,8 +376,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor ALLOW_MULTIPLE_STATEMENTS = new Builder()
-            .name("put-db-record-allow-multiple-statements")
-            .displayName("Allow Multiple SQL Statements")
+            .name("Allow Multiple SQL Statements")
             .description("If the Statement Type is 'SQL' (as set in the statement.type attribute), this field indicates whether to split the field value by a semicolon and execute each statement "
                     + "separately. If any statement causes an error, the entire set of statements will be rolled back. If the Statement Type is not 'SQL', this field is ignored.")
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
@@ -342,24 +387,21 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor QUOTE_IDENTIFIERS = new Builder()
-            .name("put-db-record-quoted-identifiers")
-            .displayName("Quote Column Identifiers")
+            .name("Quote Column Identifiers")
             .description("Enabling this option will cause all column names to be quoted, allowing you to use reserved words as column names in your tables.")
             .allowableValues("true", "false")
             .defaultValue("false")
             .build();
 
     static final PropertyDescriptor QUOTE_TABLE_IDENTIFIER = new Builder()
-            .name("put-db-record-quoted-table-identifiers")
-            .displayName("Quote Table Identifiers")
+            .name("Quote Table Identifiers")
             .description("Enabling this option will cause the table name to be quoted to support the use of special characters in the table name.")
             .allowableValues("true", "false")
             .defaultValue("false")
             .build();
 
     static final PropertyDescriptor QUERY_TIMEOUT = new Builder()
-            .name("put-db-record-query-timeout")
-            .displayName("Max Wait Time")
+            .name("Max Wait Time")
             .description("The maximum amount of time allowed for a running SQL statement "
                     + ", zero means there is no limit. Max time less than 1 second will be equal to zero.")
             .defaultValue("0 seconds")
@@ -369,8 +411,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor TABLE_SCHEMA_CACHE_SIZE = new Builder()
-            .name("table-schema-cache-size")
-            .displayName("Table Schema Cache Size")
+            .name("Table Schema Cache Size")
             .description("Specifies how many Table Schemas should be cached")
             .addValidator(StandardValidators.NON_NEGATIVE_INTEGER_VALIDATOR)
             .defaultValue("100")
@@ -378,8 +419,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor MAX_BATCH_SIZE = new Builder()
-            .name("put-db-record-max-batch-size")
-            .displayName("Maximum Batch Size")
+            .name("Maximum Batch Size")
             .description("Specifies maximum number of sql statements to be included in each batch sent to the database. Zero means the batch size is not limited, "
                     + "and all statements are put into a single batch which can cause high memory usage issues for a very large number of statements.")
             .defaultValue("1000")
@@ -389,8 +429,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor AUTO_COMMIT = new PropertyDescriptor.Builder()
-            .name("database-session-autocommit")
-            .displayName("Database Session AutoCommit")
+            .name("Database Session AutoCommit")
             .description("The autocommit mode to set on the database connection being used. If set to false, the operation(s) will be explicitly committed or rolled back "
                     + "(based on success or failure respectively). If set to true, the driver/database automatically handles the commit/rollback.")
             .allowableValues("true", "false")
@@ -398,61 +437,48 @@ public class PutDatabaseRecord extends AbstractProcessor {
             .required(false)
             .build();
 
-    static final PropertyDescriptor DB_TYPE;
+    static final PropertyDescriptor DB_TYPE = DatabaseAdapterDescriptor.getDatabaseTypeDescriptor();
+    static final PropertyDescriptor DATABASE_DIALECT_SERVICE = DatabaseAdapterDescriptor.getDatabaseDialectServiceDescriptor(DB_TYPE);
 
-    protected static final Map<String, DatabaseAdapter> dbAdapters;
-    protected static List<PropertyDescriptor> properties;
+    static final Pattern UNESCAPED_SEMICOLON_PATTERN = Pattern.compile("(?<!\\\\);");
+    static final String ESCAPED_SEMICOLON = "\\\\;";
+    static final String SEMICOLON = ";";
+
+    protected static final List<PropertyDescriptor> properties = List.of(
+            RECORD_READER_FACTORY,
+            DB_TYPE,
+            DATABASE_DIALECT_SERVICE,
+            STATEMENT_TYPE,
+            STATEMENT_TYPE_RECORD_PATH,
+            DATA_RECORD_PATH,
+            PRE_PROCESSING_SQL,
+            POST_PROCESSING_SQL,
+            DBCP_SERVICE,
+            CATALOG_NAME,
+            SCHEMA_NAME,
+            TABLE_NAME,
+            BINARY_STRING_FORMAT,
+            TRANSLATE_FIELD_NAMES,
+            TRANSLATION_STRATEGY,
+            TRANSLATION_PATTERN,
+            UNMATCHED_FIELD_BEHAVIOR,
+            UNMATCHED_COLUMN_BEHAVIOR,
+            UPDATE_KEYS,
+            DELETE_KEYS,
+            FIELD_CONTAINING_SQL,
+            ALLOW_MULTIPLE_STATEMENTS,
+            QUOTE_IDENTIFIERS,
+            QUOTE_TABLE_IDENTIFIER,
+            QUERY_TIMEOUT,
+            RollbackOnFailure.ROLLBACK_ON_FAILURE,
+            TABLE_SCHEMA_CACHE_SIZE,
+            MAX_BATCH_SIZE,
+            AUTO_COMMIT
+    );
+
     private Cache<SchemaKey, TableSchema> schemaCache;
 
-    static {
-        dbAdapters = new HashMap<>();
-        ArrayList<AllowableValue> dbAdapterValues = new ArrayList<>();
-
-        ServiceLoader<DatabaseAdapter> dbAdapterLoader = ServiceLoader.load(DatabaseAdapter.class);
-        dbAdapterLoader.forEach(databaseAdapter -> {
-            dbAdapters.put(databaseAdapter.getName(), databaseAdapter);
-            dbAdapterValues.add(new AllowableValue(databaseAdapter.getName(), databaseAdapter.getName(), databaseAdapter.getDescription()));
-        });
-
-        DB_TYPE = new Builder()
-            .name("db-type")
-            .displayName("Database Type")
-            .description("The type/flavor of database, used for generating database-specific code. In many cases the Generic type "
-                + "should suffice, but some databases (such as Oracle) require custom SQL clauses. ")
-            .allowableValues(dbAdapterValues.toArray(new AllowableValue[0]))
-            .defaultValue("Generic")
-            .required(false)
-            .build();
-
-        properties = List.of(
-                RECORD_READER_FACTORY,
-                DB_TYPE,
-                STATEMENT_TYPE,
-                STATEMENT_TYPE_RECORD_PATH,
-                DATA_RECORD_PATH,
-                DBCP_SERVICE,
-                CATALOG_NAME,
-                SCHEMA_NAME,
-                TABLE_NAME,
-                BINARY_STRING_FORMAT,
-                TRANSLATE_FIELD_NAMES,
-                UNMATCHED_FIELD_BEHAVIOR,
-                UNMATCHED_COLUMN_BEHAVIOR,
-                UPDATE_KEYS,
-                DELETE_KEYS,
-                FIELD_CONTAINING_SQL,
-                ALLOW_MULTIPLE_STATEMENTS,
-                QUOTE_IDENTIFIERS,
-                QUOTE_TABLE_IDENTIFIER,
-                QUERY_TIMEOUT,
-                RollbackOnFailure.ROLLBACK_ON_FAILURE,
-                TABLE_SCHEMA_CACHE_SIZE,
-                MAX_BATCH_SIZE,
-                AUTO_COMMIT
-        );
-    }
-
-    private DatabaseAdapter databaseAdapter;
+    private volatile DatabaseDialectService databaseDialectService;
     private volatile Function<Record, String> recordPathOperationType;
     private volatile RecordPath dataRecordPath;
 
@@ -468,18 +494,31 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
     @Override
     protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
-        Collection<ValidationResult> validationResults = new ArrayList<>(super.customValidate(validationContext));
+        final Collection<ValidationResult> validationResults = new ArrayList<>(super.customValidate(validationContext));
 
-        DatabaseAdapter databaseAdapter = dbAdapters.get(validationContext.getProperty(DB_TYPE).getValue());
-        String statementType = validationContext.getProperty(STATEMENT_TYPE).getValue();
-        if ((UPSERT_TYPE.equals(statementType) && !databaseAdapter.supportsUpsert())
-            || (INSERT_IGNORE_TYPE.equals(statementType) && !databaseAdapter.supportsInsertIgnore())) {
-            validationResults.add(new ValidationResult.Builder()
-                .subject(STATEMENT_TYPE.getDisplayName())
-                .valid(false)
-                .explanation(databaseAdapter.getName() + " does not support " + statementType)
-                .build()
-            );
+        final String databaseType = validationContext.getProperty(DB_TYPE).getValue();
+        final DatabaseDialectService dialectService = DatabaseAdapterDescriptor.getDatabaseDialectService(validationContext, DATABASE_DIALECT_SERVICE, databaseType);
+        final Set<StatementType> supportedStatementTypes = dialectService.getSupportedStatementTypes();
+        final String configuredStatementType = validationContext.getProperty(STATEMENT_TYPE).getValue();
+        if (INSERT_IGNORE_TYPE.equals(configuredStatementType)) {
+            if (!supportedStatementTypes.contains(StatementType.INSERT_IGNORE)) {
+                validationResults.add(new ValidationResult.Builder()
+                        .subject(STATEMENT_TYPE.getDisplayName())
+                        .valid(false)
+                        .explanation("INSERT IGNORE not supported with Database Dialect")
+                        .build()
+                );
+            }
+        }
+        if (UPSERT_TYPE.equals(configuredStatementType)) {
+            if (!supportedStatementTypes.contains(StatementType.UPSERT)) {
+                validationResults.add(new ValidationResult.Builder()
+                        .subject(STATEMENT_TYPE.getDisplayName())
+                        .valid(false)
+                        .explanation("UPSERT not supported with Database Dialect")
+                        .build()
+                );
+            }
         }
 
         final Boolean autoCommit = validationContext.getProperty(AUTO_COMMIT).asBoolean();
@@ -495,15 +534,15 @@ public class PutDatabaseRecord extends AbstractProcessor {
         }
 
         if (autoCommit != null && autoCommit && !isMaxBatchSizeHardcodedToZero(validationContext)) {
-                final String explanation = format("'%s' must be hard-coded to zero when '%s' is set to 'true'."
-                                + " Batch size equal to zero executes all statements in a single transaction"
-                                + " which allows rollback to revert all the flow file's statements together if an error occurs.",
-                        MAX_BATCH_SIZE.getDisplayName(), AUTO_COMMIT.getDisplayName());
+            final String explanation = format("'%s' must be hard-coded to zero when '%s' is set to 'true'."
+                            + " Batch size equal to zero executes all statements in a single transaction"
+                            + " which allows rollback to revert all the flow file's statements together if an error occurs.",
+                    MAX_BATCH_SIZE.getDisplayName(), AUTO_COMMIT.getDisplayName());
 
-                validationResults.add(new ValidationResult.Builder()
-                        .subject(MAX_BATCH_SIZE.getDisplayName())
-                        .explanation(explanation)
-                        .build());
+            validationResults.add(new ValidationResult.Builder()
+                    .subject(MAX_BATCH_SIZE.getDisplayName())
+                    .explanation(explanation)
+                    .build());
         }
 
         return validationResults;
@@ -520,19 +559,20 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
-        databaseAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
+        final String databaseType = context.getProperty(DB_TYPE).getValue();
+        databaseDialectService = DatabaseAdapterDescriptor.getDatabaseDialectService(context, DATABASE_DIALECT_SERVICE, databaseType);
 
         final int tableSchemaCacheSize = context.getProperty(TABLE_SCHEMA_CACHE_SIZE).asInteger();
         schemaCache = Caffeine.newBuilder()
                 .maximumSize(tableSchemaCacheSize)
                 .build();
 
-        final String statementTypeRecordPathValue = context.getProperty(STATEMENT_TYPE_RECORD_PATH).getValue();
-        if (statementTypeRecordPathValue == null) {
-            recordPathOperationType = null;
-        } else {
+        if (context.getProperty(STATEMENT_TYPE).getValue().equals(USE_RECORD_PATH)) {
+            final String statementTypeRecordPathValue = context.getProperty(STATEMENT_TYPE_RECORD_PATH).getValue();
             final RecordPath recordPath = RecordPath.compile(statementTypeRecordPathValue);
             recordPathOperationType = new RecordPathStatementType(recordPath);
+        } else {
+            recordPathOperationType = null;
         }
 
         final String dataRecordPathValue = context.getProperty(DATA_RECORD_PATH).getValue();
@@ -577,6 +617,31 @@ public class PutDatabaseRecord extends AbstractProcessor {
         } finally {
             closeConnection(connection, originalAutoCommit);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("put-db-record-record-reader", RECORD_READER_FACTORY.getName());
+        config.renameProperty("db-type", DB_TYPE.getName());
+        config.renameProperty("put-db-record-statement-type", STATEMENT_TYPE.getName());
+        config.renameProperty("put-db-record-dcbp-service", DBCP_SERVICE.getName());
+        config.renameProperty("put-db-record-catalog-name", CATALOG_NAME.getName());
+        config.renameProperty("put-db-record-schema-name", SCHEMA_NAME.getName());
+        config.renameProperty("put-db-record-table-name", TABLE_NAME.getName());
+        config.renameProperty("put-db-record-binary-format", BINARY_STRING_FORMAT.getName());
+        config.renameProperty("put-db-record-translate-field-names", TRANSLATE_FIELD_NAMES.getName());
+        config.renameProperty("put-db-record-unmatched-field-behavior", UNMATCHED_FIELD_BEHAVIOR.getName());
+        config.renameProperty("put-db-record-unmatched-column-behavior", UNMATCHED_COLUMN_BEHAVIOR.getName());
+        config.renameProperty("put-db-record-update-keys", UPDATE_KEYS.getName());
+        config.renameProperty("put-db-record-field-containing-sql", FIELD_CONTAINING_SQL.getName());
+        config.renameProperty("put-db-record-allow-multiple-statements", ALLOW_MULTIPLE_STATEMENTS.getName());
+        config.renameProperty("put-db-record-quoted-identifiers", QUOTE_IDENTIFIERS.getName());
+        config.renameProperty("put-db-record-quoted-table-identifiers", QUOTE_TABLE_IDENTIFIER.getName());
+        config.renameProperty("put-db-record-query-timeout", QUERY_TIMEOUT.getName());
+        config.renameProperty("table-schema-cache-size", TABLE_SCHEMA_CACHE_SIZE.getName());
+        config.renameProperty("put-db-record-max-batch-size", MAX_BATCH_SIZE.getName());
+        config.renameProperty("database-session-autocommit", AUTO_COMMIT.getName());
+        config.renameProperty(RollbackOnFailure.OLD_ROLLBACK_ON_FAILURE_PROPERTY_NAME, RollbackOnFailure.ROLLBACK_ON_FAILURE.getName());
     }
 
     private void routeOnException(final ProcessContext context, final ProcessSession session,
@@ -692,7 +757,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                     final String regex = "(?<!\\\\);";
                     sqlStatements = (sql).split(regex);
                 } else {
-                    sqlStatements = new String[] {sql};
+                    sqlStatements = new String[]{sql};
                 }
 
                 if (isFirstRecord) {
@@ -735,15 +800,24 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
     private void executeDML(final ProcessContext context, final ProcessSession session, final FlowFile flowFile,
                             final Connection con, final RecordReader recordReader, final String explicitStatementType, final DMLSettings settings)
-        throws IllegalArgumentException, MalformedRecordException, IOException, SQLException {
+            throws IllegalArgumentException, MalformedRecordException, IOException, SQLException {
 
         final ComponentLog log = getLogger();
+        final String configuredStatementType = context.getProperty(STATEMENT_TYPE).getValue();
 
         final String catalog = context.getProperty(CATALOG_NAME).evaluateAttributeExpressions(flowFile).getValue();
         final String schemaName = context.getProperty(SCHEMA_NAME).evaluateAttributeExpressions(flowFile).getValue();
         final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
-        final String updateKeys = context.getProperty(UPDATE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
-        final String deleteKeys = context.getProperty(DELETE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
+        final String updateKeys = switch (configuredStatementType) {
+            case UPDATE_TYPE, UPSERT_TYPE, SQL_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH ->
+                context.getProperty(UPDATE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
+            default -> null;
+        };
+        final String deleteKeys = switch (configuredStatementType) {
+            case DELETE_TYPE, SQL_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH ->
+                context.getProperty(DELETE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
+            default -> null;
+        };
         final int maxBatchSize = context.getProperty(MAX_BATCH_SIZE).evaluateAttributeExpressions(flowFile).asInteger();
         final int timeoutMillis = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.MILLISECONDS).intValue();
 
@@ -753,13 +827,16 @@ public class PutDatabaseRecord extends AbstractProcessor {
         if (StringUtils.isEmpty(tableName)) {
             throw new IllegalArgumentException(format("Cannot process %s because Table Name is null or empty", flowFile));
         }
-
+        final NameNormalizer normalizer = Optional.of(settings)
+                .filter(s -> s.translateFieldNames)
+                .map(s -> NameNormalizerFactory.getNormalizer(s.translationStrategy, s.translationPattern))
+                .orElse(null);
         final SchemaKey schemaKey = new PutDatabaseRecord.SchemaKey(catalog, schemaName, tableName);
         final TableSchema tableSchema;
         try {
             tableSchema = schemaCache.get(schemaKey, key -> {
                 try {
-                    final TableSchema schema = TableSchema.from(con, catalog, schemaName, tableName, settings.translateFieldNames, updateKeys, log);
+                    final TableSchema schema = TableSchema.from(con, catalog, schemaName, tableName, settings.translateFieldNames, normalizer, updateKeys, log);
                     getLogger().debug("Fetched Table Schema {} for table name {}", schema, tableName);
                     return schema;
                 } catch (SQLException e) {
@@ -780,7 +857,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
         }
 
         // build the fully qualified table name
-        final String fqTableName =  generateTableName(settings, catalog, schemaName, tableName, tableSchema);
+        final String fqTableName = generateTableName(settings, catalog, schemaName, tableName, tableSchema);
 
         final Map<String, PreparedSqlAndColumns> preparedSql = new HashMap<>();
         int currentBatchSize = 0;
@@ -805,15 +882,15 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
                         final SqlAndIncludedColumns sqlHolder;
                         if (INSERT_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateInsert(recordSchema, fqTableName, tableSchema, settings);
+                            sqlHolder = generateInsert(recordSchema, fqTableName, tableSchema, settings, normalizer);
                         } else if (UPDATE_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateUpdate(recordSchema, fqTableName, updateKeys, tableSchema, settings);
+                            sqlHolder = generateUpdate(recordSchema, fqTableName, updateKeys, tableSchema, settings, normalizer);
                         } else if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateDelete(recordSchema, fqTableName, deleteKeys, tableSchema, settings);
+                            sqlHolder = generateDelete(recordSchema, fqTableName, deleteKeys, tableSchema, settings, normalizer);
                         } else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateUpsert(recordSchema, fqTableName, updateKeys, tableSchema, settings);
+                            sqlHolder = getSqlStatement(StatementType.UPSERT, recordSchema, fqTableName, updateKeys, tableSchema, settings, normalizer);
                         } else if (INSERT_IGNORE_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateInsertIgnore(recordSchema, fqTableName, updateKeys, tableSchema, settings);
+                            sqlHolder = getSqlStatement(StatementType.INSERT_IGNORE, recordSchema, fqTableName, updateKeys, tableSchema, settings, normalizer);
                         } else {
                             throw new IllegalArgumentException(format("Statement Type %s is not valid, FlowFile %s", statementType, flowFile));
                         }
@@ -832,7 +909,8 @@ public class PutDatabaseRecord extends AbstractProcessor {
                             }
                         }
 
-                        preparedSqlAndColumns = new PreparedSqlAndColumns(sqlHolder, preparedStatement);
+                        final int parameterCount = getParameterCount(sqlHolder.sql);
+                        preparedSqlAndColumns = new PreparedSqlAndColumns(sqlHolder, preparedStatement, parameterCount);
                         preparedSql.put(statementType, preparedSqlAndColumns);
                     }
 
@@ -843,7 +921,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                     if (ps != lastPreparedStatement && lastPreparedStatement != null) {
                         batchIndex++;
                         log.debug("Executing query {} because Statement Type changed between Records for {}; fieldIndexes: {}; batch index: {}; batch size: {}",
-                            sql, flowFile, fieldIndexes, batchIndex, currentBatchSize);
+                                sql, flowFile, fieldIndexes, batchIndex, currentBatchSize);
                         lastPreparedStatement.executeBatch();
 
                         session.adjustCounter("Batches Executed", 1, false);
@@ -863,7 +941,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                         final DataType dataType = dataTypes.get(currentFieldIndex);
                         final int fieldSqlType = DataTypeUtils.getSQLTypeValue(dataType);
                         final String fieldName = recordSchema.getField(currentFieldIndex).getFieldName();
-                        String columnName = ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames);
+                        String columnName = TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer);
                         int sqlType;
 
                         final ColumnDescription column = columns.get(columnName);
@@ -893,9 +971,8 @@ public class PutDatabaseRecord extends AbstractProcessor {
                                 }
                                 if (targetDataType != null) {
                                     if (sqlType == Types.BLOB || sqlType == Types.BINARY || sqlType == Types.VARBINARY || sqlType == Types.LONGVARBINARY) {
-                                        if (currentValue instanceof Object[]) {
+                                        if (currentValue instanceof Object[] src) {
                                             // Convert Object[Byte] arrays to byte[]
-                                            Object[] src = (Object[]) currentValue;
                                             if (src.length > 0) {
                                                 if (!(src[0] instanceof Byte)) {
                                                     throw new IllegalTypeConversionException("Cannot convert value " + currentValue + " to BLOB/BINARY/VARBINARY/LONGVARBINARY");
@@ -938,7 +1015,8 @@ public class PutDatabaseRecord extends AbstractProcessor {
                                 setParameter(ps, ++deleteIndex, currentValue, fieldSqlType, sqlType);
                             }
                         } else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
-                            final int timesToAddObjects = databaseAdapter.getTimesToAddColumnObjectsForUpsert();
+                            // Calculate the number of times to set the parameter based on parameters divided by number of field indexes
+                            final int timesToAddObjects =  preparedSqlAndColumns.parameterCount / fieldIndexes.size();
                             for (int j = 0; j < timesToAddObjects; j++) {
                                 setParameter(ps, i + (fieldIndexes.size() * j) + 1, currentValue, fieldSqlType, sqlType);
                             }
@@ -952,7 +1030,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                     if (++currentBatchSize == maxBatchSize) {
                         batchIndex++;
                         log.debug("Executing query {} because batch reached max size for {}; fieldIndexes: {}; batch index: {}; batch size: {}",
-                            sql, flowFile, fieldIndexes, batchIndex, currentBatchSize);
+                                sql, flowFile, fieldIndexes, batchIndex, currentBatchSize);
                         session.adjustCounter("Batches Executed", 1, false);
                         ps.executeBatch();
                         currentBatchSize = 0;
@@ -1016,7 +1094,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                     throw new IOException("Unable to parse data as CLOB/String " + value, e);
                 }
             }
-        } else if (sqlType == Types.VARBINARY || sqlType == Types.LONGVARBINARY) {
+        } else if (sqlType == Types.BINARY || sqlType == Types.VARBINARY || sqlType == Types.LONGVARBINARY) {
             if (fieldSqlType == Types.ARRAY || fieldSqlType == Types.VARCHAR) {
                 if (!(value instanceof byte[])) {
                     if (value == null) {
@@ -1027,7 +1105,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                             throw new IOException("Unable to setNull() on prepared statement", e);
                         }
                     } else {
-                        throw new IOException("Expected VARBINARY/LONGVARBINARY to be of type byte[] but is instead " + value.getClass().getName());
+                        throw new IOException("Expected BINARY/VARBINARY/LONGVARBINARY to be of type byte[] but is instead " + value.getClass().getName());
                     }
                 }
                 byte[] byteArray = (byte[]) value;
@@ -1081,7 +1159,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
             final RecordFieldType fieldType = fieldValue.getField().getDataType().getFieldType();
             if (fieldType != RecordFieldType.RECORD) {
                 throw new ProcessException("RecordPath " + dataRecordPath.getPath() + " evaluated against Record expected to return one or more Records but encountered field of type" +
-                    " " + fieldType);
+                        " " + fieldType);
             }
         }
 
@@ -1118,7 +1196,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
     }
 
     private String validateStatementType(final String statementType, final FlowFile flowFile) {
-        if (statementType == null || statementType.trim().isEmpty()) {
+        if (statementType == null || statementType.isBlank()) {
             throw new ProcessException("No Statement Type specified for " + flowFile);
         }
 
@@ -1135,6 +1213,9 @@ public class PutDatabaseRecord extends AbstractProcessor {
     private void putToDatabase(final ProcessContext context, final ProcessSession session, final FlowFile flowFile, final Connection connection) throws Exception {
         final String statementType = getStatementType(context, flowFile);
 
+        final List<String> preProcessingSqlStatements = getSqlStatements(context, flowFile, PRE_PROCESSING_SQL);
+        executeSqlStatements(connection, preProcessingSqlStatements, PRE_PROCESSING_SQL);
+
         try (final InputStream in = session.read(flowFile)) {
             final RecordReaderFactory recordReaderFactory = context.getProperty(RECORD_READER_FACTORY).asControllerService(RecordReaderFactory.class);
             final RecordReader recordReader = recordReaderFactory.createRecordReader(flowFile, in, getLogger());
@@ -1144,6 +1225,41 @@ public class PutDatabaseRecord extends AbstractProcessor {
             } else {
                 final DMLSettings settings = new DMLSettings(context);
                 executeDML(context, session, flowFile, connection, recordReader, statementType, settings);
+            }
+        }
+
+        final List<String> postProcessingSqlStatements = getSqlStatements(context, flowFile, POST_PROCESSING_SQL);
+        executeSqlStatements(connection, postProcessingSqlStatements, POST_PROCESSING_SQL);
+    }
+
+    private List<String> getSqlStatements(final ProcessContext context, final FlowFile flowFile, final PropertyDescriptor propertyDescriptor) {
+        final List<String> sqlStatements;
+
+        final String propertyValue = context.getProperty(propertyDescriptor).evaluateAttributeExpressions(flowFile).getValue();
+        if (propertyValue == null || propertyValue.isBlank()) {
+            sqlStatements = List.of();
+        } else {
+            final String[] statements = UNESCAPED_SEMICOLON_PATTERN.split(propertyValue);
+            sqlStatements = new ArrayList<>(statements.length);
+            for (String statement : statements) {
+                final String sqlStatement = statement.replaceAll(ESCAPED_SEMICOLON, SEMICOLON).trim();
+                if (sqlStatement.isEmpty()) {
+                    continue;
+                }
+                sqlStatements.add(sqlStatement);
+            }
+        }
+
+        return sqlStatements;
+    }
+
+    private void executeSqlStatements(final Connection connection, final List<String> sqlStatements, final PropertyDescriptor propertyDescriptor) {
+        for (final String sql : sqlStatements) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(sql);
+            } catch (final SQLException e) {
+                final String message = "Failed to execute %s Statement [%s]".formatted(propertyDescriptor.getName(), sql);
+                throw new ProcessException(message, e);
             }
         }
     }
@@ -1185,18 +1301,18 @@ public class PutDatabaseRecord extends AbstractProcessor {
         return tableNameBuilder.toString();
     }
 
-    private Set<String> getNormalizedColumnNames(final RecordSchema schema, final boolean translateFieldNames) {
+    private Set<String> getNormalizedColumnNames(final RecordSchema schema, final boolean translateFieldNames, NameNormalizer normalizer) {
         final Set<String> normalizedFieldNames = new HashSet<>();
         if (schema != null) {
-            schema.getFieldNames().forEach((fieldName) -> normalizedFieldNames.add(ColumnDescription.normalizeColumnName(fieldName, translateFieldNames)));
+            schema.getFieldNames().forEach((fieldName) -> normalizedFieldNames.add(TableSchema.normalizedName(fieldName, translateFieldNames, normalizer)));
         }
         return normalizedFieldNames;
     }
 
-    SqlAndIncludedColumns generateInsert(final RecordSchema recordSchema, final String tableName, final TableSchema tableSchema, final DMLSettings settings)
+    SqlAndIncludedColumns generateInsert(final RecordSchema recordSchema, final String tableName, final TableSchema tableSchema, final DMLSettings settings, NameNormalizer normalizer)
             throws IllegalArgumentException, SQLException {
 
-        checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
+        checkValuesForRequiredColumns(recordSchema, tableSchema, settings, normalizer);
 
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("INSERT INTO ");
@@ -1214,7 +1330,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
 
-                final ColumnDescription desc = tableSchema.getColumns().get(ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames));
+                final ColumnDescription desc = tableSchema.getColumns().get(TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer));
                 if (desc == null && !settings.ignoreUnmappedFields) {
                     throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
                             + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
@@ -1253,121 +1369,85 @@ public class PutDatabaseRecord extends AbstractProcessor {
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }
 
-    SqlAndIncludedColumns generateUpsert(final RecordSchema recordSchema, final String tableName, final String updateKeys,
-                                         final TableSchema tableSchema, final DMLSettings settings)
-        throws IllegalArgumentException, SQLException, MalformedRecordException {
+    private SqlAndIncludedColumns getSqlStatement(
+            final StatementType statementType,
+            final RecordSchema recordSchema,
+            final String qualifiedTableName,
+            final String updateKeys,
+            final TableSchema tableSchema,
+            final DMLSettings settings,
+            final NameNormalizer normalizer
+    ) throws MalformedRecordException, SQLDataException, SQLIntegrityConstraintViolationException {
+        checkValuesForRequiredColumns(recordSchema, tableSchema, settings, normalizer);
 
-        checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
+        final Set<String> keyColumnNames = getUpdateKeyColumnNames(qualifiedTableName, updateKeys, tableSchema);
+        normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames, normalizer);
 
-        Set<String> keyColumnNames = getUpdateKeyColumnNames(tableName, updateKeys, tableSchema);
-        normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames);
+        final List<ColumnDefinition> columnDefinitions = new ArrayList<>();
+        final List<Integer> usedColumnIndices = new ArrayList<>();
+        final List<String> fieldNames = recordSchema.getFieldNames();
+        final int fieldCount = fieldNames.size();
+        for (int i = 0; i < fieldCount; i++) {
+            final RecordField field = recordSchema.getField(i);
+            final String fieldName = field.getFieldName();
 
-        List<String> usedColumnNames = new ArrayList<>();
-        List<Integer> usedColumnIndices = new ArrayList<>();
-
-        List<String> fieldNames = recordSchema.getFieldNames();
-        if (fieldNames != null) {
-            int fieldCount = fieldNames.size();
-
-            for (int i = 0; i < fieldCount; i++) {
-                RecordField field = recordSchema.getField(i);
-                String fieldName = field.getFieldName();
-
-                final ColumnDescription desc = tableSchema.getColumns().get(ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc == null && !settings.ignoreUnmappedFields) {
-                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
-
-                if (desc != null) {
-                    if (settings.escapeColumnNames) {
-                        usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
-                    } else {
-                        usedColumnNames.add(desc.getColumnName());
-                    }
-                    usedColumnIndices.add(i);
+            final String columnNameNormalized = TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer);
+            final ColumnDescription columnDescription = tableSchema.getColumns().get(columnNameNormalized);
+            if (columnDescription == null) {
+                if (settings.ignoreUnmappedFields) {
+                    continue;
                 } else {
-                    // User is ignoring unmapped fields, but log at debug level just in case
-                    getLogger().debug("Did not map field '{}' to any column in the database\n{}Columns: {}",
-                            fieldName, (settings.translateFieldNames ? "Normalized " : ""), String.join(",", tableSchema.getColumns().keySet()));
+                    final String tableColumnNames = String.join(",", tableSchema.getColumns().keySet());
+                    final String message = "Record Field [%s] not mapped to Table Columns [%s]".formatted(fieldName, tableColumnNames);
+                    throw new SQLDataException(message);
                 }
             }
+
+            final String columnName;
+            if (settings.escapeColumnNames) {
+                final String quotedIdentifier = tableSchema.getQuotedIdentifierString();
+                columnName = quotedIdentifier + columnDescription.getColumnName() + quotedIdentifier;
+            } else {
+                columnName = columnDescription.getColumnName();
+            }
+
+            final ColumnDefinition columnDefinition = getColumnDefinition(columnDescription, keyColumnNames, columnName);
+            columnDefinitions.add(columnDefinition);
+
+            usedColumnIndices.add(i);
         }
 
-        final Set<String> literalKeyColumnNames = new HashSet<>(keyColumnNames.size());
-        for (String literalKeyColumnName : keyColumnNames) {
-            if (settings.escapeColumnNames) {
-                literalKeyColumnNames.add(tableSchema.getQuotedIdentifierString() + literalKeyColumnName + tableSchema.getQuotedIdentifierString());
-            } else {
-                literalKeyColumnNames.add(literalKeyColumnName);
-            }
-        }
-        String sql = databaseAdapter.getUpsertStatement(tableName, usedColumnNames, literalKeyColumnNames);
+        final TableDefinition tableDefinition = new TableDefinition(
+                Optional.empty(),
+                Optional.empty(),
+                qualifiedTableName,
+                columnDefinitions
+        );
+        final StatementRequest statementRequest = new StandardStatementRequest(statementType, tableDefinition);
+        final StatementResponse statementResponse = databaseDialectService.getStatement(statementRequest);
+        final String sql = statementResponse.sql();
 
         return new SqlAndIncludedColumns(sql, usedColumnIndices);
     }
 
-    SqlAndIncludedColumns generateInsertIgnore(final RecordSchema recordSchema, final String tableName, final String updateKeys,
-                                               final TableSchema tableSchema, final DMLSettings settings)
-            throws IllegalArgumentException, SQLException, MalformedRecordException {
-
-        checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
-
-        Set<String> keyColumnNames = getUpdateKeyColumnNames(tableName, updateKeys, tableSchema);
-        normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames);
-
-        List<String> usedColumnNames = new ArrayList<>();
-        List<Integer> usedColumnIndices = new ArrayList<>();
-
-        List<String> fieldNames = recordSchema.getFieldNames();
-        if (fieldNames != null) {
-            int fieldCount = fieldNames.size();
-
-            for (int i = 0; i < fieldCount; i++) {
-                RecordField field = recordSchema.getField(i);
-                String fieldName = field.getFieldName();
-
-                final ColumnDescription desc = tableSchema.getColumns().get(ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc == null && !settings.ignoreUnmappedFields) {
-                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
-
-                if (desc != null) {
-                    if (settings.escapeColumnNames) {
-                        usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
-                    } else {
-                        usedColumnNames.add(desc.getColumnName());
-                    }
-                    usedColumnIndices.add(i);
-                } else {
-                    // User is ignoring unmapped fields, but log at debug level just in case
-                    getLogger().debug("Did not map field '{}' to any column in the database\n{}Columns: {}",
-                            fieldName, (settings.translateFieldNames ? "Normalized " : ""), String.join(",", tableSchema.getColumns().keySet()));
-                }
-            }
-        }
-
-        final Set<String> literalKeyColumnNames = new HashSet<>(keyColumnNames.size());
-        for (String literalKeyColumnName : keyColumnNames) {
-            if (settings.escapeColumnNames) {
-                literalKeyColumnNames.add(tableSchema.getQuotedIdentifierString() + literalKeyColumnName + tableSchema.getQuotedIdentifierString());
-            } else {
-                literalKeyColumnNames.add(literalKeyColumnName);
-            }
-        }
-
-        String sql = databaseAdapter.getInsertIgnoreStatement(tableName, usedColumnNames, literalKeyColumnNames);
-
-        return new SqlAndIncludedColumns(sql, usedColumnIndices);
+    private ColumnDefinition getColumnDefinition(final ColumnDescription columnDescription, final Set<String> keyColumnNames, final String columnName) {
+        final int dataType = columnDescription.getDataType();
+        final boolean primaryKey = keyColumnNames.contains(columnDescription.getColumnName());
+        final StandardColumnDefinition.Nullable nullable = columnDescription.isNullable() ? StandardColumnDefinition.Nullable.YES : StandardColumnDefinition.Nullable.NO;
+        return new StandardColumnDefinition(
+                columnName,
+                dataType,
+                nullable,
+                primaryKey
+        );
     }
 
     SqlAndIncludedColumns generateUpdate(final RecordSchema recordSchema, final String tableName, final String updateKeys,
-                                         final TableSchema tableSchema, final DMLSettings settings)
+                                         final TableSchema tableSchema, final DMLSettings settings, NameNormalizer normalizer)
             throws IllegalArgumentException, MalformedRecordException, SQLException {
 
         final Set<String> keyColumnNames = getUpdateKeyColumnNames(tableName, updateKeys, tableSchema);
-        final Set<String> normalizedKeyColumnNames = normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames);
+        final Set<String> normalizedKeyColumnNames = normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames, normalizer);
 
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("UPDATE ");
@@ -1386,8 +1466,8 @@ public class PutDatabaseRecord extends AbstractProcessor {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
 
-                final String normalizedColName = ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames);
-                final ColumnDescription desc = tableSchema.getColumns().get(ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames));
+                final String normalizedColName = TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer);
+                final ColumnDescription desc = tableSchema.getColumns().get(TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer));
                 if (desc == null) {
                     if (!settings.ignoreUnmappedFields) {
                         throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
@@ -1426,8 +1506,8 @@ public class PutDatabaseRecord extends AbstractProcessor {
                 String fieldName = field.getFieldName();
                 boolean firstUpdateKey = true;
 
-                final String normalizedColName = ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames);
-                final ColumnDescription desc = tableSchema.getColumns().get(ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames));
+                final String normalizedColName = TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer);
+                final ColumnDescription desc = tableSchema.getColumns().get(TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer));
                 if (desc != null) {
 
                     // Check if this column is a Update Key. If so, add it to the WHERE clause
@@ -1457,12 +1537,13 @@ public class PutDatabaseRecord extends AbstractProcessor {
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }
 
-    SqlAndIncludedColumns generateDelete(final RecordSchema recordSchema, final String tableName, String deleteKeys, final TableSchema tableSchema, final DMLSettings settings)
+    SqlAndIncludedColumns generateDelete(final RecordSchema recordSchema, final String tableName, String deleteKeys, final TableSchema tableSchema,
+                                         final DMLSettings settings, NameNormalizer normalizer)
             throws IllegalArgumentException, MalformedRecordException, SQLDataException {
 
-        final Set<String> normalizedFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames);
+        final Set<String> normalizedFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames, normalizer);
         for (final String requiredColName : tableSchema.getRequiredColumnNames()) {
-            final String normalizedColName = ColumnDescription.normalizeColumnName(requiredColName, settings.translateFieldNames);
+            final String normalizedColName = TableSchema.normalizedName(requiredColName, settings.translateFieldNames, normalizer);
             if (!normalizedFieldNames.contains(normalizedColName)) {
                 String missingColMessage = "Record does not have a value for the Required column '" + requiredColName + "'";
                 if (settings.failUnmappedColumns) {
@@ -1505,7 +1586,7 @@ public class PutDatabaseRecord extends AbstractProcessor {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
 
-                final ColumnDescription desc = tableSchema.getColumns().get(ColumnDescription.normalizeColumnName(fieldName, settings.translateFieldNames));
+                final ColumnDescription desc = tableSchema.getColumns().get(TableSchema.normalizedName(fieldName, settings.translateFieldNames, normalizer));
                 if (desc == null && !settings.ignoreUnmappedFields) {
                     throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
                             + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
@@ -1554,11 +1635,11 @@ public class PutDatabaseRecord extends AbstractProcessor {
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }
 
-    private void checkValuesForRequiredColumns(RecordSchema recordSchema, TableSchema tableSchema, DMLSettings settings) {
-        final Set<String> normalizedFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames);
+    private void checkValuesForRequiredColumns(RecordSchema recordSchema, TableSchema tableSchema, DMLSettings settings, NameNormalizer normalizer) {
+        final Set<String> normalizedFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames, normalizer);
 
         for (final String requiredColName : tableSchema.getRequiredColumnNames()) {
-            final String normalizedColName = ColumnDescription.normalizeColumnName(requiredColName, settings.translateFieldNames);
+            final String normalizedColName = TableSchema.normalizedName(requiredColName, settings.translateFieldNames, normalizer);
             if (!normalizedFieldNames.contains(normalizedColName)) {
                 String missingColMessage = "Record does not have a value for the Required column '" + requiredColName + "'";
                 if (settings.failUnmappedColumns) {
@@ -1590,15 +1671,15 @@ public class PutDatabaseRecord extends AbstractProcessor {
         return updateKeyColumnNames;
     }
 
-    private Set<String> normalizeKeyColumnNamesAndCheckForValues(RecordSchema recordSchema, String updateKeys, DMLSettings settings, Set<String> updateKeyColumnNames)
+    private Set<String> normalizeKeyColumnNamesAndCheckForValues(RecordSchema recordSchema, String updateKeys, DMLSettings settings, Set<String> updateKeyColumnNames, NameNormalizer normalizer)
             throws MalformedRecordException {
         // Create a Set of all normalized Update Key names, and ensure that there is a field in the record
         // for each of the Update Key fields.
-        final Set<String> normalizedRecordFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames);
+        final Set<String> normalizedRecordFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames, normalizer);
 
         final Set<String> normalizedKeyColumnNames = new HashSet<>();
         for (final String updateKeyColumnName : updateKeyColumnNames) {
-            String normalizedKeyColumnName = ColumnDescription.normalizeColumnName(updateKeyColumnName, settings.translateFieldNames);
+            String normalizedKeyColumnName = TableSchema.normalizedName(updateKeyColumnName, settings.translateFieldNames, normalizer);
 
             if (!normalizedRecordFieldNames.contains(normalizedKeyColumnName)) {
                 String missingColMessage = "Record does not have a value for the " + (updateKeys == null ? "Primary" : "Update") + "Key column '" + updateKeyColumnName + "'";
@@ -1624,6 +1705,16 @@ public class PutDatabaseRecord extends AbstractProcessor {
         }
     }
 
+    private int getParameterCount(final String sql) {
+        int parameterCount = 0;
+        for (char character : sql.toCharArray()) {
+            if ('?' == character) {
+                parameterCount++;
+            }
+        }
+        return parameterCount;
+    }
+
     static class SchemaKey {
         private final String catalog;
         private final String schemaName;
@@ -1645,13 +1736,21 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             SchemaKey schemaKey = (SchemaKey) o;
 
-            if (catalog != null ? !catalog.equals(schemaKey.catalog) : schemaKey.catalog != null) return false;
-            if (schemaName != null ? !schemaName.equals(schemaKey.schemaName) : schemaKey.schemaName != null) return false;
+            if (catalog != null ? !catalog.equals(schemaKey.catalog) : schemaKey.catalog != null) {
+                return false;
+            }
+            if (schemaName != null ? !schemaName.equals(schemaKey.schemaName) : schemaKey.schemaName != null) {
+                return false;
+            }
             return tableName.equals(schemaKey.tableName);
         }
     }
@@ -1687,10 +1786,12 @@ public class PutDatabaseRecord extends AbstractProcessor {
     static class PreparedSqlAndColumns {
         private final SqlAndIncludedColumns sqlAndIncludedColumns;
         private final PreparedStatement preparedStatement;
+        private final int parameterCount;
 
-        public PreparedSqlAndColumns(final SqlAndIncludedColumns sqlAndIncludedColumns, final PreparedStatement preparedStatement) {
+        public PreparedSqlAndColumns(final SqlAndIncludedColumns sqlAndIncludedColumns, final PreparedStatement preparedStatement, final int parameterCount) {
             this.sqlAndIncludedColumns = sqlAndIncludedColumns;
             this.preparedStatement = preparedStatement;
+            this.parameterCount = parameterCount;
         }
 
         public SqlAndIncludedColumns getSqlAndIncludedColumns() {
@@ -1736,6 +1837,8 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
     static class DMLSettings {
         private final boolean translateFieldNames;
+        private final TranslationStrategy translationStrategy;
+        private final Pattern translationPattern;
         private final boolean ignoreUnmappedFields;
 
         // Is the unmatched column behaviour fail or warning?
@@ -1750,14 +1853,21 @@ public class PutDatabaseRecord extends AbstractProcessor {
 
         DMLSettings(ProcessContext context) {
             translateFieldNames = context.getProperty(TRANSLATE_FIELD_NAMES).asBoolean();
-            ignoreUnmappedFields = IGNORE_UNMATCHED_FIELD.getValue().equalsIgnoreCase(context.getProperty(UNMATCHED_FIELD_BEHAVIOR).getValue());
 
-            failUnmappedColumns = FAIL_UNMATCHED_COLUMN.getValue().equalsIgnoreCase(context.getProperty(UNMATCHED_COLUMN_BEHAVIOR).getValue());
-            warningUnmappedColumns = WARNING_UNMATCHED_COLUMN.getValue().equalsIgnoreCase(context.getProperty(UNMATCHED_COLUMN_BEHAVIOR).getValue());
+            translationStrategy = translateFieldNames
+                    ? context.getProperty(TRANSLATION_STRATEGY).asAllowableValue(TranslationStrategy.class) : null;
+            translationPattern = translationStrategy == TranslationStrategy.PATTERN
+                    ? Pattern.compile(context.getProperty(TRANSLATION_PATTERN).getValue()) : null;
+
+            final String unmatchedFieldBehavior = context.getProperty(UNMATCHED_FIELD_BEHAVIOR).getValue();
+            ignoreUnmappedFields = IGNORE_UNMATCHED_FIELD.getValue().equalsIgnoreCase(unmatchedFieldBehavior);
+
+            final String unmatchedColumnBehavior = context.getProperty(UNMATCHED_COLUMN_BEHAVIOR).getValue();
+            failUnmappedColumns = FAIL_UNMATCHED_COLUMN.getValue().equalsIgnoreCase(unmatchedColumnBehavior);
+            warningUnmappedColumns = WARNING_UNMATCHED_COLUMN.getValue().equalsIgnoreCase(unmatchedColumnBehavior);
 
             escapeColumnNames = context.getProperty(QUOTE_IDENTIFIERS).asBoolean();
             quoteTableName = context.getProperty(QUOTE_TABLE_IDENTIFIER).asBoolean();
         }
     }
-
 }

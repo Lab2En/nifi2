@@ -17,8 +17,8 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
+
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -213,7 +213,7 @@ public class FlowRegistryClientDTO {
 
     @Schema(description = "Indicates whether the Registry Client is valid, invalid, or still in the process of validating (i.e., it is unknown whether or not the Registry Client is valid)",
             accessMode = Schema.AccessMode.READ_ONLY,
-            allowableValues = VALID + ", " + INVALID + ", " + VALIDATING)
+            allowableValues = {VALID, INVALID, VALIDATING})
     public String getValidationStatus() {
         return validationStatus;
     }

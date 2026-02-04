@@ -22,7 +22,6 @@ import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.Envelope;
 import com.rabbitmq.client.GetResponse;
-import java.util.EnumSet;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -33,6 +32,7 @@ import org.apache.nifi.components.DescribedValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -40,13 +40,12 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Tags({"amqp", "rabbit", "get", "message", "receive", "consume"})
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
@@ -85,8 +84,7 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .build();
     public static final PropertyDescriptor AUTO_ACKNOWLEDGE = new PropertyDescriptor.Builder()
-        .name("auto.acknowledge")
-        .displayName("Auto-Acknowledge Messages")
+        .name("Auto-Acknowledge Messages")
         .description(" If false (Non-Auto-Acknowledge), the messages will be acknowledged by the processor after transferring the FlowFiles to success and committing "
             + "the NiFi session. Non-Auto-Acknowledge mode provides 'at-least-once' delivery semantics. "
             + "If true (Auto-Acknowledge), messages that are delivered to the AMQP Client will be auto-acknowledged by the AMQP Broker just after sending them out. "
@@ -97,8 +95,7 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         .required(true)
         .build();
     static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
-        .name("batch.size")
-        .displayName("Batch Size")
+        .name("Batch Size")
         .description("The maximum number of messages that should be processed in a single session. Once this many messages have been received (or once no more messages are readily available), "
             + "the messages received will be transferred to the 'success' relationship and the messages will be acknowledged to the AMQP Broker. Setting this value to a larger number "
             + "could result in better performance, particularly for very small messages, but can also result in more messages being duplicated upon sudden restart of NiFi.")
@@ -108,8 +105,7 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         .required(true)
         .build();
     static final PropertyDescriptor PREFETCH_COUNT = new PropertyDescriptor.Builder()
-        .name("prefetch.count")
-        .displayName("Prefetch Count")
+        .name("Prefetch Count")
         .description("The maximum number of unacknowledged messages for the consumer. If consumer has this number of unacknowledged messages, AMQP broker will "
                + "no longer send new messages until consumer acknowledges some of the messages already delivered to it."
                + "Allowed values: from 0 to 65535. 0 means no limit")
@@ -120,16 +116,14 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         .build();
 
     public static final PropertyDescriptor HEADER_FORMAT = new PropertyDescriptor.Builder()
-        .name("header.format")
-        .displayName("Header Output Format")
+        .name("Header Output Format")
         .description("Defines how to output headers from the received message")
-        .allowableValues(OutputHeaderFormat.getAllowedValues())
+        .allowableValues(OutputHeaderFormat.class)
         .defaultValue(OutputHeaderFormat.COMMA_SEPARATED_STRING)
         .required(true)
         .build();
     public static final PropertyDescriptor HEADER_KEY_PREFIX = new PropertyDescriptor.Builder()
-        .name("header.key.prefix")
-        .displayName("Header Key Prefix")
+        .name("Header Key Prefix")
         .description("Text to be prefixed to header keys as the are added to the FlowFile attributes. Processor will append '.' to the value of this property")
         .defaultValue(DEFAULT_HEADERS_KEY_PREFIX)
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -138,8 +132,7 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         .build();
 
     public static final PropertyDescriptor HEADER_SEPARATOR = new PropertyDescriptor.Builder()
-        .name("header.separator")
-        .displayName("Header Separator")
+        .name("Header Separator")
         .description("The character that is used to separate key-value for header in String. The value must be only one character."
                 )
         .addValidator(StandardValidators.SINGLE_CHAR_VALIDATOR)
@@ -148,8 +141,7 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         .required(false)
         .build();
     static final PropertyDescriptor REMOVE_CURLY_BRACES = new PropertyDescriptor.Builder()
-        .name("remove.curly.braces")
-        .displayName("Remove Curly Braces")
+        .name("Remove Curly Braces")
         .description("If true Remove Curly Braces, Curly Braces in the header will be automatically remove.")
         .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
         .defaultValue("False")
@@ -163,27 +155,36 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         .description("All FlowFiles that are received from the AMQP queue are routed to this relationship")
         .build();
 
-    private static final List<PropertyDescriptor> propertyDescriptors;
-    private static final Set<Relationship> relationships;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+          Stream.of(
+              QUEUE,
+              AUTO_ACKNOWLEDGE,
+              BATCH_SIZE,
+              PREFETCH_COUNT,
+              HEADER_FORMAT,
+              HEADER_KEY_PREFIX,
+              HEADER_SEPARATOR,
+              REMOVE_CURLY_BRACES,
+              MAX_INBOUND_MESSAGE_BODY_SIZE
+          ), getCommonPropertyDescriptors().stream()
+    ).toList();
 
-    private static final ObjectMapper objectMapper;
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
-    static {
-        List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(QUEUE);
-        properties.add(AUTO_ACKNOWLEDGE);
-        properties.add(BATCH_SIZE);
-        properties.add(PREFETCH_COUNT);
-        properties.add(HEADER_FORMAT);
-        properties.add(HEADER_KEY_PREFIX);
-        properties.add(HEADER_SEPARATOR);
-        properties.add(REMOVE_CURLY_BRACES);
-        properties.addAll(getCommonPropertyDescriptors());
-        propertyDescriptors = Collections.unmodifiableList(properties);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-        relationships = Set.of(REL_SUCCESS);
-
-        objectMapper = new ObjectMapper();
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("auto.acknowledge", AUTO_ACKNOWLEDGE.getName());
+        config.renameProperty("batch.size", BATCH_SIZE.getName());
+        config.renameProperty("prefetch.count", PREFETCH_COUNT.getName());
+        config.renameProperty("header.format", HEADER_FORMAT.getName());
+        config.renameProperty("header.key.prefix", HEADER_KEY_PREFIX.getName());
+        config.renameProperty("header.separator", HEADER_SEPARATOR.getName());
+        config.renameProperty("remove.curly.braces", REMOVE_CURLY_BRACES.getName());
     }
 
     /**
@@ -215,10 +216,7 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
 
             final BasicProperties amqpProperties = response.getProps();
             final Envelope envelope = response.getEnvelope();
-            final String headerFormat = context.getProperty(HEADER_FORMAT).getValue();
-            final String headerKeyPrefix = context.getProperty(HEADER_KEY_PREFIX).getValue();
-            final Map<String, String> attributes = buildAttributes(amqpProperties, envelope, headerFormat, headerKeyPrefix,
-                context.getProperty(REMOVE_CURLY_BRACES).asBoolean(), context.getProperty(HEADER_SEPARATOR).toString());
+            final Map<String, String> attributes = buildAttributes(amqpProperties, envelope, context);
             flowFile = session.putAllAttributes(flowFile, attributes);
 
             session.getProvenanceReporter().receive(flowFile, connection.toString() + "/" + context.getProperty(QUEUE).getValue());
@@ -232,35 +230,66 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         }
     }
 
-    private Map<String, String> buildAttributes(final BasicProperties properties, final Envelope envelope, String headersFormat, String headerAttributePrefix, boolean removeCurlyBraces,
-        String valueSeparatorForHeaders) {
+    private Map<String, String> buildAttributes(final BasicProperties properties,
+                                                final Envelope envelope,
+                                                final ProcessContext context) {
         final Map<String, String> attributes = new HashMap<>();
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_APPID_ATTRIBUTE, properties.getAppId());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_CONTENT_ENCODING_ATTRIBUTE, properties.getContentEncoding());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_CONTENT_TYPE_ATTRIBUTE, properties.getContentType());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_DELIVERY_MODE_ATTRIBUTE, properties.getDeliveryMode());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_PRIORITY_ATTRIBUTE, properties.getPriority());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_CORRELATION_ID_ATTRIBUTE, properties.getCorrelationId());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_REPLY_TO_ATTRIBUTE, properties.getReplyTo());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_EXPIRATION_ATTRIBUTE, properties.getExpiration());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_MESSAGE_ID_ATTRIBUTE, properties.getMessageId());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_TIMESTAMP_ATTRIBUTE, properties.getTimestamp() == null ? null : properties.getTimestamp().getTime());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_CONTENT_TYPE_ATTRIBUTE, properties.getType());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_USER_ID_ATTRIBUTE, properties.getUserId());
-        addAttribute(attributes, AbstractAMQPProcessor.AMQP_CLUSTER_ID_ATTRIBUTE, properties.getClusterId());
+        addAttribute(attributes, AMQP_APPID_ATTRIBUTE, properties.getAppId());
+        addAttribute(attributes, AMQP_CONTENT_ENCODING_ATTRIBUTE, properties.getContentEncoding());
+        addAttribute(attributes, AMQP_CONTENT_TYPE_ATTRIBUTE, properties.getContentType());
+        addAttribute(attributes, AMQP_DELIVERY_MODE_ATTRIBUTE, properties.getDeliveryMode());
+        addAttribute(attributes, AMQP_PRIORITY_ATTRIBUTE, properties.getPriority());
+        addAttribute(attributes, AMQP_CORRELATION_ID_ATTRIBUTE, properties.getCorrelationId());
+        addAttribute(attributes, AMQP_REPLY_TO_ATTRIBUTE, properties.getReplyTo());
+        addAttribute(attributes, AMQP_EXPIRATION_ATTRIBUTE, properties.getExpiration());
+        addAttribute(attributes, AMQP_MESSAGE_ID_ATTRIBUTE, properties.getMessageId());
+        addAttribute(attributes, AMQP_TIMESTAMP_ATTRIBUTE, properties.getTimestamp() == null ? null : properties.getTimestamp().getTime());
+        addAttribute(attributes, AMQP_CONTENT_TYPE_ATTRIBUTE, properties.getType());
+        addAttribute(attributes, AMQP_USER_ID_ATTRIBUTE, properties.getUserId());
+        addAttribute(attributes, AMQP_CLUSTER_ID_ATTRIBUTE, properties.getClusterId());
         addAttribute(attributes, AMQP_ROUTING_KEY_ATTRIBUTE, envelope.getRoutingKey());
         addAttribute(attributes, AMQP_EXCHANGE_ATTRIBUTE, envelope.getExchange());
+
         Map<String, Object> headers = properties.getHeaders();
         if (headers != null) {
-            if (OutputHeaderFormat.ATTRIBUTES.getValue().equals(headersFormat)) {
+            final OutputHeaderFormat headerFormat = context.getProperty(HEADER_FORMAT).asAllowableValue(OutputHeaderFormat.class);
+
+            addHeaderAttributes(attributes, headers, headerFormat, context);
+        }
+
+        return attributes;
+    }
+
+    private void addHeaderAttributes(final Map<String, String> attributes,
+                                     final Map<String, Object> headers,
+                                     final OutputHeaderFormat headerFormat,
+                                     final ProcessContext context) {
+        switch (headerFormat) {
+            case COMMA_SEPARATED_STRING -> {
+                final String separator = context.getProperty(HEADER_SEPARATOR).toString();
+                String headerString = convertMapToString(headers, separator);
+
+                if (!context.getProperty(REMOVE_CURLY_BRACES).asBoolean()) {
+                    headerString = "{" + headerString + "}";
+                }
+
+                addAttribute(attributes, AMQP_HEADERS_ATTRIBUTE, headerString);
+            }
+            case JSON_STRING -> {
+                String headerString = null;
+                try {
+                    headerString = convertMapToJSONString(headers);
+                } catch (JsonProcessingException e) {
+                    getLogger().warn("Header formatting as JSON failed", e);
+                }
+                addAttribute(attributes, AMQP_HEADERS_ATTRIBUTE, headerString);
+            }
+            case ATTRIBUTES -> {
+                final String headerAttributePrefix = context.getProperty(HEADER_KEY_PREFIX).getValue();
+
                 headers.forEach((key, value) -> addAttribute(attributes, String.format("%s.%s", headerAttributePrefix, key), value));
-            } else {
-                addAttribute(attributes, AbstractAMQPProcessor.AMQP_HEADERS_ATTRIBUTE,
-                    buildHeaders(properties.getHeaders(), headersFormat, removeCurlyBraces,
-                        valueSeparatorForHeaders));
             }
         }
-        return attributes;
     }
 
     /**
@@ -276,34 +305,13 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
         attributes.put(attributeName, value.toString());
     }
 
-    private String buildHeaders(Map<String, Object> headers, String headerFormat, boolean removeCurlyBraces, String valueSeparatorForHeaders) {
-        if (headers == null) {
-            return null;
-        }
-        String headerString = null;
-        if ( OutputHeaderFormat.COMMA_SEPARATED_STRING.getValue().equals(headerFormat)) {
-            headerString = convertMapToString(headers, valueSeparatorForHeaders);
-
-            if (!removeCurlyBraces) {
-                headerString = "{" + headerString + "}";
-            }
-        } else if (OutputHeaderFormat.JSON_STRING.getValue().equals(headerFormat)) {
-            try {
-                headerString = convertMapToJSONString(headers);
-            } catch (JsonProcessingException e) {
-                getLogger().warn("Header formatting as JSON failed", e);
-            }
-        }
-        return headerString;
-    }
-
     private static String convertMapToString(Map<String, Object> headers, String valueSeparatorForHeaders) {
         return headers.entrySet().stream().map(e -> (e.getValue() != null) ? e.getKey() + "=" + e.getValue() : e.getKey())
                 .collect(Collectors.joining(valueSeparatorForHeaders));
     }
 
     private static String convertMapToJSONString(Map<String, Object> headers) throws JsonProcessingException {
-        return objectMapper.writeValueAsString(headers);
+        return OBJECT_MAPPER.writeValueAsString(headers);
     }
 
     @Override
@@ -320,12 +328,12 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     public enum OutputHeaderFormat implements DescribedValue {
@@ -344,10 +352,6 @@ public class ConsumeAMQP extends AbstractAMQPProcessor<AMQPConsumer> {
             this.value = value;
             this.displayName = displayName;
             this.description = description;
-        }
-
-        public static EnumSet<OutputHeaderFormat> getAllowedValues() {
-            return EnumSet.of(COMMA_SEPARATED_STRING, JSON_STRING, ATTRIBUTES);
         }
 
         @Override

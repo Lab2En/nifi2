@@ -17,6 +17,8 @@
 package org.apache.nifi.processors.pgp;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
+import org.apache.nifi.annotation.behavior.SideEffectFree;
+import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -28,6 +30,8 @@ import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.pgp.service.api.PGPPrivateKeyService;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -38,10 +42,9 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.pgp.attributes.DecryptionStrategy;
 import org.apache.nifi.processors.pgp.exception.PGPDecryptionException;
 import org.apache.nifi.processors.pgp.exception.PGPProcessException;
-import org.apache.nifi.pgp.service.api.KeyIdentifierConverter;
 import org.apache.nifi.stream.io.StreamUtils;
-
 import org.apache.nifi.util.StringUtils;
+import org.bouncycastle.bcpg.KeyIdentifier;
 import org.bouncycastle.openpgp.PGPCompressedData;
 import org.bouncycastle.openpgp.PGPEncryptedData;
 import org.bouncycastle.openpgp.PGPEncryptedDataList;
@@ -67,7 +70,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +79,8 @@ import java.util.Set;
 /**
  * Decrypt Content using Open Pretty Good Privacy decryption methods
  */
+@SideEffectFree
+@SupportsBatching
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @Tags({"PGP", "GPG", "OpenPGP", "Encryption", "RFC 4880"})
 @CapabilityDescription("Decrypt contents of OpenPGP messages. Using the Packaged Decryption Strategy preserves OpenPGP encoding to support subsequent signature verification.")
@@ -100,8 +104,7 @@ public class DecryptContentPGP extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor DECRYPTION_STRATEGY = new PropertyDescriptor.Builder()
-            .name("decryption-strategy")
-            .displayName("Decryption Strategy")
+            .name("Decryption Strategy")
             .description("Strategy for writing files to success after decryption")
             .required(true)
             .defaultValue(DecryptionStrategy.DECRYPTED.name())
@@ -113,23 +116,24 @@ public class DecryptContentPGP extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor PASSPHRASE = new PropertyDescriptor.Builder()
-            .name("passphrase")
-            .displayName("Passphrase")
+            .name("Passphrase")
             .description("Passphrase used for decrypting data encrypted with Password-Based Encryption")
             .sensitive(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
     public static final PropertyDescriptor PRIVATE_KEY_SERVICE = new PropertyDescriptor.Builder()
-            .name("private-key-service")
-            .displayName("Private Key Service")
+            .name("Private Key Service")
             .description("PGP Private Key Service for decrypting data encrypted with Public Key Encryption")
             .identifiesControllerService(PGPPrivateKeyService.class)
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = new HashSet<>(Arrays.asList(SUCCESS, FAILURE));
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
-    private static final List<PropertyDescriptor> DESCRIPTORS = Arrays.asList(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             DECRYPTION_STRATEGY,
             PASSPHRASE,
             PRIVATE_KEY_SERVICE
@@ -156,11 +160,11 @@ public class DecryptContentPGP extends AbstractProcessor {
      */
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
+        return PROPERTY_DESCRIPTORS;
     }
 
     /**
-     * On Trigger decrypts Flow File contents using configured properties
+     * On Trigger decrypts FlowFile contents using configured properties
      *
      * @param context Process Context
      * @param session Process Session
@@ -185,6 +189,13 @@ public class DecryptContentPGP extends AbstractProcessor {
             getLogger().error("Decryption Failed {}", flowFile, e);
             session.transfer(flowFile, FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("decryption-strategy", DECRYPTION_STRATEGY.getName());
+        config.renameProperty("passphrase", PASSPHRASE.getName());
+        config.renameProperty("private-key-service", PRIVATE_KEY_SERVICE.getName());
     }
 
     /**
@@ -321,7 +332,8 @@ public class DecryptContentPGP extends AbstractProcessor {
             } else if (publicKeyData.hasNext()) {
                 while (publicKeyData.hasNext()) {
                     final PGPPublicKeyEncryptedData publicKeyEncryptedData = publicKeyData.next();
-                    final long keyId = publicKeyEncryptedData.getKeyID();
+                    final KeyIdentifier publicKeyIdentifier = publicKeyEncryptedData.getKeyIdentifier();
+                    final long keyId = publicKeyIdentifier.getKeyId();
                     final Optional<PGPPrivateKey> privateKey = privateKeyService.findPrivateKey(keyId);
                     if (privateKey.isPresent()) {
                         supportedEncryptedData = publicKeyEncryptedData;
@@ -355,8 +367,7 @@ public class DecryptContentPGP extends AbstractProcessor {
             PGPLiteralData literalData = null;
 
             for (final Object object : objectFactory) {
-                if (object instanceof PGPCompressedData) {
-                    final PGPCompressedData compressedData = (PGPCompressedData) object;
+                if (object instanceof PGPCompressedData compressedData) {
                     getLogger().debug("PGP Compressed Data Algorithm [{}] Found", compressedData.getAlgorithm());
                     final PGPObjectFactory compressedObjectFactory = new JcaPGPObjectFactory(compressedData.getDataStream());
                     literalData = getLiteralData(compressedObjectFactory);
@@ -402,7 +413,8 @@ public class DecryptContentPGP extends AbstractProcessor {
             if (privateKeyService == null) {
                 throw new PGPProcessException("PGP Public Key Encryption Found: Private Key Service not configured");
             } else {
-                final long keyId = publicKeyEncryptedData.getKeyID();
+                final KeyIdentifier publicKeyIdentifier = publicKeyEncryptedData.getKeyIdentifier();
+                final long keyId = publicKeyIdentifier.getKeyId();
                 final Optional<PGPPrivateKey> foundPrivateKey = privateKeyService.findPrivateKey(keyId);
                 if (foundPrivateKey.isPresent()) {
                     final PGPPrivateKey privateKey = foundPrivateKey.get();
@@ -419,9 +431,13 @@ public class DecryptContentPGP extends AbstractProcessor {
         }
 
         private void setSymmetricKeyAlgorithmAttributes(final int symmetricAlgorithm) {
-            final String blockCipher = PGPUtil.getSymmetricCipherName(symmetricAlgorithm);
-            attributes.put(PGPAttributeKey.SYMMETRIC_KEY_ALGORITHM_BLOCK_CIPHER, blockCipher);
-            attributes.put(PGPAttributeKey.SYMMETRIC_KEY_ALGORITHM_ID, Integer.toString(symmetricAlgorithm));
+            try {
+                final String blockCipher = PGPUtil.getSymmetricCipherName(symmetricAlgorithm);
+                attributes.put(PGPAttributeKey.SYMMETRIC_KEY_ALGORITHM_BLOCK_CIPHER, blockCipher);
+                attributes.put(PGPAttributeKey.SYMMETRIC_KEY_ALGORITHM_ID, Integer.toString(symmetricAlgorithm));
+            } catch (final IllegalArgumentException e) {
+                throw new PGPDecryptionException("PGP Symmetric Algorithm [%d] not valid".formatted(symmetricAlgorithm));
+            }
         }
 
         private boolean isVerified(final PGPEncryptedData encryptedData) {

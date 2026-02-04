@@ -16,12 +16,9 @@
  */
 package org.apache.nifi.init;
 
-import org.apache.nifi.annotation.lifecycle.OnShutdown;
 import org.apache.nifi.components.ConfigurableComponent;
 import org.apache.nifi.flowanalysis.FlowAnalysisRule;
 import org.apache.nifi.flowanalysis.FlowAnalysisRuleInitializationContext;
-import org.apache.nifi.mock.MockComponentLogger;
-import org.apache.nifi.mock.MockConfigurationContext;
 import org.apache.nifi.mock.MockFlowAnalysisRuleInitializationContext;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.nar.NarCloseable;
@@ -42,20 +39,8 @@ public class FlowAnalysisRuleInitializer implements ConfigurableComponentInitial
     public void initialize(ConfigurableComponent component) throws InitializationException {
         FlowAnalysisRule flowAnalysisRule = (FlowAnalysisRule) component;
         FlowAnalysisRuleInitializationContext context = new MockFlowAnalysisRuleInitializationContext();
-        try (NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), context.getIdentifier())) {
+        try (NarCloseable ignored = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), context.getIdentifier())) {
             flowAnalysisRule.initialize(context);
-        }
-    }
-
-    @Override
-    public void teardown(ConfigurableComponent component) {
-        FlowAnalysisRule flowAnalysisRule = (FlowAnalysisRule) component;
-        try (NarCloseable narCloseable = NarCloseable.withComponentNarLoader(extensionManager, component.getClass(), component.getIdentifier())) {
-
-            final MockConfigurationContext context = new MockConfigurationContext();
-            ReflectionUtils.quietlyInvokeMethodsWithAnnotation(OnShutdown.class, flowAnalysisRule, new MockComponentLogger(), context);
-        } finally {
-            extensionManager.removeInstanceClassLoader(component.getIdentifier());
         }
     }
 }

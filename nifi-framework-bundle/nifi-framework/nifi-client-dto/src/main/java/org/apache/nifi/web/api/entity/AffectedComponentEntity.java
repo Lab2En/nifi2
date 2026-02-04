@@ -17,10 +17,10 @@
 package org.apache.nifi.web.api.entity;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.apache.nifi.web.api.dto.AffectedComponentDTO;
 import org.apache.nifi.web.api.dto.ProcessGroupNameDTO;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
 import java.util.Objects;
 
 /**
@@ -57,9 +57,9 @@ public class AffectedComponentEntity extends ComponentEntity implements Permissi
     }
 
     @Schema(description = "The type of component referenced",
-        allowableValues = AffectedComponentDTO.COMPONENT_TYPE_PROCESSOR + "," + AffectedComponentDTO.COMPONENT_TYPE_CONTROLLER_SERVICE + ", "
-                + AffectedComponentDTO.COMPONENT_TYPE_INPUT_PORT + ", " + AffectedComponentDTO.COMPONENT_TYPE_OUTPUT_PORT + ", "
-                + AffectedComponentDTO.COMPONENT_TYPE_REMOTE_INPUT_PORT + ", " + AffectedComponentDTO.COMPONENT_TYPE_REMOTE_OUTPUT_PORT)
+        allowableValues = {AffectedComponentDTO.COMPONENT_TYPE_PROCESSOR, AffectedComponentDTO.COMPONENT_TYPE_CONTROLLER_SERVICE,
+                AffectedComponentDTO.COMPONENT_TYPE_INPUT_PORT, AffectedComponentDTO.COMPONENT_TYPE_OUTPUT_PORT,
+                AffectedComponentDTO.COMPONENT_TYPE_REMOTE_INPUT_PORT, AffectedComponentDTO.COMPONENT_TYPE_REMOTE_OUTPUT_PORT})
     public String getReferenceType() {
         return referenceType;
     }

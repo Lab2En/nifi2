@@ -74,7 +74,7 @@ public class ListFTP extends ListFileTransfer {
     private static final PropertyDescriptor PORT =
             new PropertyDescriptor.Builder().fromPropertyDescriptor(UNDEFAULTED_PORT).defaultValue("21").build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FILE_TRANSFER_LISTING_STRATEGY,
             HOSTNAME,
             PORT,
@@ -103,13 +103,18 @@ public class ListFTP extends ListFileTransfer {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
         super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        config.renameProperty(FTPTransfer.OBSOLETE_UTF8_ENCODING, FTPTransfer.UTF8_ENCODING.getName());
+        config.renameProperty(FTPTransfer.OLD_FOLLOW_SYMLINK_PROPERTY_NAME, FTPTransfer.FOLLOW_SYMLINK.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_STATE_CACHE_PROPERTY_NAME, ListedEntityTracker.TRACKING_STATE_CACHE.getName());
+        config.renameProperty(ListedEntityTracker.OLD_TRACKING_TIME_WINDOW_PROPERTY_NAME, ListedEntityTracker.TRACKING_TIME_WINDOW.getName());
+        config.renameProperty(ListedEntityTracker.OLD_INITIAL_LISTING_TARGET_PROPERTY_NAME, ListedEntityTracker.INITIAL_LISTING_TARGET.getName());
     }
 
     @Override

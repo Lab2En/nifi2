@@ -17,15 +17,12 @@
 
 package org.apache.nifi.processors.airtable;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
 import okhttp3.HttpUrl;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
 import org.apache.nifi.processor.Processor;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.apache.nifi.web.client.provider.api.WebClientServiceProvider;
@@ -33,6 +30,12 @@ import org.apache.nifi.web.client.provider.service.StandardWebClientServiceProvi
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestQueryAirtableTable {
 
@@ -75,7 +78,9 @@ public class TestQueryAirtableTable {
     @Test
     void retrievesAndWritesRecords() throws Exception {
         try (final MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().setBody(RECORDS_JSON_BODY));
+            server.enqueue(new MockResponse.Builder()
+                    .body(RECORDS_JSON_BODY)
+                    .build());
 
             server.start();
             final HttpUrl httpUrl = server.url(API_URL_PATH);
@@ -85,7 +90,7 @@ public class TestQueryAirtableTable {
 
             final List<MockFlowFile> results = runner.getFlowFilesForRelationship(QueryAirtableTable.REL_SUCCESS);
             assertEquals(1, results.size());
-            final MockFlowFile flowFile = results.get(0);
+            final MockFlowFile flowFile = results.getFirst();
             assertEquals("1", flowFile.getAttribute("record.count"));
             final String content = flowFile.getContent();
             assertEquals("[" + EXPECTED_RECORD_CONTENT + "]", content);
@@ -95,8 +100,12 @@ public class TestQueryAirtableTable {
     @Test
     void retrievesAndWritesPagedRecords() throws Exception {
         try (final MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().setBody(RECORDS_WITH_OFFSET_JSON_BODY));
-            server.enqueue(new MockResponse().setBody(RECORDS_JSON_BODY));
+            server.enqueue(new MockResponse.Builder()
+                    .body(RECORDS_WITH_OFFSET_JSON_BODY)
+                    .build());
+            server.enqueue(new MockResponse.Builder()
+                    .body(RECORDS_JSON_BODY)
+                    .build());
 
             server.start();
             final HttpUrl httpUrl = server.url(API_URL_PATH);
@@ -106,7 +115,7 @@ public class TestQueryAirtableTable {
 
             final List<MockFlowFile> results = runner.getFlowFilesForRelationship(QueryAirtableTable.REL_SUCCESS);
             assertEquals(1, results.size());
-            final MockFlowFile flowFile = results.get(0);
+            final MockFlowFile flowFile = results.getFirst();
             assertEquals("2", flowFile.getAttribute("record.count"));
             final String content = flowFile.getContent();
             assertEquals("[" + EXPECTED_RECORD_CONTENT + "," + EXPECTED_RECORD_CONTENT + "]", content);
@@ -116,8 +125,12 @@ public class TestQueryAirtableTable {
     @Test
     void retrievesAndWritesPagedRecordsInMultipleFlowFiles() throws Exception {
         try (final MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().setBody(RECORDS_WITH_OFFSET_JSON_BODY));
-            server.enqueue(new MockResponse().setBody(RECORDS_JSON_BODY));
+            server.enqueue(new MockResponse.Builder()
+                    .body(RECORDS_WITH_OFFSET_JSON_BODY)
+                    .build());
+            server.enqueue(new MockResponse.Builder()
+                    .body(RECORDS_JSON_BODY)
+                    .build());
 
             server.start();
             final HttpUrl httpUrl = server.url(API_URL_PATH);
@@ -128,7 +141,7 @@ public class TestQueryAirtableTable {
 
             final List<MockFlowFile> results = runner.getFlowFilesForRelationship(QueryAirtableTable.REL_SUCCESS);
             assertEquals(2, results.size());
-            final MockFlowFile firstFlowFile = results.get(0);
+            final MockFlowFile firstFlowFile = results.getFirst();
             assertEquals("1", firstFlowFile.getAttribute("record.count"));
             final String firstContent = firstFlowFile.getContent();
             assertEquals("[" + EXPECTED_RECORD_CONTENT + "]", firstContent);
@@ -143,7 +156,9 @@ public class TestQueryAirtableTable {
     @Test
     void doesNotWriteEmptyRecords() throws Exception {
         try (final MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().setBody("{\"records\":[]}"));
+            server.enqueue(new MockResponse.Builder()
+                    .body("{\"records\":[]}")
+                    .build());
 
             server.start();
             final HttpUrl httpUrl = server.url(API_URL_PATH);
@@ -154,5 +169,25 @@ public class TestQueryAirtableTable {
             final List<MockFlowFile> results = runner.getFlowFilesForRelationship(QueryAirtableTable.REL_SUCCESS);
             assertTrue(results.isEmpty());
         }
+    }
+
+    @Test
+    void testMigration() {
+        final Map<String, String> expected = Map.ofEntries(
+                Map.entry("api-key", QueryAirtableTable.PAT.getName()),
+                Map.entry("api-url", QueryAirtableTable.API_URL.getName()),
+                Map.entry("pat", QueryAirtableTable.PAT.getName()),
+                Map.entry("base-id", QueryAirtableTable.BASE_ID.getName()),
+                Map.entry("table-id", QueryAirtableTable.TABLE_ID.getName()),
+                Map.entry("fields", QueryAirtableTable.FIELDS.getName()),
+                Map.entry("custom-filter", QueryAirtableTable.CUSTOM_FILTER.getName()),
+                Map.entry("query-time-window-lag", QueryAirtableTable.QUERY_TIME_WINDOW_LAG.getName()),
+                Map.entry("web-client-service-provider", QueryAirtableTable.WEB_CLIENT_SERVICE_PROVIDER.getName()),
+                Map.entry("query-page-size", QueryAirtableTable.QUERY_PAGE_SIZE.getName()),
+                Map.entry("max-records-per-flowfile", QueryAirtableTable.MAX_RECORDS_PER_FLOWFILE.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+        assertEquals(expected, propertyMigrationResult.getPropertiesRenamed());
     }
 }

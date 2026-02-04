@@ -26,7 +26,9 @@ import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.util.MockPropertyConfiguration;
 import org.apache.nifi.util.NoOpProcessor;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,7 +40,15 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 
+import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_ACCESS_STRATEGY;
+import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_BRANCH_NAME;
+import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_NAME;
+import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_REFERENCE_READER;
+import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_REGISTRY;
+import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_TEXT;
+import static org.apache.nifi.schema.access.SchemaAccessUtils.SCHEMA_VERSION;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -86,29 +96,29 @@ public class TestGrokReader {
             new RecordField(RAW_FIELD, RecordFieldType.STRING.getDataType())
         ));
 
-        final Record expectedFirstRecord = new MapRecord(expectedSchema, new HashMap<String, Object>() {{
-            put(TIMESTAMP_FIELD, "1021-09-09 09:03:06");
-            put(FACILITY_FIELD, null);
-            put("priority", null);
-            put("logsource", "127.0.0.1");
-            put(PROGRAM_FIELD, "nifi");
-            put("pid", "1000");
-            put("message", " LogMessage");
-            put(STACKTRACE_FIELD, null);
-            put(RAW_FIELD, "1021-09-09 09:03:06 127.0.0.1 nifi[1000]: LogMessage");
-        }});
+        final Map<String, Object> expectedFirstMapValues = new HashMap<>();
+        expectedFirstMapValues.put(TIMESTAMP_FIELD, "1021-09-09 09:03:06");
+        expectedFirstMapValues.put(FACILITY_FIELD, null);
+        expectedFirstMapValues.put("priority", null);
+        expectedFirstMapValues.put("logsource", "127.0.0.1");
+        expectedFirstMapValues.put(PROGRAM_FIELD, "nifi");
+        expectedFirstMapValues.put("pid", "1000");
+        expectedFirstMapValues.put("message", " LogMessage");
+        expectedFirstMapValues.put(STACKTRACE_FIELD, null);
+        expectedFirstMapValues.put(RAW_FIELD, "1021-09-09 09:03:06 127.0.0.1 nifi[1000]: LogMessage");
+        final Record expectedFirstRecord = new MapRecord(expectedSchema, expectedFirstMapValues);
 
-        final Record expectedSecondRecord = new MapRecord(expectedSchema, new HashMap<String, Object>() {{
-            put(TIMESTAMP_FIELD, "October 19 19:13:16");
-            put(FACILITY_FIELD, null);
-            put("priority", null);
-            put("logsource", "127.0.0.1");
-            put(PROGRAM_FIELD, "nifi");
-            put("pid", "1000");
-            put(MESSAGE_FIELD, " LogMessage2");
-            put(STACKTRACE_FIELD, null);
-            put(RAW_FIELD, "October 19 19:13:16 127.0.0.1 nifi[1000]: LogMessage2");
-        }});
+        final Map<String, Object> expectedSecondMapValues = new HashMap<>();
+        expectedSecondMapValues.put(TIMESTAMP_FIELD, "October 19 19:13:16");
+        expectedSecondMapValues.put(FACILITY_FIELD, null);
+        expectedSecondMapValues.put("priority", null);
+        expectedSecondMapValues.put("logsource", "127.0.0.1");
+        expectedSecondMapValues.put(PROGRAM_FIELD, "nifi");
+        expectedSecondMapValues.put("pid", "1000");
+        expectedSecondMapValues.put(MESSAGE_FIELD, " LogMessage2");
+        expectedSecondMapValues.put(STACKTRACE_FIELD, null);
+        expectedSecondMapValues.put(RAW_FIELD, "October 19 19:13:16 127.0.0.1 nifi[1000]: LogMessage2");
+        final Record expectedSecondRecord = new MapRecord(expectedSchema, expectedSecondMapValues);
 
         final GrokReader grokReader = new GrokReader();
         runner.addControllerService(GrokReader.class.getSimpleName(), grokReader);
@@ -200,5 +210,31 @@ public class TestGrokReader {
         assertEquals(message, firstRecord.getValue(MESSAGE_FIELD));
 
         assertNull(recordReader.nextRecord());
+    }
+
+    @Test
+    void testMigrateProperties() {
+        final GrokReader service = new GrokReader();
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("Grok Pattern File", GrokReader.GROK_PATTERNS.getName()),
+                Map.entry("Grok Expression", GrokReader.GROK_EXPRESSION.getName()),
+                Map.entry("no-match-behavior", GrokReader.NO_MATCH_BEHAVIOR.getName()),
+                Map.entry(SchemaAccessUtils.OLD_SCHEMA_ACCESS_STRATEGY_PROPERTY_NAME, SCHEMA_ACCESS_STRATEGY.getName()),
+                Map.entry(SchemaAccessUtils.OLD_SCHEMA_REGISTRY_PROPERTY_NAME, SCHEMA_REGISTRY.getName()),
+                Map.entry(SchemaAccessUtils.OLD_SCHEMA_NAME_PROPERTY_NAME, SCHEMA_NAME.getName()),
+                Map.entry(SchemaAccessUtils.OLD_SCHEMA_BRANCH_NAME_PROPERTY_NAME, SCHEMA_BRANCH_NAME.getName()),
+                Map.entry(SchemaAccessUtils.OLD_SCHEMA_VERSION_PROPERTY_NAME, SCHEMA_VERSION.getName()),
+                Map.entry(SchemaAccessUtils.OLD_SCHEMA_TEXT_PROPERTY_NAME, SCHEMA_TEXT.getName()),
+                Map.entry(SchemaAccessUtils.OLD_SCHEMA_REFERENCE_READER_PROPERTY_NAME, SCHEMA_REFERENCE_READER.getName())
+        );
+
+        final Map<String, String> propertyValues = Map.of();
+        final MockPropertyConfiguration configuration = new MockPropertyConfiguration(propertyValues);
+        service.migrateProperties(configuration);
+
+        final PropertyMigrationResult result = configuration.toPropertyMigrationResult();
+        final Map<String, String> propertiesRenamed = result.getPropertiesRenamed();
+
+        assertEquals(expectedRenamed, propertiesRenamed);
     }
 }

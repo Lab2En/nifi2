@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Output } from '@angular/core';
+import { Component, EventEmitter, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import {
     FlowComparisonEntity,
@@ -24,30 +24,20 @@ import {
     VersionControlInformationEntity
 } from '../../../../../state/flow';
 import { MatButton } from '@angular/material/button';
-import { MatFormFieldModule, MatLabel } from '@angular/material/form-field';
-import { MatInput } from '@angular/material/input';
-import { MatOption } from '@angular/material/autocomplete';
+import { MatFormFieldModule } from '@angular/material/form-field';
 import { ReactiveFormsModule } from '@angular/forms';
 import { LocalChangesTable } from './local-changes-table/local-changes-table';
 import { CloseOnEscapeDialog } from '@nifi/shared';
 
 @Component({
     selector: 'local-changes-dialog',
-    standalone: true,
-    imports: [
-        MatDialogModule,
-        MatButton,
-        MatFormFieldModule,
-        MatInput,
-        MatLabel,
-        MatOption,
-        ReactiveFormsModule,
-        LocalChangesTable
-    ],
+    imports: [MatDialogModule, MatButton, MatFormFieldModule, ReactiveFormsModule, LocalChangesTable],
     templateUrl: './local-changes-dialog.html',
     styleUrl: './local-changes-dialog.scss'
 })
 export class LocalChangesDialog extends CloseOnEscapeDialog {
+    private dialogRequest = inject<LocalChangesDialogRequest>(MAT_DIALOG_DATA);
+
     mode: 'SHOW' | 'REVERT' = 'SHOW';
     versionControlInformation: VersionControlInformationEntity;
     localModifications: FlowComparisonEntity;
@@ -58,8 +48,10 @@ export class LocalChangesDialog extends CloseOnEscapeDialog {
     revert: EventEmitter<LocalChangesDialogRequest> = new EventEmitter<LocalChangesDialogRequest>();
     @Output() goToChange: EventEmitter<NavigateToComponentRequest> = new EventEmitter<NavigateToComponentRequest>();
 
-    constructor(@Inject(MAT_DIALOG_DATA) private dialogRequest: LocalChangesDialogRequest) {
+    constructor() {
         super();
+        const dialogRequest = this.dialogRequest;
+
         this.mode = dialogRequest.mode;
         this.versionControlInformation = dialogRequest.versionControlInformation;
         this.localModifications = dialogRequest.localModifications;

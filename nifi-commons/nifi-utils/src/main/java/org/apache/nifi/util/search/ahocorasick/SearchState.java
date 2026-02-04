@@ -16,12 +16,12 @@
  */
 package org.apache.nifi.util.search.ahocorasick;
 
+import org.apache.nifi.util.search.SearchTerm;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import org.apache.nifi.util.search.SearchTerm;
 
 public class SearchState<T> {
 
@@ -52,7 +52,7 @@ public class SearchState<T> {
     }
 
     void addResult(final SearchTerm matchingTerm) {
-        final List<Long> indexes = (resultMap.containsKey(matchingTerm)) ? resultMap.get(matchingTerm) : new ArrayList<Long>(5);
+        final List<Long> indexes = (resultMap.containsKey(matchingTerm)) ? resultMap.get(matchingTerm) : new ArrayList<>(5);
         indexes.add(bytesRead);
         resultMap.put(matchingTerm, indexes);
     }

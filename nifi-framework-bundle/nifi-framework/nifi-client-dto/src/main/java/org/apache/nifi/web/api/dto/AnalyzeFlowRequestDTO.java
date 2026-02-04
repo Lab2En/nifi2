@@ -17,7 +17,6 @@
 package org.apache.nifi.web.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 /**
@@ -25,8 +24,6 @@ import jakarta.xml.bind.annotation.XmlType;
  */
 @XmlType(name = "analyzeFlowRequest")
 public class AnalyzeFlowRequestDTO extends AsynchronousRequestDTO<AnalyzeFlowRequestUpdateStepDTO> {
-    public AnalyzeFlowRequestDTO() {
-    }
 
     private String processGroupId;
 

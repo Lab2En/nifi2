@@ -24,18 +24,18 @@ import org.apache.nifi.security.ssl.StandardSslContextBuilder;
 import org.apache.nifi.security.ssl.TrustManagerBuilder;
 import org.apache.nifi.util.NiFiProperties;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509ExtendedTrustManager;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.Optional;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.X509ExtendedKeyManager;
+import javax.net.ssl.X509ExtendedTrustManager;
 
 import static org.apache.nifi.util.NiFiProperties.SECURITY_KEYSTORE;
 import static org.apache.nifi.util.NiFiProperties.SECURITY_KEYSTORE_CERTIFICATE;
-import static org.apache.nifi.util.NiFiProperties.SECURITY_KEYSTORE_PRIVATE_KEY;
 import static org.apache.nifi.util.NiFiProperties.SECURITY_KEYSTORE_PASSWD;
+import static org.apache.nifi.util.NiFiProperties.SECURITY_KEYSTORE_PRIVATE_KEY;
 import static org.apache.nifi.util.NiFiProperties.SECURITY_KEYSTORE_TYPE;
 import static org.apache.nifi.util.NiFiProperties.SECURITY_KEY_PASSWD;
 import static org.apache.nifi.util.NiFiProperties.SECURITY_TRUSTSTORE;
@@ -150,7 +150,7 @@ public class FrameworkSslContextProvider {
     }
 
     private boolean isPemStoreType(final String storeTypePropertyName) {
-        final String storeType = properties.getProperty(storeTypePropertyName);
+        final String storeType = properties.getProperty(storeTypePropertyName, EMPTY);
         return PEM_STORE_TYPE.contentEquals(storeType);
     }
 }

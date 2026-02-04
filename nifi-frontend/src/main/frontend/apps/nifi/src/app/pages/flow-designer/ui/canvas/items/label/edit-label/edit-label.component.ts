@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { CanvasState } from '../../../../../state';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -23,8 +23,6 @@ import { Store } from '@ngrx/store';
 import { updateComponent } from '../../../../../state/flow/flow.actions';
 import { Client } from '../../../../../../../service/client.service';
 import { EditComponentDialogRequest } from '../../../../../state/flow';
-import { SelectOption } from 'libs/shared/src';
-import { ErrorBanner } from '../../../../../../../ui/common/error-banner/error-banner.component';
 import { MatInputModule } from '@angular/material/input';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatButtonModule } from '@angular/material/button';
@@ -34,17 +32,15 @@ import { NifiSpinnerDirective } from '../../../../../../../ui/common/spinner/nif
 import { ClusterConnectionService } from '../../../../../../../service/cluster-connection.service';
 import { MatOption } from '@angular/material/autocomplete';
 import { MatSelect } from '@angular/material/select';
-import { NifiTooltipDirective, CloseOnEscapeDialog } from '@nifi/shared';
+import { CloseOnEscapeDialog, SelectOption } from '@nifi/shared';
 import { ErrorContextKey } from '../../../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../../../ui/common/context-error-banner/context-error-banner.component';
 
 @Component({
     selector: 'edit-label',
-    standalone: true,
     templateUrl: './edit-label.component.html',
     imports: [
         ReactiveFormsModule,
-        ErrorBanner,
         MatDialogModule,
         MatInputModule,
         MatCheckboxModule,
@@ -53,12 +49,17 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
         NifiSpinnerDirective,
         MatOption,
         MatSelect,
-        NifiTooltipDirective,
         ContextErrorBanner
     ],
     styleUrls: ['./edit-label.component.scss']
 })
 export class EditLabel extends CloseOnEscapeDialog {
+    request = inject<EditComponentDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private store = inject<Store<CanvasState>>(Store);
+    private client = inject(Client);
+    private clusterConnectionService = inject(ClusterConnectionService);
+
     saving$ = this.store.select(selectSaving);
 
     editLabelForm: FormGroup;
@@ -71,14 +72,10 @@ export class EditLabel extends CloseOnEscapeDialog {
         };
     });
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: EditComponentDialogRequest,
-        private formBuilder: FormBuilder,
-        private store: Store<CanvasState>,
-        private client: Client,
-        private clusterConnectionService: ClusterConnectionService
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         this.readonly = !request.entity.permissions.canWrite;
 
         let fontSize = this.fontSizeOptions[0].value;

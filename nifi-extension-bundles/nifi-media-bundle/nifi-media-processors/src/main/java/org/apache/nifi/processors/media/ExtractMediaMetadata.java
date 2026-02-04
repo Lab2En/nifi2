@@ -16,18 +16,6 @@
  */
 package org.apache.nifi.processors.media;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Pattern;
-
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
@@ -43,18 +31,26 @@ import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
-
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.ocr.TesseractOCRConfig;
 import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @Tags({"media", "file", "format", "metadata", "audio", "video", "image", "document", "pdf"})
@@ -120,37 +116,30 @@ public class ExtractMediaMetadata extends AbstractProcessor {
             .description("Any FlowFile that fails to have media metadata extracted will be routed to failure")
             .build();
 
-    private Set<Relationship> relationships;
-    private List<PropertyDescriptor> properties;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        MAX_NUMBER_OF_ATTRIBUTES,
+        MAX_ATTRIBUTE_LENGTH,
+        METADATA_KEY_FILTER,
+        METADATA_KEY_PREFIX
+    );
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            SUCCESS,
+            FAILURE
+    );
 
     private final AtomicReference<Pattern> metadataKeyFilterRef = new AtomicReference<>();
 
     private volatile AutoDetectParser autoDetectParser;
 
     @Override
-    protected void init(final ProcessorInitializationContext context) {
-
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(MAX_NUMBER_OF_ATTRIBUTES);
-        properties.add(MAX_ATTRIBUTE_LENGTH);
-        properties.add(METADATA_KEY_FILTER);
-        properties.add(METADATA_KEY_PREFIX);
-        this.properties = Collections.unmodifiableList(properties);
-
-        final Set<Relationship> relationships = new HashSet<>();
-        relationships.add(SUCCESS);
-        relationships.add(FAILURE);
-        this.relationships = Collections.unmodifiableSet(relationships);
-    }
-
-    @Override
     public Set<Relationship> getRelationships() {
-        return this.relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return this.properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @SuppressWarnings("unused")
@@ -180,15 +169,12 @@ public class ExtractMediaMetadata extends AbstractProcessor {
         final String prefix = context.getProperty(METADATA_KEY_PREFIX).evaluateAttributeExpressions(flowFile).getValue();
 
         try {
-            session.read(flowFile, new InputStreamCallback() {
-                @Override
-                public void process(InputStream in) throws IOException {
-                    try {
-                        Map<String, String> results = tika_parse(in, prefix, maxAttribCount, maxAttribLength);
-                        value.set(results);
-                    } catch (SAXException | TikaException e) {
-                        throw new IOException(e);
-                    }
+            session.read(flowFile, in -> {
+                try {
+                    Map<String, String> results = tika_parse(in, prefix, maxAttribCount, maxAttribLength);
+                    value.set(results);
+                } catch (SAXException | TikaException e) {
+                    throw new IOException(e);
                 }
             });
 
@@ -211,8 +197,16 @@ public class ExtractMediaMetadata extends AbstractProcessor {
                                            Integer maxAttribLen) throws IOException, TikaException, SAXException {
         final Metadata metadata = new Metadata();
         final TikaInputStream tikaInputStream = TikaInputStream.get(sourceStream);
+
+        // Configure ParseContext to disable OCR - metadata extraction does not require OCR
+        // https://issues.apache.org/jira/browse/NIFI-15098
+        final TesseractOCRConfig ocrConfig = new TesseractOCRConfig();
+        ocrConfig.setSkipOcr(true);
+        final ParseContext parseContext = new ParseContext();
+        parseContext.set(TesseractOCRConfig.class, ocrConfig);
+
         try {
-            autoDetectParser.parse(tikaInputStream, new DefaultHandler(), metadata);
+            autoDetectParser.parse(tikaInputStream, new DefaultHandler(), metadata, parseContext);
         } finally {
             tikaInputStream.close();
         }

@@ -15,10 +15,9 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialogModule } from '@angular/material/dialog';
-import { RouterLink } from '@angular/router';
 import { NgClass } from '@angular/common';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatSortModule, Sort } from '@angular/material/sort';
@@ -33,7 +32,6 @@ import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 
 @Component({
     selector: 'flow-analysis-rule-table',
-    standalone: true,
     templateUrl: './flow-analysis-rule-table.component.html',
     imports: [
         MatButtonModule,
@@ -42,7 +40,6 @@ import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
         MatSortModule,
         NgClass,
         NifiTooltipDirective,
-        RouterLink,
         MatMenu,
         MatMenuItem,
         MatMenuTrigger
@@ -50,6 +47,8 @@ import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
     styleUrls: ['./flow-analysis-rule-table.component.scss']
 })
 export class FlowAnalysisRuleTable {
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() set flowAnalysisRules(flowAnalysisRuleEntities: FlowAnalysisRuleEntity[]) {
         this.dataSource.data = this.sortFlowAnalysisRules(flowAnalysisRuleEntities, this.sort);
     }
@@ -70,6 +69,8 @@ export class FlowAnalysisRuleTable {
         new EventEmitter<FlowAnalysisRuleEntity>();
     @Output() changeFlowAnalysisRuleVersion: EventEmitter<FlowAnalysisRuleEntity> =
         new EventEmitter<FlowAnalysisRuleEntity>();
+    @Output() clearBulletinsFlowAnalysisRule: EventEmitter<FlowAnalysisRuleEntity> =
+        new EventEmitter<FlowAnalysisRuleEntity>();
 
     sort: Sort = {
         active: 'name',
@@ -82,8 +83,6 @@ export class FlowAnalysisRuleTable {
 
     displayedColumns: string[] = ['moreDetails', 'name', 'type', 'bundle', 'state', 'actions'];
     dataSource: MatTableDataSource<FlowAnalysisRuleEntity> = new MatTableDataSource<FlowAnalysisRuleEntity>();
-
-    constructor(private nifiCommon: NiFiCommon) {}
 
     updateSort(sort: Sort): void {
         this.sort = sort;
@@ -157,6 +156,10 @@ export class FlowAnalysisRuleTable {
         return {
             bulletins: entity.bulletins
         };
+    }
+
+    getBulletinSeverityClass(entity: FlowAnalysisRuleEntity): string {
+        return this.nifiCommon.getBulletinSeverityClass(entity.bulletins);
     }
 
     getStateIcon(entity: FlowAnalysisRuleEntity): string {
@@ -266,6 +269,14 @@ export class FlowAnalysisRuleTable {
 
     viewStateClicked(entity: FlowAnalysisRuleEntity): void {
         this.viewStateFlowAnalysisRule.next(entity);
+    }
+
+    canClearBulletins(entity: FlowAnalysisRuleEntity): boolean {
+        return this.canWrite(entity) && !this.nifiCommon.isEmpty(entity.bulletins);
+    }
+
+    clearBulletinsClicked(entity: FlowAnalysisRuleEntity): void {
+        this.clearBulletinsFlowAnalysisRule.next(entity);
     }
 
     select(entity: FlowAnalysisRuleEntity): void {

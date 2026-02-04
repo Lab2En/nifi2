@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { ComponentType, NiFiCommon, NifiTooltipDirective, TextTip } from '@nifi/shared';
 import {
@@ -28,8 +28,8 @@ import {
 import { MatTableModule } from '@angular/material/table';
 import { AllowableValue, DocumentedType } from '../../../../../state/shared';
 import { Observable } from 'rxjs';
-import { AsyncPipe, NgTemplateOutlet } from '@angular/common';
-import { MatAccordion, MatExpansionModule } from '@angular/material/expansion';
+import { AsyncPipe } from '@angular/common';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { NiFiState } from '../../../../../state';
 import { Store } from '@ngrx/store';
 import { selectServiceImplementations } from '../../../../../state/extension-types/extension-types.selectors';
@@ -37,21 +37,14 @@ import { RouterLink } from '@angular/router';
 
 @Component({
     selector: 'property-definition',
-    standalone: true,
-    imports: [
-        NgxSkeletonLoaderModule,
-        MatTableModule,
-        NifiTooltipDirective,
-        AsyncPipe,
-        MatAccordion,
-        MatExpansionModule,
-        NgTemplateOutlet,
-        RouterLink
-    ],
+    imports: [NgxSkeletonLoaderModule, MatTableModule, NifiTooltipDirective, AsyncPipe, MatExpansionModule, RouterLink],
     templateUrl: './property-definition.component.html',
     styleUrl: './property-definition.component.scss'
 })
 export class PropertyDefinitionComponent {
+    private store = inject<Store<NiFiState>>(Store);
+    private nifiCommon = inject(NiFiCommon);
+
     @Input() set propertyDescriptor(propertyDescriptor: PropertyDescriptor) {
         this.descriptor = propertyDescriptor;
 
@@ -72,11 +65,6 @@ export class PropertyDefinitionComponent {
 
     descriptor: PropertyDescriptor | null = null;
     serviceImplementations$: Observable<DocumentedType[]> | null = null;
-
-    constructor(
-        private store: Store<NiFiState>,
-        private nifiCommon: NiFiCommon
-    ) {}
 
     formatDefaultValue(descriptor: PropertyDescriptor): string | undefined {
         if (descriptor.allowableValues) {

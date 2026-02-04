@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { initialClusterState } from '../../state/cluster-listing/cluster-listing.reducer';
 import {
@@ -41,19 +41,18 @@ import { selectCurrentUser } from '../../../../state/current-user/current-user.s
 
 @Component({
     selector: 'cluster-node-listing',
-    standalone: true,
     imports: [NgxSkeletonLoaderModule, ClusterNodeTable],
     templateUrl: './cluster-node-listing.component.html',
     styleUrl: './cluster-node-listing.component.scss'
 })
 export class ClusterNodeListing {
+    private store = inject<Store<NiFiState>>(Store);
+
     loadedTimestamp = this.store.selectSignal(selectClusterListingLoadedTimestamp);
     listingStatus = this.store.selectSignal(selectClusterListingStatus);
     nodes = this.store.selectSignal(selectClusterListingNodes);
     selectedClusterNodeId = this.store.selectSignal(selectClusterNodeIdFromRoute);
     currentUser = this.store.selectSignal(selectCurrentUser);
-
-    constructor(private store: Store<NiFiState>) {}
 
     isInitialLoading(loadedTimestamp: string): boolean {
         return loadedTimestamp == initialClusterState.loadedTimestamp;

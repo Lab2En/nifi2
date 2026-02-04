@@ -52,7 +52,8 @@ public final class NarClassLoaders {
     private volatile InitContext initContext;
     private static final Logger logger = LoggerFactory.getLogger(NarClassLoaders.class);
 
-    private final static class InitContext {
+    @SuppressWarnings("PMD.UnusedPrivateField")
+    private static final class InitContext {
 
         private final File frameworkWorkingDir;
         private final File extensionWorkingDir;
@@ -101,13 +102,13 @@ public final class NarClassLoaders {
     }
 
     public void init(File frameworkWorkingDir, File extensionsWorkingDir) throws IOException, ClassNotFoundException {
-        init(frameworkWorkingDir, extensionsWorkingDir, NarClassLoaders.FRAMEWORK_NAR_ID);
+        init(frameworkWorkingDir, extensionsWorkingDir, FRAMEWORK_NAR_ID);
     }
 
     // Default to NiFi's framework NAR ID
     public void init(final ClassLoader rootClassloader,
                      final File frameworkWorkingDir, final File extensionsWorkingDir, final boolean logDetails) throws IOException, ClassNotFoundException {
-        init(rootClassloader, frameworkWorkingDir, extensionsWorkingDir, NarClassLoaders.FRAMEWORK_NAR_ID, logDetails);
+        init(rootClassloader, frameworkWorkingDir, extensionsWorkingDir, FRAMEWORK_NAR_ID, logDetails);
     }
 
     /**
@@ -179,7 +180,7 @@ public final class NarClassLoaders {
             for (final File unpackedNar : narWorkingDirContents) {
                 BundleDetails narDetail = null;
                 try {
-                     narDetail = getNarDetails(unpackedNar);
+                    narDetail = getNarDetails(unpackedNar);
                 } catch (IllegalStateException e) {
                     logger.warn("Unable to load NAR {} due to {}, skipping...", unpackedNar.getAbsolutePath(), e.getMessage());
                     continue;
@@ -284,7 +285,7 @@ public final class NarClassLoaders {
             } while (narCount != narDetails.size());
 
             // Ensure exactly one NiFiServer implementation, otherwise report none or multiples found
-            if (niFiServers.size() == 0) {
+            if (niFiServers.isEmpty()) {
                 serverInstance = null;
             } else if (niFiServers.size() > 1) {
                 String sb = "Expected exactly one implementation of NiFiServer but found " + niFiServers.size() + ": " +
@@ -573,7 +574,7 @@ public final class NarClassLoaders {
         }
 
         try {
-           return initContext.bundles.get(extensionWorkingDirectory.getCanonicalPath());
+            return initContext.bundles.get(extensionWorkingDirectory.getCanonicalPath());
         } catch (final IOException ioe) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Unable to get extension classloader for working directory '{}'", extensionWorkingDirectory);

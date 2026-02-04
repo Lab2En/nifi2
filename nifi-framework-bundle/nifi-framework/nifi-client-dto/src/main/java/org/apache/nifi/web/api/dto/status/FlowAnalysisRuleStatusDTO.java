@@ -18,7 +18,6 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 /**
@@ -29,7 +28,7 @@ public class FlowAnalysisRuleStatusDTO extends ComponentStatusDTO {
 
     @Schema(description = "The run status of this FlowAnalysisRule",
         accessMode = Schema.AccessMode.READ_ONLY,
-        allowableValues = "ENABLED, DISABLED")
+        allowableValues = {"ENABLED", "DISABLED"})
     @Override
     public String getRunStatus() {
         return super.getRunStatus();

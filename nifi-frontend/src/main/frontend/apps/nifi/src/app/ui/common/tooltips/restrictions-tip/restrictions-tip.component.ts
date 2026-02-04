@@ -15,22 +15,21 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { RestrictionsTipInput } from '../../../../state/shared';
 
 import { NiFiCommon } from '@nifi/shared';
 
 @Component({
     selector: 'restrictions-tip',
-    standalone: true,
     templateUrl: './restrictions-tip.component.html',
     imports: [],
     styleUrls: ['./restrictions-tip.component.scss']
 })
 export class RestrictionsTip {
-    @Input() data: RestrictionsTipInput | undefined;
+    private nifiCommon = inject(NiFiCommon);
 
-    constructor(private nifiCommon: NiFiCommon) {}
+    @Input() data: RestrictionsTipInput | undefined;
 
     getUsageRestriction(): string {
         if (this.data) {

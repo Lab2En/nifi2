@@ -25,9 +25,9 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
-import org.apache.nifi.controller.ControllerServiceInitializationContext;
 import org.apache.nifi.dbcp.DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.record.sink.RecordSinkService;
 import org.apache.nifi.serialization.WriteResult;
@@ -48,7 +48,6 @@ import java.sql.SQLDataException;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -76,16 +75,14 @@ public class DatabaseRecordSink extends AbstractControllerService implements Rec
             "A flow will fail if any column in the database that does not have a field in the document.  An error will be logged");
 
     static final PropertyDescriptor DBCP_SERVICE = new PropertyDescriptor.Builder()
-            .name("db-record-sink-dcbp-service")
-            .displayName("Database Connection Pooling Service")
+            .name("Database Connection Pooling Service")
             .description("The Controller Service that is used to obtain a connection to the database for sending records.")
             .required(true)
             .identifiesControllerService(DBCPService.class)
             .build();
 
     static final PropertyDescriptor CATALOG_NAME = new PropertyDescriptor.Builder()
-            .name("db-record-sink-catalog-name")
-            .displayName("Catalog Name")
+            .name("Catalog Name")
             .description("The name of the catalog that the statement should update. This may not apply for the database that you are updating. In this case, leave the field empty")
             .required(false)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -93,8 +90,7 @@ public class DatabaseRecordSink extends AbstractControllerService implements Rec
             .build();
 
     static final PropertyDescriptor SCHEMA_NAME = new PropertyDescriptor.Builder()
-            .name("db-record-sink-schema-name")
-            .displayName("Schema Name")
+            .name("Schema Name")
             .description("The name of the schema that the table belongs to. This may not apply for the database that you are updating. In this case, leave the field empty")
             .required(false)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -102,8 +98,7 @@ public class DatabaseRecordSink extends AbstractControllerService implements Rec
             .build();
 
     static final PropertyDescriptor TABLE_NAME = new PropertyDescriptor.Builder()
-            .name("db-record-sink-table-name")
-            .displayName("Table Name")
+            .name("Table Name")
             .description("The name of the table that the statement should affect.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -111,8 +106,7 @@ public class DatabaseRecordSink extends AbstractControllerService implements Rec
             .build();
 
     static final PropertyDescriptor TRANSLATE_FIELD_NAMES = new PropertyDescriptor.Builder()
-            .name("db-record-sink-translate-field-names")
-            .displayName("Translate Field Names")
+            .name("Translate Field Names")
             .description("If true, the Processor will attempt to translate field names into the appropriate column names for the table specified. "
                     + "If false, the field names must match the column names exactly, or the column will not be updated")
             .allowableValues("true", "false")
@@ -120,40 +114,35 @@ public class DatabaseRecordSink extends AbstractControllerService implements Rec
             .build();
 
     static final PropertyDescriptor UNMATCHED_FIELD_BEHAVIOR = new PropertyDescriptor.Builder()
-            .name("db-record-sink-unmatched-field-behavior")
-            .displayName("Unmatched Field Behavior")
+            .name("Unmatched Field Behavior")
             .description("If an incoming record has a field that does not map to any of the database table's columns, this property specifies how to handle the situation")
             .allowableValues(IGNORE_UNMATCHED_FIELD, FAIL_UNMATCHED_FIELD)
             .defaultValue(IGNORE_UNMATCHED_FIELD.getValue())
             .build();
 
     static final PropertyDescriptor UNMATCHED_COLUMN_BEHAVIOR = new PropertyDescriptor.Builder()
-            .name("db-record-sink-unmatched-column-behavior")
-            .displayName("Unmatched Column Behavior")
+            .name("Unmatched Column Behavior")
             .description("If an incoming record does not have a field mapping for all of the database table's columns, this property specifies how to handle the situation")
             .allowableValues(IGNORE_UNMATCHED_COLUMN, WARNING_UNMATCHED_COLUMN, FAIL_UNMATCHED_COLUMN)
             .defaultValue(FAIL_UNMATCHED_COLUMN.getValue())
             .build();
 
     static final PropertyDescriptor QUOTED_IDENTIFIERS = new PropertyDescriptor.Builder()
-            .name("db-record-sink-quoted-identifiers")
-            .displayName("Quote Column Identifiers")
+            .name("Quote Column Identifiers")
             .description("Enabling this option will cause all column names to be quoted, allowing you to use reserved words as column names in your tables.")
             .allowableValues("true", "false")
             .defaultValue("false")
             .build();
 
     static final PropertyDescriptor QUOTED_TABLE_IDENTIFIER = new PropertyDescriptor.Builder()
-            .name("db-record-sink-quoted-table-identifiers")
-            .displayName("Quote Table Identifiers")
+            .name("Quote Table Identifiers")
             .description("Enabling this option will cause the table name to be quoted to support the use of special characters in the table name.")
             .allowableValues("true", "false")
             .defaultValue("false")
             .build();
 
     static final PropertyDescriptor QUERY_TIMEOUT = new PropertyDescriptor.Builder()
-            .name("db-record-sink-query-timeout")
-            .displayName("Max Wait Time")
+            .name("Max Wait Time")
             .description("The maximum amount of time allowed for a running SQL statement "
                     + ", zero means there is no limit. Max time less than 1 second will be equal to zero.")
             .defaultValue("0 seconds")
@@ -162,31 +151,25 @@ public class DatabaseRecordSink extends AbstractControllerService implements Rec
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
-    private List<PropertyDescriptor> properties;
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+        DBCP_SERVICE,
+        CATALOG_NAME,
+        SCHEMA_NAME,
+        TABLE_NAME,
+        TRANSLATE_FIELD_NAMES,
+        UNMATCHED_FIELD_BEHAVIOR,
+        UNMATCHED_COLUMN_BEHAVIOR,
+        QUOTED_IDENTIFIERS,
+        QUOTED_TABLE_IDENTIFIER,
+        QUERY_TIMEOUT
+    );
+
     private volatile ConfigurationContext context;
     private volatile DBCPService dbcpService;
 
     @Override
-    protected void init(final ControllerServiceInitializationContext context) {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(DBCP_SERVICE);
-        properties.add(CATALOG_NAME);
-        properties.add(SCHEMA_NAME);
-        properties.add(TABLE_NAME);
-        properties.add(TRANSLATE_FIELD_NAMES);
-        properties.add(UNMATCHED_FIELD_BEHAVIOR);
-        properties.add(UNMATCHED_COLUMN_BEHAVIOR);
-        properties.add(QUOTED_IDENTIFIERS);
-        properties.add(QUOTED_TABLE_IDENTIFIER);
-
-        properties.add(QUERY_TIMEOUT);
-
-        this.properties = Collections.unmodifiableList(properties);
-    }
-
-    @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -307,6 +290,21 @@ public class DatabaseRecordSink extends AbstractControllerService implements Rec
             }
         }
         return writeResult;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        RecordSinkService.super.migrateProperties(config);
+        config.renameProperty("db-record-sink-dcbp-service", DBCP_SERVICE.getName());
+        config.renameProperty("db-record-sink-catalog-name", CATALOG_NAME.getName());
+        config.renameProperty("db-record-sink-schema-name", SCHEMA_NAME.getName());
+        config.renameProperty("db-record-sink-table-name", TABLE_NAME.getName());
+        config.renameProperty("db-record-sink-translate-field-names", TRANSLATE_FIELD_NAMES.getName());
+        config.renameProperty("db-record-sink-unmatched-field-behavior", UNMATCHED_FIELD_BEHAVIOR.getName());
+        config.renameProperty("db-record-sink-unmatched-column-behavior", UNMATCHED_COLUMN_BEHAVIOR.getName());
+        config.renameProperty("db-record-sink-quoted-identifiers", QUOTED_IDENTIFIERS.getName());
+        config.renameProperty("db-record-sink-quoted-table-identifiers", QUOTED_TABLE_IDENTIFIER.getName());
+        config.renameProperty("db-record-sink-query-timeout", QUERY_TIMEOUT.getName());
     }
 
     private static String normalizeColumnName(final String colName, final boolean translateColumnNames) {

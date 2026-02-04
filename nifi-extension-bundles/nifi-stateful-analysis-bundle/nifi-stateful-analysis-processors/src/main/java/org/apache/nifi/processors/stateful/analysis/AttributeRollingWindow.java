@@ -31,6 +31,7 @@ import org.apache.nifi.components.state.StateManager;
 import org.apache.nifi.components.state.StateMap;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -39,8 +40,6 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -82,39 +81,6 @@ public class AttributeRollingWindow extends AbstractProcessor {
     public static final String COUNT_APPEND_KEY = "_count";
     public static final int COUNT_APPEND_KEY_LENGTH = 6;
 
-    static final PropertyDescriptor VALUE_TO_TRACK = new PropertyDescriptor.Builder()
-            .displayName("Value to track")
-            .name("Value to track")
-            .description("The expression on which to evaluate each FlowFile. The result of the expression will be added to the rolling window value.")
-            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
-            .required(true)
-            .build();
-    static final PropertyDescriptor TIME_WINDOW = new PropertyDescriptor.Builder()
-            .displayName("Time window")
-            .name("Time window")
-            .description("The time window on which to calculate the rolling window.")
-            .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
-            .required(true)
-            .build();
-    static final PropertyDescriptor SUB_WINDOW_LENGTH = new PropertyDescriptor.Builder()
-            .displayName("Sub-window length")
-            .name("Sub-window length")
-            .description("When set, values will be batched into sub-windows of the set length. This allows for much larger length total windows to be set but sacrifices some precision. If this is " +
-                    "not set (or is 0) then each value is stored in state with the timestamp of when it was received. After the length of time stated in " + TIME_WINDOW.getDisplayName() +
-                    " elaspes the value will be removed. If this is set, values will be batched together every X amount of time (where X is the time period set for this property) and removed " +
-                    "all at once.")
-            .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
-            .required(false)
-            .build();
-
-
-    private final Set<Relationship> relationships;
-    private final List<PropertyDescriptor> properties;
-    private Long timeWindow;
-    private Long microBatchTime;
-    private static final Scope SCOPE = Scope.LOCAL;
-
     // relationships
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .description("All FlowFiles are successfully processed are routed here")
@@ -129,28 +95,53 @@ public class AttributeRollingWindow extends AbstractProcessor {
             .description("When a FlowFile fails for a reason other than failing to set state it is routed here.")
             .build();
 
-    {
-        final Set<Relationship> relationshipSet = new HashSet<>();
-        relationshipSet.add(REL_SUCCESS);
-        relationshipSet.add(REL_FAILED_SET_STATE);
-        relationshipSet.add(REL_FAILURE);
-        relationships = Collections.unmodifiableSet(relationshipSet);
+    static final PropertyDescriptor VALUE_TO_TRACK = new PropertyDescriptor.Builder()
+            .name("Value to Track")
+            .description("The expression on which to evaluate each FlowFile. The result of the expression will be added to the rolling window value.")
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+            .addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+            .required(true)
+            .build();
+    static final PropertyDescriptor TIME_WINDOW = new PropertyDescriptor.Builder()
+            .name("Time Window")
+            .description("The time window on which to calculate the rolling window.")
+            .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
+            .required(true)
+            .build();
+    static final PropertyDescriptor SUB_WINDOW_LENGTH = new PropertyDescriptor.Builder()
+            .name("Subwindow Length")
+            .description("When set, values will be batched into sub-windows of the set length. This allows for much larger length total windows to be set but sacrifices some precision. If this is " +
+                    "not set (or is 0) then each value is stored in state with the timestamp of when it was received. After the length of time stated in " + TIME_WINDOW.getDisplayName() +
+                    " elaspes the value will be removed. If this is set, values will be batched together every X amount of time (where X is the time period set for this property) and removed " +
+                    "all at once.")
+            .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
+            .required(false)
+            .build();
 
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(VALUE_TO_TRACK);
-        properties.add(TIME_WINDOW);
-        properties.add(SUB_WINDOW_LENGTH);
-        this.properties = Collections.unmodifiableList(properties);
-    }
+    private static final Scope SCOPE = Scope.LOCAL;
+
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+                REL_SUCCESS,
+                REL_FAILED_SET_STATE,
+                REL_FAILURE);
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            VALUE_TO_TRACK,
+            TIME_WINDOW,
+            SUB_WINDOW_LENGTH
+    );
+
+    private Long timeWindow;
+    private Long microBatchTime;
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled
@@ -161,8 +152,7 @@ public class AttributeRollingWindow extends AbstractProcessor {
         if (microBatchTime == null || microBatchTime == 0) {
             StateManager stateManager = context.getStateManager();
             StateMap state = stateManager.getState(SCOPE);
-            HashMap<String, String> tempMap = new HashMap<>();
-            tempMap.putAll(state.toMap());
+            Map<String, String> tempMap = new HashMap<>(state.toMap());
             if (!tempMap.containsKey(COUNT_KEY)) {
                 tempMap.put(COUNT_KEY, "0");
                 context.getStateManager().setState(tempMap, SCOPE);
@@ -189,6 +179,13 @@ public class AttributeRollingWindow extends AbstractProcessor {
             getLogger().error("Ran into an error while processing {}.", flowFile, e);
             session.transfer(flowFile, REL_FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("Value to track", VALUE_TO_TRACK.getName());
+        config.renameProperty("Time window", TIME_WINDOW.getName());
+        config.renameProperty("Sub-window length", SUB_WINDOW_LENGTH.getName());
     }
 
     private void noMicroBatch(ProcessContext context, ProcessSession session, FlowFile flowFile, Long currTime) {

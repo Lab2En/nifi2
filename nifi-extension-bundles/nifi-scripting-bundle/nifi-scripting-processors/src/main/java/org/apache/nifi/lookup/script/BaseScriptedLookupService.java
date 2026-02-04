@@ -39,10 +39,6 @@ import org.apache.nifi.script.ScriptingComponentHelper;
 import org.apache.nifi.script.ScriptingComponentUtils;
 import org.apache.nifi.script.impl.FilteredPropertiesValidationContextAdapter;
 
-import javax.script.Invocable;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptException;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -52,6 +48,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import javax.script.Invocable;
+import javax.script.ScriptContext;
+import javax.script.ScriptEngine;
+import javax.script.ScriptException;
 
 public class BaseScriptedLookupService extends AbstractScriptedControllerService {
 
@@ -224,7 +224,7 @@ public class BaseScriptedLookupService extends AbstractScriptedControllerService
                 ValidationContext innerValidationContext = new FilteredPropertiesValidationContextAdapter(context, innerPropertyDescriptor);
                 final Collection<ValidationResult> instanceResults = instance.validate(innerValidationContext);
 
-                if (instanceResults != null && instanceResults.size() > 0) {
+                if (instanceResults != null && !instanceResults.isEmpty()) {
                     // return the validation results from the underlying instance
                     return instanceResults;
                 }

@@ -16,12 +16,13 @@
  */
 package org.apache.nifi.processors.model;
 
-import java.util.HashMap;
-import java.util.Set;
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.file.metadata.enums.CompressionType;
+import org.apache.tsfile.file.metadata.enums.TSEncoding;
 
-import org.apache.iotdb.tsfile.file.metadata.enums.CompressionType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSEncoding;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 public class DatabaseField {
     private String tsName;
@@ -29,10 +30,10 @@ public class DatabaseField {
     private TSEncoding encoding;
     private CompressionType compressionType;
 
-    private static final HashMap<String, TSDataType> typeMap = new HashMap<>();
-    private static final HashMap<String, TSEncoding> encodingMap = new HashMap<>();
+    private static final Map<String, TSDataType> typeMap = new HashMap<>();
+    private static final Map<String, TSEncoding> encodingMap = new HashMap<>();
 
-    private static final HashMap<String, CompressionType> compressionMap = new HashMap<>();
+    private static final Map<String, CompressionType> compressionMap = new HashMap<>();
 
     static {
         typeMap.put("INT32", TSDataType.INT32);

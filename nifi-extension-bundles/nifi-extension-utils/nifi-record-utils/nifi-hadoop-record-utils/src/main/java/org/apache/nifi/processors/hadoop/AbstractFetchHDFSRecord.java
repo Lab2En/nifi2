@@ -27,6 +27,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
@@ -50,7 +51,6 @@ import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -65,8 +65,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public abstract class AbstractFetchHDFSRecord extends AbstractHadoopProcessor {
 
     public static final PropertyDescriptor FILENAME = new PropertyDescriptor.Builder()
-            .name("filename")
-            .displayName("Filename")
+            .name("Filename")
             .description("The name of the file to retrieve")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -75,8 +74,7 @@ public abstract class AbstractFetchHDFSRecord extends AbstractHadoopProcessor {
             .build();
 
     public static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
-            .name("record-writer")
-            .displayName("Record Writer")
+            .name("Record Writer")
             .description("The service for writing records to the FlowFile content")
             .identifiesControllerService(RecordSetWriterFactory.class)
             .required(true)
@@ -109,13 +107,13 @@ public abstract class AbstractFetchHDFSRecord extends AbstractHadoopProcessor {
     protected final void init(final ProcessorInitializationContext context) {
         super.init(context);
 
-        final Set<Relationship> rels = new HashSet<>();
-        rels.add(REL_SUCCESS);
-        rels.add(REL_RETRY);
-        rels.add(REL_FAILURE);
-        this.fetchHdfsRecordRelationships = Collections.unmodifiableSet(rels);
+        this.fetchHdfsRecordRelationships = Set.of(
+                REL_SUCCESS,
+                REL_RETRY,
+                REL_FAILURE
+        );
 
-        final List<PropertyDescriptor> props = new ArrayList<>(properties);
+        final List<PropertyDescriptor> props = new ArrayList<>(getCommonPropertyDescriptors());
         props.add(FILENAME);
         props.add(RECORD_WRITER);
         props.addAll(getAdditionalProperties());
@@ -154,7 +152,7 @@ public abstract class AbstractFetchHDFSRecord extends AbstractHadoopProcessor {
     public abstract HDFSRecordReader createHDFSRecordReader(final ProcessContext context, final FlowFile flowFile, final Configuration conf, final Path path)
             throws IOException;
 
-
+    @SuppressWarnings("PMD.IdenticalCatchBranches")
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         // do this before getting a flow file so that we always get a chance to attempt Kerberos relogin
@@ -169,7 +167,7 @@ public abstract class AbstractFetchHDFSRecord extends AbstractHadoopProcessor {
         }
 
         final FlowFile originalFlowFile = session.get();
-        if (originalFlowFile == null ) {
+        if (originalFlowFile == null) {
             context.yield();
             return;
         }
@@ -263,6 +261,13 @@ public abstract class AbstractFetchHDFSRecord extends AbstractHadoopProcessor {
             return null;
         });
 
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("filename", FILENAME.getName());
+        config.renameProperty("record-writer", RECORD_WRITER.getName());
     }
 
     /**

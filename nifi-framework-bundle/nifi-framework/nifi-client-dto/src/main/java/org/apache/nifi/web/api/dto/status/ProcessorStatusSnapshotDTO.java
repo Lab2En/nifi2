@@ -17,7 +17,6 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 /**
@@ -97,7 +96,7 @@ public class ProcessorStatusSnapshotDTO implements Cloneable {
      * @return run status of this processor
      */
     @Schema(description = "The state of the processor.",
-            allowableValues = "Running, Stopped, Validating, Disabled, Invalid"
+            allowableValues = {"Running", "Stopped", "Validating", "Disabled", "Invalid"}
     )
     public String getRunStatus() {
         return runStatus;
@@ -108,7 +107,7 @@ public class ProcessorStatusSnapshotDTO implements Cloneable {
     }
 
     @Schema(description = "Indicates the node where the process will execute.",
-            allowableValues = "ALL, PRIMARY"
+            allowableValues = {"ALL", "PRIMARY"}
     )
     public String getExecutionNode() {
         return executionNode;

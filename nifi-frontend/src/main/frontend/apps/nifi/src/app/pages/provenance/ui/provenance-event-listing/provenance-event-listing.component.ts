@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import {
     GoToProvenanceEventSourceRequest,
@@ -51,13 +51,19 @@ import { clearBannerErrors } from '../../../../state/error/error.actions';
 import { selectClusterSummary } from '../../../../state/cluster-summary/cluster-summary.selectors';
 import { loadClusterSummary } from '../../../../state/cluster-summary/cluster-summary.actions';
 import { ErrorContextKey } from '../../../../state/error';
+import { AsyncPipe } from '@angular/common';
+import { ProvenanceEventTable } from './provenance-event-table/provenance-event-table.component';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
 
 @Component({
     selector: 'provenance-event-listing',
     templateUrl: './provenance-event-listing.component.html',
+    imports: [AsyncPipe, ProvenanceEventTable, NgxSkeletonLoaderComponent],
     styleUrls: ['./provenance-event-listing.component.scss']
 })
 export class ProvenanceEventListing implements OnInit, OnDestroy {
+    private store = inject<Store<ProvenanceEventListingState>>(Store);
+
     status$ = this.store.select(selectStatus);
     loadedTimestamp$ = this.store.select(selectLoadedTimestamp);
     provenance$ = this.store.select(selectCompletedProvenance);
@@ -67,7 +73,7 @@ export class ProvenanceEventListing implements OnInit, OnDestroy {
     request!: ProvenanceRequest;
     stateReset = false;
 
-    constructor(private store: Store<ProvenanceEventListingState>) {
+    constructor() {
         this.store
             .select(selectSearchableFieldsFromRoute)
             .pipe(

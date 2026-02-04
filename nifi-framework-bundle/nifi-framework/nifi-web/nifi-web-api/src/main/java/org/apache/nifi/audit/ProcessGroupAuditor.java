@@ -20,16 +20,21 @@ import org.apache.nifi.action.Action;
 import org.apache.nifi.action.Component;
 import org.apache.nifi.action.FlowChangeAction;
 import org.apache.nifi.action.Operation;
+import org.apache.nifi.action.component.details.FlowChangeExtensionDetails;
 import org.apache.nifi.action.details.ActionDetails;
 import org.apache.nifi.action.details.FlowChangeConfigureDetails;
 import org.apache.nifi.action.details.FlowChangeMoveDetails;
-import org.apache.nifi.authorization.user.NiFiUser;
-import org.apache.nifi.authorization.user.NiFiUserUtils;
+import org.apache.nifi.connectable.Connectable;
+import org.apache.nifi.connectable.Port;
+import org.apache.nifi.controller.ProcessorNode;
 import org.apache.nifi.controller.ScheduledState;
+import org.apache.nifi.controller.service.ControllerServiceNode;
 import org.apache.nifi.controller.service.ControllerServiceState;
 import org.apache.nifi.groups.ProcessGroup;
+import org.apache.nifi.groups.RemoteProcessGroup;
 import org.apache.nifi.parameter.ParameterContext;
 import org.apache.nifi.registry.flow.VersionControlInformation;
+import org.apache.nifi.remote.RemoteGroupPort;
 import org.apache.nifi.web.api.dto.ProcessGroupDTO;
 import org.apache.nifi.web.api.dto.VersionControlInformationDTO;
 import org.apache.nifi.web.dao.ProcessGroupDAO;
@@ -43,6 +48,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -104,11 +110,7 @@ public class ProcessGroupAuditor extends NiFiAuditor {
         // perform the underlying operation
         ProcessGroup updatedProcessGroup = (ProcessGroup) proceedingJoinPoint.proceed();
 
-        // get the current user
-        NiFiUser user = NiFiUserUtils.getNiFiUser();
-
-        // ensure the user was found
-        if (user != null) {
+        if (isAuditable()) {
             Collection<ActionDetails> details = new ArrayList<>();
 
             // see if the name has changed
@@ -178,8 +180,7 @@ public class ProcessGroupAuditor extends NiFiAuditor {
                     }
 
                     // create the port action for updating the name
-                    FlowChangeAction processGroupAction = new FlowChangeAction();
-                    processGroupAction.setUserIdentity(user.getIdentity());
+                    FlowChangeAction processGroupAction = createFlowChangeAction();
                     processGroupAction.setOperation(operation);
                     processGroupAction.setTimestamp(timestamp);
                     processGroupAction.setSourceId(updatedProcessGroup.getIdentifier());
@@ -223,7 +224,8 @@ public class ProcessGroupAuditor extends NiFiAuditor {
             operation = Operation.Stop;
         }
 
-        saveUpdateAction(groupId, operation);
+        saveUpdateProcessGroupAction(groupId, operation);
+        saveActions(getComponentActions(groupId, componentIds, operation), logger);
     }
 
     /**
@@ -249,11 +251,54 @@ public class ProcessGroupAuditor extends NiFiAuditor {
             operation = Operation.Enable;
         }
 
-        saveUpdateAction(groupId, operation);
+        saveUpdateProcessGroupAction(groupId, operation);
+        saveActions(getComponentActions(groupId, componentIds, operation), logger);
+    }
+
+    private List<Action> getComponentActions(final String groupId, final Collection<String> componentIds, final Operation operation) {
+        final List<Action> actions = new ArrayList<>();
+        final ProcessGroupDAO processGroupDAO = getProcessGroupDAO();
+        final ProcessGroup processGroup = processGroupDAO.getProcessGroup(groupId);
+
+        for (String componentId : componentIds) {
+            final ProcessorNode processorNode = processGroup.findProcessor(componentId);
+            if (processorNode != null) {
+                actions.add(generateUpdateConnectableAction(processorNode, operation, Component.Processor));
+                continue;
+            }
+
+            Port port = processGroup.findInputPort(componentId);
+            if (port != null) {
+                actions.add(generateUpdateConnectableAction(port, operation, Component.InputPort));
+                continue;
+            }
+
+            port = processGroup.findOutputPort(componentId);
+            if (port != null) {
+                actions.add(generateUpdateConnectableAction(port, operation, Component.OutputPort));
+                continue;
+            }
+
+            ProcessGroup internalProcessGroup = processGroup.findProcessGroup(componentId);
+            if (internalProcessGroup != null) {
+                actions.add(generateUpdateProcessGroupAction(internalProcessGroup, operation));
+                continue;
+            }
+
+            RemoteGroupPort remoteGroupPort = processGroup.findRemoteGroupPort(componentId);
+            if (remoteGroupPort != null) {
+                RemoteProcessGroup remoteProcessGroup = remoteGroupPort.getRemoteProcessGroup();
+                if (remoteProcessGroup != null) {
+                    actions.add(generateUpdateRemoteProcessGroupAction(remoteProcessGroup, operation));
+                }
+            }
+        }
+
+        return actions;
     }
 
     /**
-     * Audits the update of controller serivce state
+     * Audits the update of controller service state
      *
      * @param proceedingJoinPoint join point
      * @param groupId group id
@@ -264,6 +309,7 @@ public class ProcessGroupAuditor extends NiFiAuditor {
         + "execution(void activateControllerServices(String, org.apache.nifi.controller.service.ControllerServiceState, java.util.Collection<String>)) && "
         + "args(groupId, state, serviceIds)")
     public void activateControllerServicesAdvice(ProceedingJoinPoint proceedingJoinPoint, String groupId, ControllerServiceState state, Collection<String> serviceIds) throws Throwable {
+        final List<ControllerServiceNode> controllerServiceNodes = getControllerServices(groupId, serviceIds);
         final Operation operation;
 
         proceedingJoinPoint.proceed();
@@ -275,7 +321,23 @@ public class ProcessGroupAuditor extends NiFiAuditor {
             operation = Operation.Disable;
         }
 
-        saveUpdateAction(groupId, operation);
+        saveUpdateProcessGroupAction(groupId, operation);
+        for (final ControllerServiceNode csNode : controllerServiceNodes) {
+            saveUpdateControllerServiceAction(csNode, operation);
+        }
+    }
+
+    private List<ControllerServiceNode> getControllerServices(final String groupId, final Collection<String> serviceIds) throws Throwable {
+        final ProcessGroupDAO processGroupDAO = getProcessGroupDAO();
+        final ProcessGroup processGroup = processGroupDAO.getProcessGroup(groupId);
+        final List<ControllerServiceNode> csNodes = new ArrayList<>();
+        for (String serviceId : serviceIds) {
+            final ControllerServiceNode csNode = processGroup.findControllerService(serviceId, true, true);
+            if (csNode != null) {
+                csNodes.add(csNode);
+            }
+        }
+        return csNodes;
     }
 
     @Around("within(org.apache.nifi.web.dao.ProcessGroupDAO+) && "
@@ -304,7 +366,7 @@ public class ProcessGroupAuditor extends NiFiAuditor {
             }
         }
 
-        saveUpdateAction(groupId, operation);
+        saveUpdateProcessGroupAction(groupId, operation);
 
         return updatedProcessGroup;
     }
@@ -327,7 +389,7 @@ public class ProcessGroupAuditor extends NiFiAuditor {
             operation = Operation.CommitLocalChanges;
         }
 
-        saveUpdateAction(vciDto.getGroupId(), operation);
+        saveUpdateProcessGroupAction(vciDto.getGroupId(), operation);
 
         return updatedProcessGroup;
     }
@@ -338,24 +400,71 @@ public class ProcessGroupAuditor extends NiFiAuditor {
     public ProcessGroup disconnectVersionControlAdvice(final ProceedingJoinPoint proceedingJoinPoint, final String groupId) throws Throwable {
         final ProcessGroup updatedProcessGroup = (ProcessGroup) proceedingJoinPoint.proceed();
 
-        saveUpdateAction(groupId, Operation.StopVersionControl);
+        saveUpdateProcessGroupAction(groupId, Operation.StopVersionControl);
 
         return updatedProcessGroup;
     }
 
-    private void saveUpdateAction(final String groupId, final Operation operation) throws Throwable {
-        NiFiUser user = NiFiUserUtils.getNiFiUser();
+    private void saveUpdateProcessGroupAction(final String groupId, final Operation operation) {
         ProcessGroupDAO processGroupDAO = getProcessGroupDAO();
         ProcessGroup processGroup = processGroupDAO.getProcessGroup(groupId);
 
         // if the user was starting/stopping this process group
-        FlowChangeAction action = new FlowChangeAction();
-        action.setUserIdentity(user.getIdentity());
+        FlowChangeAction action = createFlowChangeAction();
         action.setSourceId(processGroup.getIdentifier());
         action.setSourceName(processGroup.getName());
         action.setSourceType(Component.ProcessGroup);
-        action.setTimestamp(new Date());
         action.setOperation(operation);
+
+        // add this action
+        saveAction(action, logger);
+    }
+
+    private Action generateUpdateProcessGroupAction(final ProcessGroup processGroup, final Operation operation) {
+        final FlowChangeAction action = createFlowChangeAction();
+        action.setSourceId(processGroup.getIdentifier());
+        action.setSourceName(processGroup.getName());
+        action.setSourceType(Component.ProcessGroup);
+        action.setOperation(operation);
+
+        return action;
+    }
+
+    private Action generateUpdateRemoteProcessGroupAction(final RemoteProcessGroup remoteProcessGroup, final Operation operation) {
+        final FlowChangeAction action = createFlowChangeAction();
+        action.setSourceId(remoteProcessGroup.getIdentifier());
+        action.setSourceName(remoteProcessGroup.getName());
+        action.setSourceType(Component.RemoteProcessGroup);
+        action.setOperation(operation);
+
+        return action;
+    }
+
+    private Action generateUpdateConnectableAction(final Connectable connectable, final Operation operation, final Component component) {
+        final FlowChangeAction action = createFlowChangeAction();
+        action.setSourceId(connectable.getIdentifier());
+        action.setSourceName(connectable.getName());
+        action.setSourceType(component);
+        action.setOperation(operation);
+
+        if (component == Component.Processor) {
+            FlowChangeExtensionDetails componentDetails = new FlowChangeExtensionDetails();
+            componentDetails.setType(connectable.getComponentType());
+            action.setComponentDetails(componentDetails);
+        }
+        return action;
+    }
+
+    private void saveUpdateControllerServiceAction(final ControllerServiceNode csNode, final Operation operation) throws Throwable {
+        final FlowChangeAction action = createFlowChangeAction();
+        action.setSourceId(csNode.getIdentifier());
+        action.setSourceName(csNode.getName());
+        action.setSourceType(Component.ControllerService);
+        action.setOperation(operation);
+
+        FlowChangeExtensionDetails serviceDetails = new FlowChangeExtensionDetails();
+        serviceDetails.setType(csNode.getComponentType());
+        action.setComponentDetails(serviceDetails);
 
         // add this action
         saveAction(action, logger);
@@ -411,17 +520,10 @@ public class ProcessGroupAuditor extends NiFiAuditor {
     public Action generateAuditRecord(ProcessGroup processGroup, Operation operation, ActionDetails actionDetails) {
         FlowChangeAction action = null;
 
-        // get the current user
-        NiFiUser user = NiFiUserUtils.getNiFiUser();
-
-        // ensure the user was found
-        if (user != null) {
-
+        if (isAuditable()) {
             // create the process group action for adding this process group
-            action = new FlowChangeAction();
-            action.setUserIdentity(user.getIdentity());
+            action = createFlowChangeAction();
             action.setOperation(operation);
-            action.setTimestamp(new Date());
             action.setSourceId(processGroup.getIdentifier());
             action.setSourceName(processGroup.getName());
             action.setSourceType(Component.ProcessGroup);

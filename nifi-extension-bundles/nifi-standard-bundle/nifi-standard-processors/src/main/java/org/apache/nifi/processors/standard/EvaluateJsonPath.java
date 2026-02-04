@@ -22,6 +22,7 @@ import com.jayway.jsonpath.InvalidJsonException;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.PathNotFoundException;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
@@ -124,7 +125,7 @@ public class EvaluateJsonPath extends AbstractJsonPathProcessor {
             .dependsOn(DESTINATION, DESTINATION_ATTRIBUTE)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             DESTINATION,
             RETURN_TYPE,
             PATH_NOT_FOUND,
@@ -191,7 +192,7 @@ public class EvaluateJsonPath extends AbstractJsonPathProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -210,13 +211,13 @@ public class EvaluateJsonPath extends AbstractJsonPathProcessor {
                             public boolean isStale(String subject, String input) {
                                 return cachedJsonPathMap.get(input) == null;
                             }
-                })
-                .required(false).dynamic(true).build();
+                        })
+                        .required(false).dynamic(true).build();
     }
 
     @Override
     public void onPropertyModified(PropertyDescriptor descriptor, String oldValue, String newValue) {
-        if (descriptor.isDynamic() && !StringUtils.equals(oldValue, newValue) && oldValue != null) {
+        if (descriptor.isDynamic() && !Strings.CS.equals(oldValue, newValue) && oldValue != null) {
             cachedJsonPathMap.remove(oldValue);
         }
     }
@@ -243,7 +244,7 @@ public class EvaluateJsonPath extends AbstractJsonPathProcessor {
         if (returnType.equals(RETURN_TYPE_AUTO)) {
             returnType = destinationIsAttribute ? RETURN_TYPE_SCALAR : RETURN_TYPE_JSON;
         }
-        pathNotFound = processContext.getProperty(PATH_NOT_FOUND).getValue();
+        pathNotFound = destinationIsAttribute ? processContext.getProperty(PATH_NOT_FOUND).getValue() : PATH_NOT_FOUND_IGNORE;
         nullDefaultValue = NULL_REPRESENTATION_MAP.get(processContext.getProperty(NULL_VALUE_DEFAULT_REPRESENTATION).getValue());
 
         final int maxStringLength = processContext.getProperty(MAX_STRING_LENGTH).asDataSize(DataUnit.B).intValue();

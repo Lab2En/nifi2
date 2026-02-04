@@ -30,6 +30,7 @@ import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processors.azure.cosmos.document.AzureCosmosDBUtils;
 import org.apache.nifi.services.azure.cosmos.AzureCosmosDBConnectionService;
 import org.apache.nifi.util.StringUtils;
@@ -83,7 +84,7 @@ public class AzureCosmosDBClientService extends AbstractControllerService implem
                                 .buildClient();
     }
 
-    static List<PropertyDescriptor> descriptors = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             AzureCosmosDBUtils.URI,
             AzureCosmosDBUtils.DB_ACCESS_KEY,
             AzureCosmosDBUtils.CONSISTENCY
@@ -91,7 +92,7 @@ public class AzureCosmosDBClientService extends AbstractControllerService implem
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return descriptors;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -114,6 +115,13 @@ public class AzureCosmosDBClientService extends AbstractControllerService implem
     }
     public void setCosmosClient(CosmosClient client) {
         this.cosmosClient = client;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(AzureCosmosDBUtils.OLD_URI_DESCRIPTOR_NAME, AzureCosmosDBUtils.URI.getName());
+        config.renameProperty(AzureCosmosDBUtils.OLD_DB_ACCESS_KEY_DESCRIPTOR_NAME, AzureCosmosDBUtils.DB_ACCESS_KEY.getName());
+        config.renameProperty(AzureCosmosDBUtils.OLD_CONSISTENCY_DESCRIPTOR_NAME, AzureCosmosDBUtils.CONSISTENCY.getName());
     }
 
     @Override

@@ -17,8 +17,6 @@
 
 package org.apache.nifi.controller.repository.schema;
 
-import java.util.Map;
-
 import org.apache.nifi.controller.repository.FlowFileRecord;
 import org.apache.nifi.controller.repository.StandardFlowFileRecord;
 import org.apache.nifi.controller.repository.claim.ContentClaim;
@@ -26,6 +24,8 @@ import org.apache.nifi.controller.repository.claim.ResourceClaimManager;
 import org.apache.nifi.repository.schema.Record;
 import org.apache.nifi.repository.schema.RecordField;
 import org.apache.nifi.repository.schema.RecordSchema;
+
+import java.util.Map;
 
 public class FlowFileRecordFieldMap implements Record {
     private final FlowFileRecord flowFile;
@@ -49,28 +49,19 @@ public class FlowFileRecordFieldMap implements Record {
 
     @Override
     public Object getFieldValue(final String fieldName) {
-        switch (fieldName) {
-            case FlowFileSchema.ATTRIBUTES:
-                return flowFile.getAttributes();
-            case FlowFileSchema.CONTENT_CLAIM:
-                return contentClaim;
-            case FlowFileSchema.ENTRY_DATE:
-                return flowFile.getEntryDate();
-            case FlowFileSchema.FLOWFILE_SIZE:
-                return flowFile.getSize();
-            case FlowFileSchema.LINEAGE_START_DATE:
-                return flowFile.getLineageStartDate();
-            case FlowFileSchema.LINEAGE_START_INDEX:
-                return flowFile.getLineageStartIndex();
-            case FlowFileSchema.QUEUE_DATE:
-                return flowFile.getLastQueueDate();
-            case FlowFileSchema.QUEUE_DATE_INDEX:
-                return flowFile.getQueueDateIndex();
-            case FlowFileSchema.RECORD_ID:
-                return flowFile.getId();
-        }
+        return switch (fieldName) {
+            case FlowFileSchema.ATTRIBUTES -> flowFile.getAttributes();
+            case FlowFileSchema.CONTENT_CLAIM -> contentClaim;
+            case FlowFileSchema.ENTRY_DATE -> flowFile.getEntryDate();
+            case FlowFileSchema.FLOWFILE_SIZE -> flowFile.getSize();
+            case FlowFileSchema.LINEAGE_START_DATE -> flowFile.getLineageStartDate();
+            case FlowFileSchema.LINEAGE_START_INDEX -> flowFile.getLineageStartIndex();
+            case FlowFileSchema.QUEUE_DATE -> flowFile.getLastQueueDate();
+            case FlowFileSchema.QUEUE_DATE_INDEX -> flowFile.getQueueDateIndex();
+            case FlowFileSchema.RECORD_ID -> flowFile.getId();
+            default -> null;
+        };
 
-        return null;
     }
 
     @SuppressWarnings("unchecked")

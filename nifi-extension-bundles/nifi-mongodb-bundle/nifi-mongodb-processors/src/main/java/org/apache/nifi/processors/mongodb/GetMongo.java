@@ -36,6 +36,7 @@ import org.apache.nifi.components.Validator;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -47,11 +48,10 @@ import org.bson.json.JsonWriterSettings;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Tags({ "mongodb", "read", "get" })
 @InputRequirement(Requirement.INPUT_ALLOWED)
@@ -62,8 +62,7 @@ import java.util.Set;
 })
 public class GetMongo extends AbstractMongoQueryProcessor {
     public static final PropertyDescriptor SEND_EMPTY_RESULTS = new PropertyDescriptor.Builder()
-        .name("get-mongo-send-empty")
-        .displayName("Send Empty Result")
+        .name("Send Empty Result")
         .description("If a query executes successfully, but returns no results, send an empty JSON document " +
                 "signifying no result.")
         .allowableValues("true", "false")
@@ -76,8 +75,7 @@ public class GetMongo extends AbstractMongoQueryProcessor {
     static final AllowableValue NO_PP  = new AllowableValue("false", "False");
 
     static final PropertyDescriptor USE_PRETTY_PRINTING = new PropertyDescriptor.Builder()
-            .name("use-pretty-printing")
-            .displayName("Pretty Print Results JSON")
+            .name("Pretty Print Results JSON")
             .description("Choose whether or not to pretty print the JSON from the results of the query. " +
                     "Choosing 'True' can greatly increase the space requirements on disk depending on the complexity of the JSON document")
             .required(true)
@@ -86,35 +84,33 @@ public class GetMongo extends AbstractMongoQueryProcessor {
             .addValidator(Validator.VALID)
             .build();
 
-    private final static Set<Relationship> relationships;
-    private final static List<PropertyDescriptor> propertyDescriptors;
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE,
+            REL_ORIGINAL
+    );
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                    JSON_TYPE,
+                    USE_PRETTY_PRINTING,
+                    CHARSET,
+                    QUERY,
+                    QUERY_ATTRIBUTE,
+                    PROJECTION,
+                    SORT,
+                    LIMIT,
+                    BATCH_SIZE,
+                    RESULTS_PER_FLOWFILE,
+                    DATE_FORMAT,
+                    SEND_EMPTY_RESULTS
+            )
+    ).toList();
+
     private ComponentLog logger;
-
-    static {
-        List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
-        _propertyDescriptors.addAll(descriptors);
-        _propertyDescriptors.add(JSON_TYPE);
-        _propertyDescriptors.add(USE_PRETTY_PRINTING);
-        _propertyDescriptors.add(CHARSET);
-        _propertyDescriptors.add(QUERY);
-        _propertyDescriptors.add(QUERY_ATTRIBUTE);
-        _propertyDescriptors.add(PROJECTION);
-        _propertyDescriptors.add(SORT);
-        _propertyDescriptors.add(LIMIT);
-        _propertyDescriptors.add(BATCH_SIZE);
-        _propertyDescriptors.add(RESULTS_PER_FLOWFILE);
-        _propertyDescriptors.add(DATE_FORMAT);
-        _propertyDescriptors.add(SEND_EMPTY_RESULTS);
-        propertyDescriptors = Collections.unmodifiableList(_propertyDescriptors);
-
-        final Set<Relationship> _relationships = new HashSet<>();
-        _relationships.add(REL_SUCCESS);
-        _relationships.add(REL_FAILURE);
-        _relationships.add(REL_ORIGINAL);
-        relationships = Collections.unmodifiableSet(_relationships);
-    }
-
     private boolean sendEmpty;
+
     @OnScheduled
     public void onScheduled(PropertyContext context) {
         sendEmpty = context.getProperty(SEND_EMPTY_RESULTS).asBoolean();
@@ -122,12 +118,19 @@ public class GetMongo extends AbstractMongoQueryProcessor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return propertyDescriptors;
+        return PROPERTY_DESCRIPTORS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("get-mongo-send-empty", SEND_EMPTY_RESULTS.getName());
+        config.renameProperty("use-pretty-printing", USE_PRETTY_PRINTING.getName());
     }
 
     //Turn a list of Mongo result documents into a String representation of a JSON array
@@ -143,7 +146,7 @@ public class GetMongo extends AbstractMongoQueryProcessor {
             }
             builder
                     .append(asJson)
-                    .append( (documents.size() > 1 && index + 1 < documents.size()) ? ", " : "" );
+                    .append((documents.size() > 1 && index + 1 < documents.size()) ? ", " : "");
         }
 
         return "[" + builder.toString() + "]";
@@ -230,7 +233,7 @@ public class GetMongo extends AbstractMongoQueryProcessor {
                     sent++;
                 }
 
-                if (batch.size() > 0) {
+                if (!batch.isEmpty()) {
                     try {
                         writeBatch(buildBatch(batch, jsonTypeSetting, usePrettyPrint), input, context, session, attributes, REL_SUCCESS);
                     } catch (Exception e) {

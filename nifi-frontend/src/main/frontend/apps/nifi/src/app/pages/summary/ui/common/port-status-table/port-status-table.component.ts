@@ -15,15 +15,13 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
-import { SummaryTableFilterModule } from '../summary-table-filter/summary-table-filter.module';
-import { SummaryTableFilterColumn } from '../summary-table-filter/summary-table-filter.component';
-import { ComponentType } from 'libs/shared/src';
+import { SummaryTableFilter, SummaryTableFilterColumn } from '../summary-table-filter/summary-table-filter.component';
 import { RouterLink } from '@angular/router';
-import { NiFiCommon } from '@nifi/shared';
+import { ComponentType, NiFiCommon } from '@nifi/shared';
 import { MatPaginatorModule } from '@angular/material/paginator';
 import { PortStatusSnapshot, PortStatusSnapshotEntity } from '../../../state';
 import { ComponentStatusTable } from '../component-status-table/component-status-table.component';
@@ -34,10 +32,9 @@ export type SupportedColumns = 'name' | 'runStatus' | 'in' | 'out';
 
 @Component({
     selector: 'port-status-table',
-    standalone: true,
     imports: [
         CommonModule,
-        SummaryTableFilterModule,
+        SummaryTableFilter,
         MatSortModule,
         MatTableModule,
         RouterLink,
@@ -51,15 +48,13 @@ export type SupportedColumns = 'name' | 'runStatus' | 'in' | 'out';
     styleUrls: ['./port-status-table.component.scss']
 })
 export class PortStatusTable extends ComponentStatusTable<PortStatusSnapshotEntity> {
+    private nifiCommon = inject(NiFiCommon);
+
     private _portType!: 'input' | 'output';
 
     filterableColumns: SummaryTableFilterColumn[] = [{ key: 'name', label: 'name' }];
 
     displayedColumns: string[] = [];
-
-    constructor(private nifiCommon: NiFiCommon) {
-        super();
-    }
 
     @Input() set portType(type: 'input' | 'output') {
         if (type === 'input') {

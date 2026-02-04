@@ -31,9 +31,12 @@ import org.apache.nifi.avro.AvroSchemaValidator;
 import org.apache.nifi.avro.AvroTypeUtil;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.components.ValidationContext;
+import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -41,6 +44,7 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.standard.faker.FakerUtils;
+import org.apache.nifi.processors.standard.faker.PredefinedRecordSchema;
 import org.apache.nifi.schema.access.SchemaNotFoundException;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
@@ -59,12 +63,12 @@ import org.apache.nifi.serialization.record.type.MapDataType;
 import org.apache.nifi.serialization.record.type.RecordDataType;
 import org.apache.nifi.util.StringUtils;
 
-import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -84,9 +88,12 @@ import static org.apache.nifi.processors.standard.faker.FakerUtils.DEFAULT_DATE_
         @WritesAttribute(attribute = "mime.type", description = "Sets the mime.type attribute to the MIME Type specified by the Record Writer"),
         @WritesAttribute(attribute = "record.count", description = "The number of records in the FlowFile"),
 })
-@CapabilityDescription("This processor creates FlowFiles with records having random value for the specified fields. GenerateRecord is useful " +
-        "for testing, configuration, and simulation. It uses either user-defined properties to define a record schema or a provided schema and generates the specified number of records using " +
-        "random data for the fields in the schema.")
+@CapabilityDescription("""
+        This processor creates FlowFiles with records having random value for the specified fields. GenerateRecord is useful
+        for testing, configuration, and simulation. It uses one of three methods to define a record schema: (1) a provided Avro Schema Text,
+        (2) a Predefined Schema template such as Person, Order, Event, Sensor, Product, Stock Trade, or Complete Example covering all data types,
+        or (3) user-defined dynamic properties. The processor generates the specified number of records using random data for the fields in the schema.
+        """)
 @DynamicProperties({
         @DynamicProperty(
                 name = "Field name in generated record",
@@ -105,16 +112,14 @@ public class GenerateRecord extends AbstractProcessor {
     private static final String KEY4 = "key4";
 
     static final PropertyDescriptor RECORD_WRITER = new PropertyDescriptor.Builder()
-            .name("record-writer")
-            .displayName("Record Writer")
+            .name("Record Writer")
             .description("Specifies the Controller Service to use for writing out the records")
             .identifiesControllerService(RecordSetWriterFactory.class)
             .required(true)
             .build();
 
     static final PropertyDescriptor NUM_RECORDS = new PropertyDescriptor.Builder()
-            .name("number-of-records")
-            .displayName("Number of Records")
+            .name("Number of Records")
             .description("Specifies how many records will be generated for each outgoing FlowFile.")
             .required(true)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
@@ -123,19 +128,22 @@ public class GenerateRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor NULLABLE_FIELDS = new PropertyDescriptor.Builder()
-            .name("nullable-fields")
-            .displayName("Nullable Fields")
-            .description("Whether the generated fields will be nullable. Note that this property is ignored if Schema Text is set. Also it only affects the schema of the generated data, " +
-                    "not whether any values will be null. If this property is true, see 'Null Value Percentage' to set the probability that any generated field will be null.")
+            .name("Nullable Fields")
+            .description("""
+                    Whether the generated fields will be nullable. Note that this property is ignored if Schema Text is set.
+                    Also it only affects the schema of the generated data, not whether any values will be null.
+                    If this property is true, see 'Null Value Percentage' to set the probability that any generated field will be null.
+                    """)
             .allowableValues("true", "false")
             .defaultValue("true")
             .required(true)
             .build();
     static final PropertyDescriptor NULL_PERCENTAGE = new PropertyDescriptor.Builder()
-            .name("null-percentage")
-            .displayName("Null Value Percentage")
-            .description("The percent probability (0-100%) that a generated value for any nullable field will be null. Set this property to zero to have no null values, or 100 to have all " +
-                    "null values.")
+            .name("Null Value Percentage")
+            .description("""
+                    The percent probability (0-100%) that a generated value for any nullable field will be null.
+                    Set this property to zero to have no null values, or 100 to have all null values.
+                    """)
             .addValidator(StandardValidators.createLongValidator(0L, 100L, true))
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(true)
@@ -144,20 +152,35 @@ public class GenerateRecord extends AbstractProcessor {
             .build();
 
     static final PropertyDescriptor SCHEMA_TEXT = new PropertyDescriptor.Builder()
-            .name("schema-text")
-            .displayName("Schema Text")
-            .description("The text of an Avro-formatted Schema used to generate record data. If this property is set, any user-defined properties are ignored.")
+            .name("Schema Text")
+            .description("""
+                    The text of an Avro-formatted Schema used to generate record data.
+                    Only one of Schema Text, Predefined Schema, or user-defined dynamic properties should be configured.
+                    """)
             .addValidator(new AvroSchemaValidator())
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .required(false)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    static final PropertyDescriptor PREDEFINED_SCHEMA = new PropertyDescriptor.Builder()
+            .name("Predefined Schema")
+            .description("""
+                    Select a predefined schema template for quick record generation. Predefined schemas provide ready-to-use
+                    templates with multiple fields covering various data types including nested records, arrays, maps, dates, timestamps, etc.
+                    Only one of Schema Text, Predefined Schema, or user-defined dynamic properties should be configured.
+                    Note: This feature is intended for quick testing purposes only. Predefined schemas may change between NiFi versions.
+                    """)
+            .allowableValues(PredefinedRecordSchema.class)
+            .required(false)
+            .build();
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             RECORD_WRITER,
             NUM_RECORDS,
             NULLABLE_FIELDS,
             NULL_PERCENTAGE,
-            SCHEMA_TEXT
+            SCHEMA_TEXT,
+            PREDEFINED_SCHEMA
     );
 
     static final Relationship REL_SUCCESS = new Relationship.Builder()
@@ -165,13 +188,15 @@ public class GenerateRecord extends AbstractProcessor {
             .description("FlowFiles that are successfully created will be routed to this relationship")
             .build();
 
-    static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS);
+    static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS
+    );
 
     private volatile Faker faker = new Faker();
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -191,6 +216,46 @@ public class GenerateRecord extends AbstractProcessor {
         return RELATIONSHIPS;
     }
 
+    @Override
+    protected Collection<ValidationResult> customValidate(final ValidationContext validationContext) {
+        final List<ValidationResult> results = new ArrayList<>();
+
+        final boolean hasSchemaText = validationContext.getProperty(SCHEMA_TEXT).isSet();
+        final boolean hasPredefinedSchema = validationContext.getProperty(PREDEFINED_SCHEMA).isSet();
+        final boolean hasDynamicProperties = validationContext.getProperties().keySet().stream()
+                .anyMatch(PropertyDescriptor::isDynamic);
+
+        int configuredCount = 0;
+        if (hasSchemaText) {
+            configuredCount++;
+        }
+        if (hasPredefinedSchema) {
+            configuredCount++;
+        }
+        if (hasDynamicProperties) {
+            configuredCount++;
+        }
+
+        if (configuredCount == 0) {
+            results.add(new ValidationResult.Builder()
+                    .subject("Schema Configuration")
+                    .valid(false)
+                    .explanation("At least one schema configuration must be provided: Schema Text, Predefined Schema, or user-defined dynamic properties")
+                    .build());
+        } else if (configuredCount > 1) {
+            results.add(new ValidationResult.Builder()
+                    .subject("Schema Configuration")
+                    .valid(false)
+                    .explanation("Only one schema configuration should be provided. Found multiple configurations: "
+                            + (hasSchemaText ? "Schema Text, " : "")
+                            + (hasPredefinedSchema ? "Predefined Schema, " : "")
+                            + (hasDynamicProperties ? "Dynamic Properties" : ""))
+                    .build());
+        }
+
+        return results;
+    }
+
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
         // Force the en-US Locale for more predictable results
@@ -201,8 +266,13 @@ public class GenerateRecord extends AbstractProcessor {
     public void onTrigger(ProcessContext context, ProcessSession session) throws ProcessException {
 
         final String schemaText = context.getProperty(SCHEMA_TEXT).evaluateAttributeExpressions().getValue();
+        final String predefinedSchemaName = context.getProperty(PREDEFINED_SCHEMA).getValue();
+        final PredefinedRecordSchema predefinedSchema = PredefinedRecordSchema.fromName(predefinedSchemaName);
         final RecordSetWriterFactory writerFactory = context.getProperty(RECORD_WRITER).asControllerService(RecordSetWriterFactory.class);
         final int numRecords = context.getProperty(NUM_RECORDS).evaluateAttributeExpressions().asInteger();
+        final boolean nullable = context.getProperty(NULLABLE_FIELDS).asBoolean();
+        final int nullPercentage = nullable ? context.getProperty(NULL_PERCENTAGE).evaluateAttributeExpressions().asInteger() : 0;
+
         FlowFile flowFile = session.create();
         final Map<String, String> attributes = new HashMap<>();
         final AtomicInteger recordCount = new AtomicInteger();
@@ -210,18 +280,21 @@ public class GenerateRecord extends AbstractProcessor {
         try {
             flowFile = session.write(flowFile, out -> {
                 final RecordSchema recordSchema;
-                final boolean usingSchema;
-                final int nullPercentage = context.getProperty(NULL_PERCENTAGE).evaluateAttributeExpressions().asInteger();
+                final SchemaSource schemaSource;
                 if (StringUtils.isNotEmpty(schemaText)) {
+                    // Schema Text takes highest precedence
                     final Schema avroSchema = new Schema.Parser().parse(schemaText);
                     recordSchema = AvroTypeUtil.createSchema(avroSchema);
-                    usingSchema = true;
+                    schemaSource = SchemaSource.SCHEMA_TEXT;
+                } else if (predefinedSchema != null) {
+                    // Predefined schema takes second precedence
+                    recordSchema = predefinedSchema.getSchema(nullable);
+                    schemaSource = SchemaSource.PREDEFINED;
                 } else {
                     // Generate RecordSchema from user-defined properties
-                    final boolean nullable = context.getProperty(NULLABLE_FIELDS).asBoolean();
                     final Map<String, String> fields = getFields(context);
                     recordSchema = generateRecordSchema(fields, nullable);
-                    usingSchema = false;
+                    schemaSource = SchemaSource.DYNAMIC_PROPERTIES;
                 }
                 try {
                     final RecordSchema writeSchema = writerFactory.getSchema(attributes, recordSchema);
@@ -229,32 +302,35 @@ public class GenerateRecord extends AbstractProcessor {
                         writer.beginRecordSet();
 
                         Record record;
-                        List<RecordField> writeFieldNames = writeSchema.getFields();
-                        Map<String, Object> recordEntries = new HashMap<>();
                         for (int i = 0; i < numRecords; i++) {
-                            for (RecordField writeRecordField : writeFieldNames) {
-                                final String writeFieldName = writeRecordField.getFieldName();
-                                final Object writeFieldValue;
-                                if (usingSchema) {
-                                    writeFieldValue = generateValueFromRecordField(writeRecordField, faker, nullPercentage);
-                                } else {
-                                    final boolean nullValue;
-                                    if (!context.getProperty(GenerateRecord.NULLABLE_FIELDS).asBoolean() || nullPercentage == 0) {
-                                        nullValue = false;
+                            if (schemaSource == SchemaSource.PREDEFINED) {
+                                // Use the predefined schema's optimized value generation
+                                final Map<String, Object> recordEntries = predefinedSchema.generateValues(faker, recordSchema, nullPercentage);
+                                record = new MapRecord(recordSchema, recordEntries);
+                            } else {
+                                // Use original logic for Schema Text or dynamic properties
+                                List<RecordField> writeFieldNames = writeSchema.getFields();
+                                Map<String, Object> recordEntries = new HashMap<>();
+                                for (RecordField writeRecordField : writeFieldNames) {
+                                    final String writeFieldName = writeRecordField.getFieldName();
+                                    final Object writeFieldValue;
+                                    if (schemaSource == SchemaSource.SCHEMA_TEXT) {
+                                        writeFieldValue = generateValueFromRecordField(writeRecordField, faker, nullPercentage);
                                     } else {
-                                        nullValue = (faker.number().numberBetween(0, 100) <= nullPercentage);
-                                    }
-                                    if (nullValue) {
-                                        writeFieldValue = null;
-                                    } else {
-                                        final String propertyValue = context.getProperty(writeFieldName).getValue();
-                                        writeFieldValue = FakerUtils.getFakeData(propertyValue, faker);
-                                    }
-                                }
+                                        final boolean nullValue =
+                                                nullPercentage > 0 && faker.number().numberBetween(0, 100) <= nullPercentage;
 
-                                recordEntries.put(writeFieldName, writeFieldValue);
+                                        if (nullValue) {
+                                            writeFieldValue = null;
+                                        } else {
+                                            final String propertyValue = context.getProperty(writeFieldName).getValue();
+                                            writeFieldValue = FakerUtils.getFakeData(propertyValue, faker);
+                                        }
+                                    }
+                                    recordEntries.put(writeFieldName, writeFieldValue);
+                                }
+                                record = new MapRecord(recordSchema, recordEntries);
                             }
-                            record = new MapRecord(recordSchema, recordEntries);
                             writer.write(record);
                         }
 
@@ -285,6 +361,15 @@ public class GenerateRecord extends AbstractProcessor {
         getLogger().info("Generated records [{}] for {}", count, flowFile);
     }
 
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("record-writer", RECORD_WRITER.getName());
+        config.renameProperty("number-of-records", NUM_RECORDS.getName());
+        config.renameProperty("nullable-fields", NULLABLE_FIELDS.getName());
+        config.renameProperty("null-percentage", NULL_PERCENTAGE.getName());
+        config.renameProperty("schema-text", SCHEMA_TEXT.getName());
+    }
+
     protected Map<String, String> getFields(ProcessContext context) {
         return context.getProperties().entrySet().stream()
                 // filter non-null dynamic properties
@@ -300,43 +385,33 @@ public class GenerateRecord extends AbstractProcessor {
         if (recordField.isNullable() && faker.number().numberBetween(0, 100) < nullPercentage) {
             return null;
         }
-        switch (recordField.getDataType().getFieldType()) {
-            case BIGINT:
-                return new BigInteger(String.valueOf(faker.number().numberBetween(Long.MIN_VALUE, Long.MAX_VALUE)));
-            case BOOLEAN:
-                return FakerUtils.getFakeData("Bool.bool", faker);
-            case BYTE:
-                return (byte) faker.number().numberBetween(Byte.MIN_VALUE, Byte.MAX_VALUE);
-            case CHAR:
-                return (char) faker.number().numberBetween(Character.MIN_VALUE, Character.MAX_VALUE);
-            case DATE:
-                return FakerUtils.getFakeData(DEFAULT_DATE_PROPERTY_NAME, faker);
-            case DOUBLE:
-                return faker.number().randomDouble(6, Long.MIN_VALUE, Long.MAX_VALUE);
-            case FLOAT:
+        return switch (recordField.getDataType().getFieldType()) {
+            case BIGINT -> new BigInteger(String.valueOf(faker.number().numberBetween(Long.MIN_VALUE, Long.MAX_VALUE)));
+            case BOOLEAN -> FakerUtils.getFakeData("Bool.bool", faker);
+            case BYTE -> (byte) faker.number().numberBetween(Byte.MIN_VALUE, Byte.MAX_VALUE);
+            case CHAR -> (char) faker.number().numberBetween(Character.MIN_VALUE, Character.MAX_VALUE);
+            case DATE -> FakerUtils.getFakeData(DEFAULT_DATE_PROPERTY_NAME, faker);
+            case DOUBLE -> faker.number().randomDouble(6, Long.MIN_VALUE, Long.MAX_VALUE);
+            case FLOAT -> {
                 final double randomDouble = faker.number().randomDouble(6, Long.MIN_VALUE, Long.MAX_VALUE);
-                final BigDecimal asBigDecimal = new BigDecimal(randomDouble);
-                return asBigDecimal.floatValue();
-            case DECIMAL:
-                return faker.number().randomDouble(((DecimalDataType) recordField.getDataType()).getScale(), Long.MIN_VALUE, Long.MAX_VALUE);
-            case INT:
-                return faker.number().numberBetween(Integer.MIN_VALUE, Integer.MAX_VALUE);
-            case LONG:
-                return faker.number().numberBetween(Long.MIN_VALUE, Long.MAX_VALUE);
-            case SHORT:
-                return faker.number().numberBetween(Short.MIN_VALUE, Short.MAX_VALUE);
-            case ENUM:
+                yield (float) randomDouble;
+            }
+            case DECIMAL -> faker.number().randomDouble(((DecimalDataType) recordField.getDataType()).getScale(), Long.MIN_VALUE, Long.MAX_VALUE);
+            case INT -> faker.number().numberBetween(Integer.MIN_VALUE, Integer.MAX_VALUE);
+            case LONG -> faker.number().numberBetween(Long.MIN_VALUE, Long.MAX_VALUE);
+            case SHORT -> faker.number().numberBetween(Short.MIN_VALUE, Short.MAX_VALUE);
+            case ENUM -> {
                 List<String> enums = ((EnumDataType) recordField.getDataType()).getEnums();
-                return enums.get(faker.number().numberBetween(0, enums.size() - 1));
-            case TIME:
+                yield enums.get(faker.number().numberBetween(0, enums.size() - 1));
+            }
+            case TIME -> {
                 Date fakeDate = (Date) FakerUtils.getFakeData(DEFAULT_DATE_PROPERTY_NAME, faker);
                 LocalDate fakeLocalDate = fakeDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                return fakeLocalDate.format(DateTimeFormatter.ISO_LOCAL_TIME);
-            case TIMESTAMP:
-                return ((Date) FakerUtils.getFakeData(DEFAULT_DATE_PROPERTY_NAME, faker)).getTime();
-            case UUID:
-                return UUID.randomUUID();
-            case ARRAY:
+                yield fakeLocalDate.format(DateTimeFormatter.ISO_LOCAL_TIME);
+            }
+            case TIMESTAMP -> ((Date) FakerUtils.getFakeData(DEFAULT_DATE_PROPERTY_NAME, faker)).getTime();
+            case UUID -> UUID.randomUUID();
+            case ARRAY -> {
                 final ArrayDataType arrayDataType = (ArrayDataType) recordField.getDataType();
                 final DataType elementType = arrayDataType.getElementType();
                 final int numElements = faker.number().numberBetween(0, 10);
@@ -346,8 +421,9 @@ public class GenerateRecord extends AbstractProcessor {
                     // If the array elements are non-nullable, use zero as the nullPercentage
                     returnValue[i] = generateValueFromRecordField(tempRecordField, faker, arrayDataType.isElementsNullable() ? nullPercentage : 0);
                 }
-                return returnValue;
-            case MAP:
+                yield returnValue;
+            }
+            case MAP -> {
                 final MapDataType mapDataType = (MapDataType) recordField.getDataType();
                 final DataType valueType = mapDataType.getValueType();
                 // Create 4-element fake map
@@ -356,8 +432,9 @@ public class GenerateRecord extends AbstractProcessor {
                 returnMap.put(KEY2, generateValueFromRecordField(new RecordField(KEY2, valueType), faker, nullPercentage));
                 returnMap.put(KEY3, generateValueFromRecordField(new RecordField(KEY3, valueType), faker, nullPercentage));
                 returnMap.put(KEY4, generateValueFromRecordField(new RecordField(KEY4, valueType), faker, nullPercentage));
-                return returnMap;
-            case RECORD:
+                yield returnMap;
+            }
+            case RECORD -> {
                 final RecordDataType recordType = (RecordDataType) recordField.getDataType();
                 final RecordSchema childSchema = recordType.getChildSchema();
                 final Map<String, Object> recordValues = new HashMap<>();
@@ -366,44 +443,34 @@ public class GenerateRecord extends AbstractProcessor {
                     final Object writeFieldValue = generateValueFromRecordField(writeRecordField, faker, nullPercentage);
                     recordValues.put(writeFieldName, writeFieldValue);
                 }
-                return new MapRecord(childSchema, recordValues);
-            case CHOICE:
+                yield new MapRecord(childSchema, recordValues);
+            }
+            case CHOICE -> {
                 final ChoiceDataType choiceDataType = (ChoiceDataType) recordField.getDataType();
                 List<DataType> subTypes = choiceDataType.getPossibleSubTypes();
                 // Pick one at random and generate a value for it
                 DataType chosenType = subTypes.get(faker.number().numberBetween(0, subTypes.size() - 1));
                 RecordField tempRecordField = new RecordField(recordField.getFieldName(), chosenType);
-                return generateValueFromRecordField(tempRecordField, faker, nullPercentage);
-            case STRING:
-            default:
-                return generateRandomString();
-        }
+                yield generateValueFromRecordField(tempRecordField, faker, nullPercentage);
+            }
+            case STRING -> generateRandomString();
+        };
     }
 
     private String generateRandomString() {
         final int categoryChoice = faker.number().numberBetween(0, 10);
-        switch (categoryChoice) {
-            case 0:
-                return faker.name().fullName();
-            case 1:
-                return faker.lorem().word();
-            case 2:
-                return faker.shakespeare().romeoAndJulietQuote();
-            case 3:
-                return faker.educator().university();
-            case 4:
-                return faker.zelda().game();
-            case 5:
-                return faker.company().name();
-            case 6:
-                return faker.chuckNorris().fact();
-            case 7:
-                return faker.book().title();
-            case 8:
-                return faker.dog().breed();
-            default:
-                return faker.animal().name();
-        }
+        return switch (categoryChoice) {
+            case 0 -> faker.name().fullName();
+            case 1 -> faker.lorem().word();
+            case 2 -> faker.shakespeare().romeoAndJulietQuote();
+            case 3 -> faker.educator().university();
+            case 4 -> faker.zelda().game();
+            case 5 -> faker.company().name();
+            case 6 -> faker.chuckNorris().fact();
+            case 7 -> faker.book().title();
+            case 8 -> faker.dog().breed();
+            default -> faker.animal().name();
+        };
     }
 
     protected RecordSchema generateRecordSchema(final Map<String, String> fields, final boolean nullable) {
@@ -416,5 +483,14 @@ public class GenerateRecord extends AbstractProcessor {
             recordFields.add(recordField);
         }
         return new SimpleRecordSchema(recordFields);
+    }
+
+    /**
+     * Enum to track which source is being used for the record schema.
+     */
+    private enum SchemaSource {
+        SCHEMA_TEXT,
+        PREDEFINED,
+        DYNAMIC_PROPERTIES
     }
 }

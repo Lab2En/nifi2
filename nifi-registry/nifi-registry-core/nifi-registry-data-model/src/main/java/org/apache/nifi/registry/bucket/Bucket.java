@@ -17,7 +17,6 @@
 package org.apache.nifi.registry.bucket;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.Objects;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.xml.bind.annotation.XmlRootElement;
@@ -25,6 +24,8 @@ import org.apache.nifi.registry.authorization.Permissions;
 import org.apache.nifi.registry.link.LinkableEntity;
 import org.apache.nifi.registry.revision.entity.RevisableEntity;
 import org.apache.nifi.registry.revision.entity.RevisionInfo;
+
+import java.util.Objects;
 
 @XmlRootElement
 public class Bucket extends LinkableEntity implements RevisableEntity {
@@ -49,10 +50,12 @@ public class Bucket extends LinkableEntity implements RevisableEntity {
     private RevisionInfo revision;
 
     @Schema(description = "An ID to uniquely identify this object.", accessMode = Schema.AccessMode.READ_ONLY)
+    @Override
     public String getIdentifier() {
         return identifier;
     }
 
+    @Override
     public void setIdentifier(String identifier) {
         this.identifier = identifier;
     }

@@ -17,7 +17,7 @@
 package org.apache.nifi.processors.hadoop;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -77,7 +77,7 @@ public class KeyValueReader implements SequenceFileReader<Set<FlowFile>> {
                     if (fileName.contains(File.separator)) {
                         fileName = StringUtils.substringAfterLast(fileName, File.separator);
                     }
-                    fileName = fileName + "." + System.nanoTime();
+                    fileName = fileName + "." + System.nanoTime(); // NOPMD
                 } else {
                     fileName = inputfileName + ++counter;
                 }

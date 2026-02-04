@@ -115,7 +115,6 @@ public class ConfigSchema extends BaseSchema implements WritableSchema, Converta
         List<String> allControllerServiceIds = allProcessGroups.stream().flatMap(p -> p.getControllerServices().stream()).map(ControllerServiceSchema::getId).collect(Collectors.toList());
         List<String> allFunnelIds = allProcessGroups.stream().flatMap(p -> p.getFunnels().stream()).map(FunnelSchema::getId).collect(Collectors.toList());
         List<String> allConnectionIds = allConnectionSchemas.stream().map(ConnectionSchema::getId).collect(Collectors.toList());
-        List<String> allRemoteProcessGroupNames = allRemoteProcessGroups.stream().map(RemoteProcessGroupSchema::getName).collect(Collectors.toList());
         List<String> allRemoteInputPortIds = allRemoteProcessGroups.stream().filter(r -> r.getInputPorts() != null)
                 .flatMap(r -> r.getInputPorts().stream()).map(RemotePortSchema::getId).collect(Collectors.toList());
         List<String> allRemoteOutputPortIds = allRemoteProcessGroups.stream().filter(r -> r.getOutputPorts() != null)
@@ -135,7 +134,7 @@ public class ConfigSchema extends BaseSchema implements WritableSchema, Converta
         // Potential connection sources and destinations need to have unique ids
         CollectionOverlap<String> overlapResults = new CollectionOverlap<>(new HashSet<>(allProcessorIds), new HashSet<>(allRemoteInputPortIds), new HashSet<>(allRemoteOutputPortIds),
                 new HashSet<>(allInputPortIds), new HashSet<>(allOutputPortIds), new HashSet<>(allFunnelIds));
-        if (overlapResults.getDuplicates().size() > 0) {
+        if (!overlapResults.getDuplicates().isEmpty()) {
             addValidationIssue(FOUND_THE_FOLLOWING_DUPLICATE_IDS + overlapResults.getDuplicates().stream().sorted().collect(Collectors.joining(", ")));
         }
 
@@ -162,6 +161,7 @@ public class ConfigSchema extends BaseSchema implements WritableSchema, Converta
         processGroupSchema.getProcessGroupSchemas().forEach(p -> addProcessGroups(p, result));
     }
 
+    @Override
     public Map<String, Object> toMap() {
         Map<String, Object> result = mapSupplier.get();
         result.put(VERSION, getVersion());

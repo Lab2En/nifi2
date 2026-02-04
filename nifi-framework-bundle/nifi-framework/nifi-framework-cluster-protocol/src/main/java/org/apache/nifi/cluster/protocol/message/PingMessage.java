@@ -16,8 +16,9 @@
  */
 package org.apache.nifi.cluster.protocol.message;
 
-import java.util.Date;
 import jakarta.xml.bind.annotation.XmlRootElement;
+
+import java.util.Date;
 
 /**
  */
@@ -27,9 +28,6 @@ public class PingMessage extends ProtocolMessage {
     private String id;
 
     private Date date = new Date();
-
-    public PingMessage() {
-    }
 
     public Date getDate() {
         return date;

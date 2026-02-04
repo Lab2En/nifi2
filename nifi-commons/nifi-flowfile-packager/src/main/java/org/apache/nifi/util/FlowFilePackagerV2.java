@@ -19,6 +19,7 @@ package org.apache.nifi.util;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -28,12 +29,12 @@ import java.util.Map;
  * </p>
  *
  * <pre>
- * Length Field : indicates the number of Flow File Attributes in the stream
- * 1 to N times (N=number of Flow File Attributes):
- *      String Field : Flow File Attribute key name
- *      String Field : Flow File Attribute value
- * Long : 8 bytes indicating the length of the Flow File content
- * Content : The next M bytes are the content of the Flow File.
+ * Length Field : indicates the number of FlowFile Attributes in the stream
+ * 1 to N times (N=number of FlowFile Attributes):
+ *      String Field : FlowFile Attribute key name
+ *      String Field : FlowFile Attribute value
+ * Long : 8 bytes indicating the length of the FlowFile content
+ * Content : The next M bytes are the content of the FlowFile.
  * </pre>
  *
  * <pre>
@@ -107,7 +108,7 @@ public class FlowFilePackagerV2 implements FlowFilePackager {
     }
 
     private void writeString(final String val, final OutputStream out) throws IOException {
-        final byte[] bytes = val.getBytes("UTF-8");
+        final byte[] bytes = val.getBytes(StandardCharsets.UTF_8);
         writeFieldLength(out, bytes.length);
         out.write(bytes);
     }

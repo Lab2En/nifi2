@@ -17,9 +17,9 @@
 package org.apache.nifi.remote.protocol.http;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.remote.AbstractTransaction;
 import org.apache.nifi.remote.Peer;
+import org.apache.nifi.remote.SiteToSiteEventReporter;
 import org.apache.nifi.remote.TransferDirection;
 import org.apache.nifi.remote.codec.StandardFlowFileCodec;
 import org.apache.nifi.remote.io.http.HttpCommunicationsSession;
@@ -40,7 +40,7 @@ public class HttpClientTransaction extends AbstractTransaction {
     private String transactionUrl;
 
     public HttpClientTransaction(final int protocolVersion, final Peer peer, TransferDirection direction,
-                                 final boolean useCompression, final String portId, int penaltyMillis, EventReporter eventReporter) throws IOException {
+                                 final boolean useCompression, final String portId, int penaltyMillis, SiteToSiteEventReporter eventReporter) {
         super(peer, direction, useCompression, new StandardFlowFileCodec(), eventReporter, protocolVersion, penaltyMillis, portId);
     }
 
@@ -124,13 +124,10 @@ public class HttpClientTransaction extends AbstractTransaction {
                     logger.debug("{} Canceling transaction. explanation={}", this, explanation);
                     TransactionResultEntity resultEntity = apiClient.commitReceivingFlowFiles(transactionUrl, ResponseCode.CANCEL_TRANSACTION, null);
                     ResponseCode cancelResponse = ResponseCode.fromCode(resultEntity.getResponseCode());
-                    switch (cancelResponse) {
-                        case CANCEL_TRANSACTION:
-                            logger.debug("{} CANCEL_TRANSACTION, The transaction is canceled on server properly.", this);
-                            break;
-                        default:
-                            logger.warn("{} CANCEL_TRANSACTION, Expected the transaction is canceled on server, but received {}.", this, cancelResponse);
-                            break;
+                    if (cancelResponse == ResponseCode.CANCEL_TRANSACTION) {
+                        logger.debug("{} CANCEL_TRANSACTION, The transaction is canceled on server properly.", this);
+                    } else {
+                        logger.warn("{} CANCEL_TRANSACTION, Expected the transaction is canceled on server, but received {}.", this, cancelResponse);
                     }
                     break;
             }
@@ -141,36 +138,30 @@ public class HttpClientTransaction extends AbstractTransaction {
                     logger.debug("{} Finished sending flow files.", this);
                     break;
                 case BAD_CHECKSUM: {
-                        TransactionResultEntity resultEntity = apiClient.commitTransferFlowFiles(transactionUrl, ResponseCode.BAD_CHECKSUM);
-                        ResponseCode badChecksumCancelResponse = ResponseCode.fromCode(resultEntity.getResponseCode());
-                        switch (badChecksumCancelResponse) {
-                            case CANCEL_TRANSACTION:
-                                logger.debug("{} BAD_CHECKSUM, The transaction is canceled on server properly.", this);
-                                break;
-                            default:
-                                logger.warn("{} BAD_CHECKSUM, Expected the transaction is canceled on server, but received {}.", this, badChecksumCancelResponse);
-                                break;
-                        }
-
+                    TransactionResultEntity resultEntity = apiClient.commitTransferFlowFiles(transactionUrl, ResponseCode.BAD_CHECKSUM);
+                    ResponseCode badChecksumCancelResponse = ResponseCode.fromCode(resultEntity.getResponseCode());
+                    if (badChecksumCancelResponse == ResponseCode.CANCEL_TRANSACTION) {
+                        logger.debug("{} BAD_CHECKSUM, The transaction is canceled on server properly.", this);
+                    } else {
+                        logger.warn("{} BAD_CHECKSUM, Expected the transaction is canceled on server, but received {}.", this, badChecksumCancelResponse);
                     }
+
+                }
                     break;
                 case CONFIRM_TRANSACTION:
                     // The actual HTTP request will be sent in readTransactionResponse.
                     logger.debug("{} Transaction is confirmed.", this);
                     break;
                 case CANCEL_TRANSACTION: {
-                        logger.debug("{} Canceling transaction.", this);
-                        TransactionResultEntity resultEntity = apiClient.commitTransferFlowFiles(transactionUrl, ResponseCode.CANCEL_TRANSACTION);
-                        ResponseCode cancelResponse = ResponseCode.fromCode(resultEntity.getResponseCode());
-                        switch (cancelResponse) {
-                            case CANCEL_TRANSACTION:
-                                logger.debug("{} CANCEL_TRANSACTION, The transaction is canceled on server properly.", this);
-                                break;
-                            default:
-                                logger.warn("{} CANCEL_TRANSACTION, Expected the transaction is canceled on server, but received {}.", this, cancelResponse);
-                                break;
-                        }
+                    logger.debug("{} Canceling transaction.", this);
+                    TransactionResultEntity resultEntity = apiClient.commitTransferFlowFiles(transactionUrl, ResponseCode.CANCEL_TRANSACTION);
+                    ResponseCode cancelResponse = ResponseCode.fromCode(resultEntity.getResponseCode());
+                    if (cancelResponse == ResponseCode.CANCEL_TRANSACTION) {
+                        logger.debug("{} CANCEL_TRANSACTION, The transaction is canceled on server properly.", this);
+                    } else {
+                        logger.warn("{} CANCEL_TRANSACTION, Expected the transaction is canceled on server, but received {}.", this, cancelResponse);
                     }
+                }
                     break;
             }
         }

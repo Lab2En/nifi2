@@ -29,6 +29,7 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -55,8 +56,7 @@ import static org.apache.nifi.processors.snowflake.util.SnowflakeAttributes.ATTR
 public class StartSnowflakeIngest extends AbstractProcessor {
 
     static final PropertyDescriptor INGEST_MANAGER_PROVIDER = new PropertyDescriptor.Builder()
-            .name("ingest-manager-provider")
-            .displayName("Ingest Manager Provider")
+            .name("Ingest Manager Provider")
             .description("Specifies the Controller Service to use for ingesting Snowflake staged files.")
             .identifiesControllerService(SnowflakeIngestManagerProviderService.class)
             .required(true)
@@ -72,13 +72,18 @@ public class StartSnowflakeIngest extends AbstractProcessor {
             .description("For FlowFiles of failed ingest request")
             .build();
 
-    static final List<PropertyDescriptor> PROPERTIES = List.of(INGEST_MANAGER_PROVIDER);
+    static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            INGEST_MANAGER_PROVIDER
+    );
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_SUCCESS,
+            REL_FAILURE
+    );
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -115,5 +120,10 @@ public class StartSnowflakeIngest extends AbstractProcessor {
             return;
         }
         session.transfer(flowFile, REL_SUCCESS);
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty("ingest-manager-provider", INGEST_MANAGER_PROVIDER.getName());
     }
 }

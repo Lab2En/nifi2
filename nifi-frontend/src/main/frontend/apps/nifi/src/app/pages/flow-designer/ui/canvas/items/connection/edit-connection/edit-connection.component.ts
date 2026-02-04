@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Inject, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import {
     EditConnectionDialogRequest,
@@ -23,7 +23,6 @@ import {
     loadBalanceStrategies
 } from '../../../../../state/flow';
 import { Store } from '@ngrx/store';
-import { ExtensionCreation } from '../../../../../../../ui/common/extension-creation/extension-creation.component';
 import { selectBreadcrumbs, selectSaving } from '../../../../../state/flow/flow.selectors';
 import { AsyncPipe } from '@angular/common';
 import { FormBuilder, FormControl, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -33,9 +32,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
 import { NifiSpinnerDirective } from '../../../../../../../ui/common/spinner/nifi-spinner.directive';
-import { CopyDirective, NifiTooltipDirective, TextTip } from '@nifi/shared';
+import { ComponentType, CopyDirective, NifiTooltipDirective, TextTip } from '@nifi/shared';
 import { MatTabsModule } from '@angular/material/tabs';
-import { ComponentType } from 'libs/shared/src';
 import { NiFiState } from '../../../../../../../state';
 import { selectPrioritizerTypes } from '../../../../../../../state/extension-types/extension-types.selectors';
 import { Prioritizers } from '../prioritizers/prioritizers.component';
@@ -54,16 +52,13 @@ import { DestinationProcessGroup } from '../destination/destination-process-grou
 import { SourceRemoteProcessGroup } from '../source/source-remote-process-group/source-remote-process-group.component';
 import { DestinationRemoteProcessGroup } from '../destination/destination-remote-process-group/destination-remote-process-group.component';
 import { BreadcrumbEntity } from '../../../../../state/shared';
-import { ErrorBanner } from '../../../../../../../ui/common/error-banner/error-banner.component';
-import { TabbedDialog } from '../../../../../../../ui/common/tabbed-dialog/tabbed-dialog.component';
+import { TabbedDialog, TABBED_DIALOG_ID } from '../../../../../../../ui/common/tabbed-dialog/tabbed-dialog.component';
 import { ErrorContextKey } from '../../../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../../../ui/common/context-error-banner/context-error-banner.component';
 
 @Component({
     selector: 'edit-connection',
-    standalone: true,
     imports: [
-        ExtensionCreation,
         AsyncPipe,
         FormsModule,
         MatButtonModule,
@@ -87,14 +82,25 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
         DestinationProcessGroup,
         SourceRemoteProcessGroup,
         DestinationRemoteProcessGroup,
-        ErrorBanner,
         ContextErrorBanner,
         CopyDirective
     ],
     templateUrl: './edit-connection.component.html',
-    styleUrls: ['./edit-connection.component.scss']
+    styleUrls: ['./edit-connection.component.scss'],
+    providers: [
+        {
+            provide: TABBED_DIALOG_ID,
+            useValue: 'edit-connection-selected-index'
+        }
+    ]
 })
 export class EditConnectionComponent extends TabbedDialog {
+    dialogRequest = inject<EditConnectionDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private store = inject<Store<NiFiState>>(Store);
+    private canvasUtils = inject(CanvasUtils);
+    private client = inject(Client);
+
     @Input() set getChildOutputPorts(getChildOutputPorts: (groupId: string) => Observable<any>) {
         if (this.sourceType == ComponentType.ProcessGroup) {
             this.childOutputPorts$ = getChildOutputPorts(this.source.groupId);
@@ -229,14 +235,9 @@ export class EditConnectionComponent extends TabbedDialog {
     loadBalanceCompressionRequired = false;
     initialCompression: string;
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public dialogRequest: EditConnectionDialogRequest,
-        private formBuilder: FormBuilder,
-        private store: Store<NiFiState>,
-        private canvasUtils: CanvasUtils,
-        private client: Client
-    ) {
-        super('edit-connection-selected-index');
+    constructor() {
+        super();
+        const dialogRequest = this.dialogRequest;
 
         const connection: any = dialogRequest.entity.component;
 

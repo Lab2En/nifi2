@@ -16,26 +16,28 @@
  */
 package org.apache.nifi.processors.graph;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import groovy.json.JsonOutput;
 import org.apache.commons.io.IOUtils;
+import org.apache.nifi.json.JsonTreeReader;
 import org.apache.nifi.processors.graph.util.InMemoryGraphClient;
 import org.apache.nifi.reporting.InitializationException;
+import org.apache.nifi.serialization.record.MockRecordWriter;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
-import org.apache.nifi.json.JsonTreeReader;
-import org.apache.nifi.serialization.record.MockRecordWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ArrayList;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -78,7 +80,7 @@ public class ExecuteGraphQueryRecordTest {
         runner.assertTransferCount(ExecuteGraphQueryRecord.GRAPH, 1);
         runner.assertTransferCount(ExecuteGraphQueryRecord.SUCCESS, 1);
         runner.assertTransferCount(ExecuteGraphQueryRecord.FAILURE, 0);
-        MockFlowFile relGraph = runner.getFlowFilesForRelationship(ExecuteGraphQueryRecord.GRAPH).get(0);
+        MockFlowFile relGraph = runner.getFlowFilesForRelationship(ExecuteGraphQueryRecord.GRAPH).getFirst();
 
         assertTrue(contentEqualsWindowsSafe(relGraph, "/testFlowFileContent.json"));
     }
@@ -88,13 +90,7 @@ public class ExecuteGraphQueryRecordTest {
         setupGraphClient(false);
         List<Map<String, Object>> test = new ArrayList<>();
         Map<String, Object> tempMap = new HashMap<>();
-        tempMap.put("M", new ArrayList<Integer>() {
-            {
-                add(1);
-                add(2);
-                add(3);
-            }
-        });
+        tempMap.put("M", List.of(1, 2, 3));
         test.add(tempMap);
 
         byte[] json = JsonOutput.toJson(test).getBytes();
@@ -110,7 +106,7 @@ public class ExecuteGraphQueryRecordTest {
         runner.assertTransferCount(ExecuteGraphQueryRecord.GRAPH, 1);
         runner.assertTransferCount(ExecuteGraphQueryRecord.SUCCESS, 1);
         runner.assertTransferCount(ExecuteGraphQueryRecord.FAILURE, 0);
-        MockFlowFile relGraph = runner.getFlowFilesForRelationship(ExecuteGraphQueryRecord.GRAPH).get(0);
+        MockFlowFile relGraph = runner.getFlowFilesForRelationship(ExecuteGraphQueryRecord.GRAPH).getFirst();
 
         assertTrue(contentEqualsWindowsSafe(relGraph, "/testFlowFileList.json"));
     }
@@ -136,7 +132,7 @@ public class ExecuteGraphQueryRecordTest {
         runner.assertTransferCount(ExecuteGraphQueryRecord.GRAPH, 1);
         runner.assertTransferCount(ExecuteGraphQueryRecord.SUCCESS, 1);
         runner.assertTransferCount(ExecuteGraphQueryRecord.FAILURE, 0);
-        MockFlowFile relGraph = runner.getFlowFilesForRelationship(ExecuteGraphQueryRecord.GRAPH).get(0);
+        MockFlowFile relGraph = runner.getFlowFilesForRelationship(ExecuteGraphQueryRecord.GRAPH).getFirst();
 
         assertTrue(contentEqualsWindowsSafe(relGraph, "/testAttributes.json"));
     }
@@ -146,8 +142,10 @@ public class ExecuteGraphQueryRecordTest {
         String expectedRaw = IOUtils.toString(is, StandardCharsets.UTF_8);
         String contentRaw = new String(runner.getContentAsByteArray(flowFile));
         ObjectMapper mapper = new ObjectMapper();
-        List<Map<String, Object>> expected = mapper.readValue(expectedRaw, List.class);
-        List<Map<String, Object>> content = mapper.readValue(contentRaw, List.class);
+        List<Map<String, Object>> expected = mapper.readValue(expectedRaw, new TypeReference<>() {
+        });
+        List<Map<String, Object>> content = mapper.readValue(contentRaw, new TypeReference<>() {
+        });
 
         assertEquals(expected.size(), content.size());
         for (int x = 0; x < content.size(); x++) {
@@ -177,6 +175,19 @@ public class ExecuteGraphQueryRecordTest {
         runner.assertTransferCount(ExecuteGraphQueryRecord.GRAPH, 0);
         runner.assertTransferCount(ExecuteGraphQueryRecord.SUCCESS, 0);
         runner.assertTransferCount(ExecuteGraphQueryRecord.FAILURE, 1);
+    }
+
+    @Test
+    void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("client-service", ExecuteGraphQueryRecord.CLIENT_SERVICE.getName()),
+                Map.entry("reader-service", ExecuteGraphQueryRecord.READER_SERVICE.getName()),
+                Map.entry("writer-service", ExecuteGraphQueryRecord.WRITER_SERVICE.getName()),
+                Map.entry("record-script", ExecuteGraphQueryRecord.SUBMISSION_SCRIPT.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
     }
 
     private void setupGraphClient(boolean failOnQuery) throws InitializationException {

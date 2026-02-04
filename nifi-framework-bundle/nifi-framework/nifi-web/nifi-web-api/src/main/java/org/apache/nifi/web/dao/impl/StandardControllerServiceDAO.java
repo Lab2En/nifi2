@@ -17,6 +17,7 @@
 package org.apache.nifi.web.dao.impl;
 
 import org.apache.nifi.bundle.BundleCoordinate;
+import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.components.ConfigurableComponent;
 import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.components.state.StateMap;
@@ -35,16 +36,16 @@ import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.logging.LogLevel;
 import org.apache.nifi.logging.LogRepository;
+import org.apache.nifi.logging.StandardLoggingContext;
 import org.apache.nifi.logging.repository.NopLogRepository;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.parameter.ParameterLookup;
-import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.processor.SimpleProcessLogger;
-import org.apache.nifi.logging.StandardLoggingContext;
 import org.apache.nifi.util.BundleUtils;
 import org.apache.nifi.web.NiFiCoreException;
 import org.apache.nifi.web.ResourceNotFoundException;
 import org.apache.nifi.web.api.dto.BundleDTO;
+import org.apache.nifi.web.api.dto.ComponentStateDTO;
 import org.apache.nifi.web.api.dto.ConfigVerificationResultDTO;
 import org.apache.nifi.web.api.dto.ControllerServiceDTO;
 import org.apache.nifi.web.dao.ComponentStateDAO;
@@ -58,6 +59,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Repository
@@ -185,7 +188,7 @@ public class StandardControllerServiceDAO extends ComponentDAO implements Contro
                 if (ControllerServiceState.ENABLED.equals(purposedControllerServiceState)) {
                     serviceProvider.enableControllerService(controllerService);
                 } else if (ControllerServiceState.DISABLED.equals(purposedControllerServiceState)) {
-                    serviceProvider.disableControllerService(controllerService);
+                    disableControllerServiceAndReferences(controllerService);
                 }
             }
         }
@@ -209,6 +212,40 @@ public class StandardControllerServiceDAO extends ComponentDAO implements Contro
         }
 
         return controllerService;
+    }
+
+    /**
+     * Disables a Controller Service along with all its referencing components.
+     * This method handles the complete disable workflow:
+     * 1. Stops all referencing schedulable components (processors, reporting tasks, etc.)
+     * 2. Waits for all referencing components to stop
+     * 3. Disables all referencing controller services
+     * 4. Verifies the controller service can be disabled
+     * 5. Disables the controller service itself
+     *
+     * @param controllerService the controller service to disable
+     */
+    private void disableControllerServiceAndReferences(final ControllerServiceNode controllerService) {
+        // First, unschedule all referencing schedulable components (processors, reporting tasks, etc.)
+        final Map<ComponentNode, Future<Void>> unscheduleFutures = serviceProvider.unscheduleReferencingComponents(controllerService);
+
+        // Wait for all referencing components to stop
+        for (final Map.Entry<ComponentNode, Future<Void>> entry : unscheduleFutures.entrySet()) {
+            try {
+                entry.getValue().get(30, TimeUnit.SECONDS);
+            } catch (final Exception e) {
+                throw new NiFiCoreException("Failed to stop referencing component " + entry.getKey().getIdentifier(), e);
+            }
+        }
+
+        // Next, disable all referencing controller services
+        serviceProvider.disableReferencingServices(controllerService);
+
+        // Verify that all referencing components are now stopped before disabling
+        controllerService.verifyCanDisable();
+
+        // Finally, disable the controller service itself
+        serviceProvider.disableControllerService(controllerService);
     }
 
     private void updateBundle(final ControllerServiceNode controllerService, final ControllerServiceDTO controllerServiceDTO) {
@@ -327,9 +364,12 @@ public class StandardControllerServiceDAO extends ComponentDAO implements Contro
 
                     if (ControllerServiceState.ENABLED.equals(purposedControllerServiceState)) {
                         controllerService.verifyCanEnable();
-                    } else if (ControllerServiceState.DISABLED.equals(purposedControllerServiceState)) {
-                        controllerService.verifyCanDisable();
                     }
+                    // Note: We don't call verifyCanDisable() here because we will automatically
+                    // stop referencing components (processors, reporting tasks) and disable
+                    // referencing controller services before disabling this service.
+                    // The verifyCanDisable() check is performed in updateControllerService()
+                    // AFTER the referencing components have been stopped.
                 }
             } catch (final IllegalArgumentException iae) {
                 throw new IllegalArgumentException("Controller Service state: Value must be one of [ENABLED, DISABLED]");
@@ -450,9 +490,9 @@ public class StandardControllerServiceDAO extends ComponentDAO implements Contro
     }
 
     @Override
-    public void clearState(final String controllerServiceId) {
+    public void clearState(final String controllerServiceId, final ComponentStateDTO componentStateDTO) {
         final ControllerServiceNode controllerService = locateControllerService(controllerServiceId);
-        componentStateDAO.clearState(controllerService);
+        componentStateDAO.clearState(controllerService, componentStateDTO);
     }
 
     @Autowired

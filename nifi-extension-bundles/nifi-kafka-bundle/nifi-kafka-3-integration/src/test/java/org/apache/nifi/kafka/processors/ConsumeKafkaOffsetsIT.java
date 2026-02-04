@@ -85,7 +85,7 @@ class ConsumeKafkaOffsetsIT extends AbstractConsumeKafkaIT {
             assertEquals(1, committedOffsets.entrySet().size());
             Map.Entry<TopicPartition, OffsetAndMetadata> entry = committedOffsets.entrySet().iterator().next();
             assertEquals(topic, entry.getKey().topic());
-            assertEquals(values.length - 1, entry.getValue().offset());
+            assertEquals(values.length, entry.getValue().offset());
         }
     }
 
@@ -101,8 +101,7 @@ class ConsumeKafkaOffsetsIT extends AbstractConsumeKafkaIT {
             records.add(new ProducerRecord<>(topic, null, (String) null, value, Collections.emptyList()));
         }
         produce(topic, records);
-        final long pollUntil = System.currentTimeMillis() + DURATION_POLL.toMillis();
-        while ((System.currentTimeMillis() < pollUntil) && (runner.getFlowFilesForRelationship("success").isEmpty())) {
+        while (runner.getFlowFilesForRelationship("success").size() < values.length) {
             runner.run(1, false, false);
         }
         runner.assertTransferCount("success", values.length);

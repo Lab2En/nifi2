@@ -36,8 +36,8 @@ type, an Exception will be thrown.
 
 The following rules apply when attempting to coerce a field value from one data type to another:
 
-* Any data type can be coerced into a String type.
-* Any numeric data type (Byte, Short, Int, Long, Float, Double) can be coerced into any other numeric data type.
+* Excel stores all numeric types as a Double which can be coerced to any other numeric data type (Byte, Short, Int, Long, Float).
+* Any data type can be coerced into a String type. Please note since Excel stores all numbers as a Double, a large number coerced to a String will result in a string representation of the number in scientific notation. If this is not desired, then coerce the number to a Long numeric type.
 * Any numeric value can be coerced into a Date, Time, or Timestamp type, by assuming that the Long value is the number
   of milliseconds since epoch (Midnight GMT, January 1, 1970).
 * A String value can be coerced into a Date, Time, or Timestamp type, if its format matches the configured "Date
@@ -73,7 +73,11 @@ encompasses all fields that have been encountered.
 A common concern when inferring schemas is how to handle the condition of two values that have different types. For
 example, consider a FlowFile with the following two records:
 
-`name, age John, 8 Jane, Ten`
+```
+name, age
+John, 8
+Jane, Ten
+```
 
 It is clear that the "name" field will be inferred as a STRING type. However, how should we handle the "age" field?
 Should the field be an CHOICE between INT and STRING? Should we prefer LONG over INT? Should we just use a STRING?
@@ -142,7 +146,10 @@ Processors handle the data.
 As an example, consider a FlowFile whose contents are an Excel spreadsheet whose only sheet consists of the following:
 
 ```
-id, name, balance, join_date, notes   1, John, 48.23, 04/03/2007 "Our very   first customer!"   2, Jane, 1245.89, 08/22/2009,   3, Frank Franklin, "48481.29", 04/04/2016,
+id, name, balance, join_date, notes
+1, John, 48.23, 04/03/2007, "Our very   first customer!"
+2, Jane, 1245.89, 08/22/2009,	  
+3, Frank Franklin, "48481.29", 04/04/2016,
 ```
 
 Additionally, let's consider that this Controller Service is configured to skip the first line and is configured with

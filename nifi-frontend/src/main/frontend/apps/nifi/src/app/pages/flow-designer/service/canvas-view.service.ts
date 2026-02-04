@@ -15,9 +15,8 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import * as d3 from 'd3';
-import * as WebFont from 'webfontloader';
 import { Store } from '@ngrx/store';
 import { CanvasState } from '../state';
 import { refreshBirdseyeView, transformComplete } from '../state/transform/transform.actions';
@@ -37,6 +36,16 @@ import { Position } from '../state/shared';
     providedIn: 'root'
 })
 export class CanvasView {
+    private store = inject<Store<CanvasState>>(Store);
+    private canvasUtils = inject(CanvasUtils);
+    private processorManager = inject(ProcessorManager);
+    private processGroupManager = inject(ProcessGroupManager);
+    private remoteProcessGroupManager = inject(RemoteProcessGroupManager);
+    private portManager = inject(PortManager);
+    private funnelManager = inject(FunnelManager);
+    private labelManager = inject(LabelManager);
+    private connectionManager = inject(ConnectionManager);
+
     private static readonly INCREMENT: number = 1.2;
     private static readonly MAX_SCALE: number = 8;
     private static readonly MIN_SCALE: number = 0.2;
@@ -56,17 +65,7 @@ export class CanvasView {
 
     private canvasInitialized: boolean = false;
 
-    constructor(
-        private store: Store<CanvasState>,
-        private canvasUtils: CanvasUtils,
-        private processorManager: ProcessorManager,
-        private processGroupManager: ProcessGroupManager,
-        private remoteProcessGroupManager: RemoteProcessGroupManager,
-        private portManager: PortManager,
-        private funnelManager: FunnelManager,
-        private labelManager: LabelManager,
-        private connectionManager: ConnectionManager
-    ) {
+    constructor() {
         const self: CanvasView = this;
         let refreshed: Promise<void> | null;
         let panning = false;
@@ -139,21 +138,19 @@ export class CanvasView {
     public init(svg: any, canvas: any): void {
         const self: CanvasView = this;
 
-        WebFont.load({
-            custom: {
-                families: ['Inter', 'flowfont', 'FontAwesome']
-            },
-            active: function () {
-                // re-render once the fonts have loaded, without the fonts
-                // positions of elements on the canvas may be incorrect
-                self.processorManager.render();
-                self.processGroupManager.render();
-                self.remoteProcessGroupManager.render();
-                self.portManager.render();
-                self.labelManager.render();
-                self.funnelManager.render();
-                self.connectionManager.render();
-            }
+        // Use document.fonts.ready if available, otherwise fallback to a resolved promise
+        const fontsReady = document.fonts?.ready || Promise.resolve();
+
+        fontsReady.then(() => {
+            // re-render once the fonts have loaded, without the fonts
+            // positions of elements on the canvas may be incorrect
+            self.processorManager.render();
+            self.processGroupManager.render();
+            self.remoteProcessGroupManager.render();
+            self.portManager.render();
+            self.labelManager.render();
+            self.funnelManager.render();
+            self.connectionManager.render();
         });
 
         this.svg = svg;
@@ -175,6 +172,15 @@ export class CanvasView {
         this.svg.call(this.behavior).on('dblclick.zoom', null);
 
         this.canvasInitialized = true;
+    }
+
+    public getCanvasBoundingClientRect(): DOMRect | null {
+        const canvasContainer: any = document.getElementById('canvas-container');
+        if (canvasContainer == null) {
+            return null;
+        }
+
+        return canvasContainer.getBoundingClientRect() as DOMRect;
     }
 
     // filters zoom events as programmatically modifying the translate or scale now triggers the handlers
@@ -252,7 +258,7 @@ export class CanvasView {
     }
 
     /**
-     * Determines if a bounding box is fully in the current viewable canvas area.
+     * Determines if a bounding box is in the current viewable canvas area.
      *
      * @param {type} boundingBox       Bounding box to check.
      * @param {boolean} strict         If true, the entire bounding box must be in the viewport.
@@ -260,17 +266,10 @@ export class CanvasView {
      * @returns {boolean}
      */
     public isBoundingBoxInViewport(boundingBox: any, strict: boolean): boolean {
-        const selection: any = this.canvasUtils.getSelection();
-        if (selection.size() !== 1) {
-            return false;
-        }
-
         const canvasContainer: any = document.getElementById('canvas-container');
         if (!canvasContainer) {
             return false;
         }
-
-        const yOffset = canvasContainer.getBoundingClientRect().top;
 
         // scale the translation
         const translate = [this.x / this.k, this.y / this.k];
@@ -287,8 +286,8 @@ export class CanvasView {
 
         const left = Math.ceil(boundingBox.x);
         const right = Math.floor(boundingBox.x + boundingBox.width);
-        const top = Math.ceil(boundingBox.y - yOffset / this.k);
-        const bottom = Math.floor(boundingBox.y - yOffset / this.k + boundingBox.height);
+        const top = Math.ceil(boundingBox.y);
+        const bottom = Math.floor(boundingBox.y + boundingBox.height);
 
         if (strict) {
             return !(left < screenLeft || right > screenRight || top < screenTop || bottom > screenBottom);
@@ -497,6 +496,13 @@ export class CanvasView {
         return bbox;
     }
 
+    /**
+     * Translates a position to the space visible on the canvas
+     *
+     * @param position
+     *
+     * @returns {Position | null}
+     */
     public getCanvasPosition(position: Position): Position | null {
         const canvasContainer: any = document.getElementById('canvas-container');
         if (!canvasContainer) {
@@ -528,7 +534,11 @@ export class CanvasView {
         return null;
     }
 
-    private centerBoundingBox(boundingBox: any): void {
+    /**
+     * Centers the canvas to a bounding box. If a scale is provided, it will zoom to that scale.
+     * @param {type} boundingBox
+     */
+    public centerBoundingBox(boundingBox: any): void {
         let scale: number = this.k;
         if (boundingBox.scale != null) {
             scale = boundingBox.scale;

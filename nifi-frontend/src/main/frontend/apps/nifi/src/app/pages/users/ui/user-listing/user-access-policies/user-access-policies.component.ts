@@ -15,23 +15,20 @@
  * limitations under the License.
  */
 
-import { Component, Inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatSortModule, Sort } from '@angular/material/sort';
 
 import { AccessPolicySummaryEntity, ComponentReferenceEntity } from '../../../../../state/shared';
-import { NiFiCommon } from '@nifi/shared';
 import { RouterLink } from '@angular/router';
 import { UserAccessPoliciesDialogRequest } from '../../../state/user-listing';
 import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
-import { CloseOnEscapeDialog } from '@nifi/shared';
-import { ComponentType, SelectOption } from 'libs/shared/src';
+import { ComponentType, SelectOption, CloseOnEscapeDialog, NiFiCommon } from '@nifi/shared';
 
 @Component({
     selector: 'user-access-policies',
-    standalone: true,
     templateUrl: './user-access-policies.component.html',
     imports: [
         MatButtonModule,
@@ -46,6 +43,9 @@ import { ComponentType, SelectOption } from 'libs/shared/src';
     styleUrls: ['./user-access-policies.component.scss']
 })
 export class UserAccessPolicies extends CloseOnEscapeDialog {
+    request = inject<UserAccessPoliciesDialogRequest>(MAT_DIALOG_DATA);
+    private nifiCommon = inject(NiFiCommon);
+
     displayedColumns: string[] = ['policy', 'action', 'actions'];
     dataSource: MatTableDataSource<AccessPolicySummaryEntity> = new MatTableDataSource<AccessPolicySummaryEntity>();
     selectedPolicyId: string | null = null;
@@ -55,11 +55,10 @@ export class UserAccessPolicies extends CloseOnEscapeDialog {
         direction: 'asc'
     };
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: UserAccessPoliciesDialogRequest,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         this.dataSource.data = this.sortPolicies(request.accessPolicies, this.sort);
     }
 

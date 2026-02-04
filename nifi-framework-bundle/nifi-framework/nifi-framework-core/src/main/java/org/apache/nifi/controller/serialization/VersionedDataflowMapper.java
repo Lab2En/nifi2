@@ -25,11 +25,11 @@ import org.apache.nifi.controller.ProcessorNode;
 import org.apache.nifi.controller.ReportingTaskNode;
 import org.apache.nifi.controller.flow.VersionedDataflow;
 import org.apache.nifi.controller.flow.VersionedFlowEncodingVersion;
-import org.apache.nifi.flow.VersionedFlowAnalysisRule;
-import org.apache.nifi.flow.VersionedFlowRegistryClient;
 import org.apache.nifi.controller.service.ControllerServiceNode;
 import org.apache.nifi.flow.ScheduledState;
 import org.apache.nifi.flow.VersionedControllerService;
+import org.apache.nifi.flow.VersionedFlowAnalysisRule;
+import org.apache.nifi.flow.VersionedFlowRegistryClient;
 import org.apache.nifi.flow.VersionedParameterContext;
 import org.apache.nifi.flow.VersionedParameterProvider;
 import org.apache.nifi.flow.VersionedProcessGroup;
@@ -43,7 +43,6 @@ import org.apache.nifi.registry.flow.mapping.FlowMappingOptions;
 import org.apache.nifi.registry.flow.mapping.NiFiRegistryFlowMapper;
 import org.apache.nifi.registry.flow.mapping.SensitiveValueEncryptor;
 import org.apache.nifi.registry.flow.mapping.VersionedComponentStateLookup;
-
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -173,18 +172,11 @@ public class VersionedDataflowMapper {
             }
 
             private ScheduledState map(final org.apache.nifi.controller.ScheduledState currentState) {
-                switch (currentState) {
-                    case DISABLED:
-                        return ScheduledState.DISABLED;
-                    case RUNNING:
-                    case STARTING:
-                        return ScheduledState.RUNNING;
-                    case STOPPED:
-                    case STOPPING:
-                    case RUN_ONCE:
-                    default:
-                        return ScheduledState.ENABLED;
-                }
+                return switch (currentState) {
+                    case DISABLED -> ScheduledState.DISABLED;
+                    case RUNNING, STARTING -> ScheduledState.RUNNING;
+                    default -> ScheduledState.ENABLED;
+                };
             }
 
             @Override
@@ -199,26 +191,18 @@ public class VersionedDataflowMapper {
 
             @Override
             public ScheduledState getState(final FlowAnalysisRuleNode ruleNode) {
-                switch (ruleNode.getState()) {
-                    case DISABLED:
-                        return ScheduledState.DISABLED;
-                    case ENABLED:
-                    default:
-                        return ScheduledState.ENABLED;
-                }
+                return switch (ruleNode.getState()) {
+                    case DISABLED -> ScheduledState.DISABLED;
+                    case ENABLED -> ScheduledState.ENABLED;
+                };
             }
 
             @Override
             public ScheduledState getState(final ControllerServiceNode serviceNode) {
-                switch (serviceNode.getState()) {
-                    case ENABLED:
-                    case ENABLING:
-                        return ScheduledState.ENABLED;
-                    case DISABLED:
-                    case DISABLING:
-                    default:
-                        return ScheduledState.DISABLED;
-                }
+                return switch (serviceNode.getState()) {
+                    case ENABLED, ENABLING -> ScheduledState.ENABLED;
+                    default -> ScheduledState.DISABLED;
+                };
             }
 
             @Override

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, Inject, Input, OnDestroy, TemplateRef, ViewChild } from '@angular/core';
+import { Component, Input, OnDestroy, TemplateRef, ViewChild, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
@@ -29,9 +29,7 @@ import { AsyncPipe, NgTemplateOutlet } from '@angular/common';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
-import { ControllerServiceApi } from '../controller-service-api/controller-service-api.component';
 import { ControllerServiceReferences } from '../controller-service-references/controller-service-references.component';
-import { NifiSpinnerDirective } from '../../spinner/nifi-spinner.directive';
 import { TextTip, NifiTooltipDirective, SelectOption, CloseOnEscapeDialog } from '@nifi/shared';
 import {
     controllerServiceActionScopes,
@@ -53,7 +51,6 @@ import {
 
 @Component({
     selector: 'enable-controller-service',
-    standalone: true,
     templateUrl: './enable-controller-service.component.html',
     imports: [
         ReactiveFormsModule,
@@ -64,16 +61,18 @@ import {
         MatTabsModule,
         MatOptionModule,
         MatSelectModule,
-        ControllerServiceApi,
         ControllerServiceReferences,
         AsyncPipe,
-        NifiSpinnerDirective,
         NifiTooltipDirective,
         NgTemplateOutlet
     ],
     styleUrls: ['./enable-controller-service.component.scss']
 })
 export class EnableControllerService extends CloseOnEscapeDialog implements OnDestroy {
+    request = inject<SetEnableControllerServiceDialogRequest>(MAT_DIALOG_DATA);
+    private store = inject<Store<ControllerServiceState>>(Store);
+    private formBuilder = inject(FormBuilder);
+
     @Input() goToReferencingComponent!: (component: ControllerServiceReferencingComponent) => void;
 
     protected readonly TextTip = TextTip;
@@ -90,12 +89,10 @@ export class EnableControllerService extends CloseOnEscapeDialog implements OnDe
     @ViewChild('stepInProgress') stepInProgress!: TemplateRef<any>;
     @ViewChild('stepNotStarted') stepNotStarted!: TemplateRef<any>;
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: SetEnableControllerServiceDialogRequest,
-        private store: Store<ControllerServiceState>,
-        private formBuilder: FormBuilder
-    ) {
+    constructor() {
         super();
+        const request = this.request;
+
         // build the form
         this.enableControllerServiceForm = this.formBuilder.group({
             scope: new FormControl(controllerServiceActionScopes[0].value, Validators.required)

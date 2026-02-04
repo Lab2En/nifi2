@@ -30,7 +30,7 @@ import { SummaryListingState } from '../../state/summary-listing';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
 import { initialState } from '../../state/summary-listing/summary-listing.reducer';
 import { getStatusHistoryAndOpenDialog } from '../../../../state/status-history/status-history.actions';
-import { ComponentType, isDefinedAndNotNull } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull } from '@nifi/shared';
 import { combineLatest, delay, filter, map, Subject, switchMap, take } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import * as SummaryListingActions from '../../state/summary-listing/summary-listing.actions';
@@ -44,13 +44,18 @@ import {
 import { loadClusterSummary } from '../../../../state/cluster-summary/cluster-summary.actions';
 import { ProcessorStatusSnapshotEntity } from '../../state';
 import { NodeSearchResult } from '../../../../state/cluster-summary';
+import { AsyncPipe } from '@angular/common';
+import { NgxSkeletonLoaderComponent } from 'ngx-skeleton-loader';
 
 @Component({
     selector: 'processor-status-listing',
     templateUrl: './processor-status-listing.component.html',
+    imports: [AsyncPipe, NgxSkeletonLoaderComponent, ProcessorStatusTable],
     styleUrls: ['./processor-status-listing.component.scss']
 })
 export class ProcessorStatusListing implements AfterViewInit, OnDestroy {
+    private store = inject<Store<SummaryListingState>>(Store);
+
     private destroyRef = inject(DestroyRef);
 
     processorStatusSnapshots$ = this.store.select(selectProcessorStatusSnapshots);
@@ -73,7 +78,7 @@ export class ProcessorStatusListing implements AfterViewInit, OnDestroy {
     @ViewChild(ProcessorStatusTable) table!: ProcessorStatusTable;
     private subject: Subject<void> = new Subject<void>();
 
-    constructor(private store: Store<SummaryListingState>) {
+    constructor() {
         this.store
             .select(selectViewStatusHistory)
             .pipe(

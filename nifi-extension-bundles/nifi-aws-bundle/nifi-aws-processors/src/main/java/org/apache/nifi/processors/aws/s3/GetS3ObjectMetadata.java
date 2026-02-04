@@ -17,59 +17,53 @@
 
 package org.apache.nifi.processors.aws.s3;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
-import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processors.aws.s3.api.MetadataTarget;
+import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
-import java.util.Date;
-import java.util.LinkedHashMap;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import static org.apache.nifi.processors.aws.util.RegionUtilV1.S3_REGION;
+import static org.apache.nifi.processors.aws.region.RegionUtil.CUSTOM_REGION_WITH_FF_EL;
+import static org.apache.nifi.processors.aws.region.RegionUtil.REGION;
+import static org.apache.nifi.processors.aws.s3.util.S3Util.nullIfBlank;
+import static org.apache.nifi.processors.aws.s3.util.S3Util.sanitizeETag;
 
 @Tags({"Amazon", "S3", "AWS", "Archive", "Exists"})
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
-@CapabilityDescription("Check for the existence of a file in S3 without attempting to download it. This processor can be " +
-        "used as a router for work flows that need to check on a file in S3 before proceeding with data processing")
-@SeeAlso({PutS3Object.class, DeleteS3Object.class, ListS3.class, TagS3Object.class, DeleteS3Object.class, FetchS3Object.class})
+@CapabilityDescription("Check for the existence of an Object in S3 and fetch its Metadata without attempting to download it. " +
+        "This processor can be used as a router for workflows that need to check on an Object in S3 before proceeding with data processing")
+@SeeAlso({PutS3Object.class, DeleteS3Object.class, ListS3.class, TagS3Object.class, DeleteS3Object.class, FetchS3Object.class, GetS3ObjectTags.class})
 public class GetS3ObjectMetadata extends AbstractS3Processor {
-
-    static final AllowableValue TARGET_ATTRIBUTES = new AllowableValue("ATTRIBUTES", "Attributes", """
-            When selected, the metadata will be written to FlowFile attributes with the prefix "s3." following the convention used in other processors. For example:
-            the standard S3 attribute Content-Type will be written as s3.Content-Type when using the default value. User-defined metadata
-            will be included in the attributes added to the FlowFile
-            """
-    );
-
-    static final AllowableValue TARGET_FLOWFILE_BODY = new AllowableValue("FLOWFILE_BODY", "FlowFile Body", "Write the metadata to FlowFile content as JSON data.");
-
     static final PropertyDescriptor METADATA_TARGET = new PropertyDescriptor.Builder()
             .name("Metadata Target")
             .description("This determines where the metadata will be written when found.")
             .addValidator(Validator.VALID)
             .required(true)
-            .allowableValues(TARGET_ATTRIBUTES, TARGET_FLOWFILE_BODY)
-            .defaultValue(TARGET_ATTRIBUTES)
+            .allowableValues(MetadataTarget.class)
+            .defaultValue(MetadataTarget.ATTRIBUTES)
             .build();
 
     static final PropertyDescriptor ATTRIBUTE_INCLUDE_PATTERN = new PropertyDescriptor.Builder()
@@ -83,40 +77,43 @@ public class GetS3ObjectMetadata extends AbstractS3Processor {
             .addValidator(Validator.VALID)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .defaultValue(".*")
-            .dependsOn(METADATA_TARGET, TARGET_ATTRIBUTES)
+            .dependsOn(METADATA_TARGET, MetadataTarget.ATTRIBUTES)
             .build();
 
-    private static final List<PropertyDescriptor> properties = List.of(
+    static final PropertyDescriptor VERSION_ID = new PropertyDescriptor.Builder().fromPropertyDescriptor(AbstractS3Processor.VERSION_ID)
+            .description("The Version of the Object for which to retrieve Metadata")
+            .build();
+
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             METADATA_TARGET,
             ATTRIBUTE_INCLUDE_PATTERN,
             BUCKET_WITH_DEFAULT_VALUE,
             KEY,
+            VERSION_ID,
             AWS_CREDENTIALS_PROVIDER_SERVICE,
-            S3_REGION,
+            REGION,
+            CUSTOM_REGION_WITH_FF_EL,
             TIMEOUT,
-            FULL_CONTROL_USER_LIST,
-            READ_USER_LIST,
-            READ_ACL_LIST,
-            OWNER,
             SSL_CONTEXT_SERVICE,
             ENDPOINT_OVERRIDE,
-            SIGNER_OVERRIDE,
-            S3_CUSTOM_SIGNER_CLASS_NAME,
-            S3_CUSTOM_SIGNER_MODULE_LOCATION,
             PROXY_CONFIGURATION_SERVICE
     );
 
-    static Relationship REL_FOUND = new Relationship.Builder()
+    static final Relationship REL_FOUND = new Relationship.Builder()
             .name("found")
             .description("An object was found in the bucket at the supplied key")
             .build();
 
-    static Relationship REL_NOT_FOUND = new Relationship.Builder()
+    static final Relationship REL_NOT_FOUND = new Relationship.Builder()
             .name("not found")
             .description("No object was found in the bucket the supplied key")
             .build();
 
-    private static final Set<Relationship> relationships = Set.of(REL_FOUND, REL_NOT_FOUND,  REL_FAILURE);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            REL_FOUND,
+            REL_NOT_FOUND,
+            REL_FAILURE
+    );
 
     private static final String ATTRIBUTE_FORMAT = "s3.%s";
 
@@ -124,12 +121,22 @@ public class GetS3ObjectMetadata extends AbstractS3Processor {
 
     @Override
     public Set<Relationship> getRelationships() {
-        return relationships;
+        return RELATIONSHIPS;
     }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
+        return PROPERTY_DESCRIPTORS;
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+
+        config.removeProperty(FULL_CONTROL_USER_LIST.getName());
+        config.removeProperty(READ_USER_LIST.getName());
+        config.removeProperty(READ_ACL_LIST.getName());
+        config.removeProperty(OBSOLETE_OWNER);
     }
 
     @Override
@@ -139,9 +146,9 @@ public class GetS3ObjectMetadata extends AbstractS3Processor {
             return;
         }
 
-        final AmazonS3Client s3;
+        final S3Client client;
         try {
-            s3 = getS3Client(context, flowFile.getAttributes());
+            client = getClient(context, flowFile.getAttributes());
         } catch (Exception e) {
             getLogger().error("Failed to initialize S3 client", e);
             flowFile = session.penalize(flowFile);
@@ -151,27 +158,32 @@ public class GetS3ObjectMetadata extends AbstractS3Processor {
 
         final String bucket = context.getProperty(BUCKET_WITH_DEFAULT_VALUE).evaluateAttributeExpressions(flowFile).getValue();
         final String key = context.getProperty(KEY).evaluateAttributeExpressions(flowFile).getValue();
-        final Pattern attributePattern;
+        final String version = context.getProperty(VERSION_ID).evaluateAttributeExpressions(flowFile).getValue();
 
-        final PropertyValue attributeIncludePatternProperty = context.getProperty(ATTRIBUTE_INCLUDE_PATTERN).evaluateAttributeExpressions(flowFile);
-        if (attributeIncludePatternProperty.isSet()) {
-             attributePattern = Pattern.compile(attributeIncludePatternProperty.getValue());
+        final MetadataTarget metadataTarget = context.getProperty(METADATA_TARGET).asAllowableValue(MetadataTarget.class);
+
+        final Pattern attributePattern;
+        if (metadataTarget == MetadataTarget.ATTRIBUTES) {
+            final String attributeRegex = context.getProperty(ATTRIBUTE_INCLUDE_PATTERN).evaluateAttributeExpressions(flowFile).getValue();
+            attributePattern = attributeRegex == null ? null : Pattern.compile(attributeRegex);
         } else {
             attributePattern = null;
         }
-
-        final String metadataTarget = context.getProperty(METADATA_TARGET).getValue();
 
         try {
             Relationship relationship;
 
             try {
-                final ObjectMetadata objectMetadata = s3.getObjectMetadata(bucket, key);
-                final Map<String, Object> combinedMetadata = new LinkedHashMap<>(objectMetadata.getRawMetadata());
-                combinedMetadata.putAll(objectMetadata.getUserMetadata());
+                final HeadObjectRequest request = HeadObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .versionId(nullIfBlank(version))
+                        .build();
+                final HeadObjectResponse response = client.headObject(request);
+                final Map<String, Object> metadata = extractMetadata(response);
 
-                if (TARGET_ATTRIBUTES.getValue().equals(metadataTarget)) {
-                    final Map<String, String> newAttributes = combinedMetadata
+                if (MetadataTarget.ATTRIBUTES == metadataTarget) {
+                    final Map<String, String> newAttributes = metadata
                             .entrySet().stream()
                             .filter(e -> {
                                 if (attributePattern == null) {
@@ -183,8 +195,8 @@ public class GetS3ObjectMetadata extends AbstractS3Processor {
                             .collect(Collectors.toMap(e -> ATTRIBUTE_FORMAT.formatted(e.getKey()), e -> {
                                 final Object value = e.getValue();
                                 final String attributeValue;
-                                if (value instanceof Date dateValue) {
-                                    attributeValue = Long.toString(dateValue.getTime());
+                                if (value instanceof Instant instantValue) {
+                                    attributeValue = Long.toString(instantValue.toEpochMilli());
                                 } else {
                                     attributeValue = value.toString();
                                 }
@@ -192,13 +204,13 @@ public class GetS3ObjectMetadata extends AbstractS3Processor {
                             }));
 
                     flowFile = session.putAllAttributes(flowFile, newAttributes);
-                } else if (TARGET_FLOWFILE_BODY.getValue().equals(metadataTarget)) {
-                    flowFile = session.write(flowFile, outputStream -> MAPPER.writeValue(outputStream, combinedMetadata));
+                } else if (MetadataTarget.FLOWFILE_BODY == metadataTarget) {
+                    flowFile = session.write(flowFile, outputStream -> MAPPER.writeValue(outputStream, metadata));
                 }
 
                 relationship = REL_FOUND;
-            } catch (final AmazonS3Exception e) {
-                if (e.getStatusCode() == 404) {
+            } catch (final S3Exception e) {
+                if (e.statusCode() == 404) {
                     relationship = REL_NOT_FOUND;
                     flowFile = extractExceptionDetails(e, session, flowFile);
                 } else {
@@ -207,10 +219,73 @@ public class GetS3ObjectMetadata extends AbstractS3Processor {
             }
 
             session.transfer(flowFile, relationship);
-        } catch (final IllegalArgumentException | AmazonClientException e) {
-            getLogger().error("Failed to get S3 Object Metadata from Bucket [{}] Key [{}]", bucket, key, e);
+        } catch (final IllegalArgumentException | SdkException e) {
+            getLogger().error("Failed to get S3 Object Metadata from Bucket [{}] Key [{}] Version [{}]", bucket, key, version, e);
             flowFile = extractExceptionDetails(e, session, flowFile);
             session.transfer(flowFile, REL_FAILURE);
         }
+    }
+
+    /**
+     * Extracts metadata fields from HeadObjectResponse that were available via ObjectMetadata.getRawMetadata() and ObjectMetadata.getUserMetadata() methods in v1 SDK.
+     *
+     * @param head response object containing various metadata
+     * @return map of metadata fields
+     */
+    private static Map<String, Object> extractMetadata(final HeadObjectResponse head) {
+        final Map<String, Object> metadata = new HashMap<>();
+
+        // Common HTTP headers
+        if (head.contentLength() != null) {
+            metadata.put("Content-Length", head.contentLength());
+        }
+        if (head.contentType() != null) {
+            metadata.put("Content-Type", head.contentType());
+        }
+        if (head.eTag() != null) {
+            metadata.put("ETag", sanitizeETag(head.eTag()));
+        }
+        if (head.lastModified() != null) {
+            metadata.put("Last-Modified", head.lastModified());
+        }
+        if (head.cacheControl() != null) {
+            metadata.put("Cache-Control", head.cacheControl());
+        }
+        if (head.contentEncoding() != null) {
+            metadata.put("Content-Encoding", head.contentEncoding());
+        }
+        if (head.contentDisposition() != null) {
+            metadata.put("Content-Disposition", head.contentDisposition());
+        }
+        if (head.contentLanguage() != null) {
+            metadata.put("Content-Language", head.contentLanguage());
+        }
+        if (head.acceptRanges() != null) {
+            metadata.put("Accept-Ranges", head.acceptRanges());
+        }
+
+        // AWS x-amz-* headers
+        if (head.serverSideEncryption() != null) {
+            metadata.put("x-amz-server-side-encryption", head.serverSideEncryptionAsString());
+        }
+        if (head.ssekmsKeyId() != null) {
+            metadata.put("x-amz-server-side-encryption-aws-kms-key-id", head.ssekmsKeyId());
+        }
+        if (head.storageClass() != null) {
+            metadata.put("x-amz-storage-class", head.storageClassAsString());
+        }
+        if (head.versionId() != null) {
+            metadata.put("x-amz-version-id", head.versionId());
+        }
+        if (head.tagCount() != null) {
+            metadata.put("x-amz-tagging-count", head.tagCount());
+        }
+
+        // User-defined x-amz-meta-* metadata
+        head.metadata().forEach((key, value) ->
+                metadata.put(key.toLowerCase(), value)
+        );
+
+        return metadata;
     }
 }

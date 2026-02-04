@@ -17,10 +17,10 @@
 
 package org.apache.nifi.yaml;
 
-import com.fasterxml.jackson.core.StreamReadConstraints;
 import org.apache.avro.Schema;
 import org.apache.commons.io.FileUtils;
 import org.apache.nifi.avro.AvroTypeUtil;
+import org.apache.nifi.json.JsonRecordSource;
 import org.apache.nifi.json.JsonSchemaInference;
 import org.apache.nifi.json.JsonTreeRowRecordReader;
 import org.apache.nifi.json.SchemaApplicationStrategy;
@@ -49,6 +49,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Date;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -62,6 +64,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -117,16 +120,16 @@ class TestYamlTreeRowRecordReader {
             assertEquals(2, fieldsArray.length);
 
             final Object firstElement = fieldsArray[0];
-            assertTrue(firstElement instanceof Record);
+            assertInstanceOf(Record.class, firstElement);
             assertEquals("string", ((Record) firstElement).getAsString("type"));
 
             final Object secondElement = fieldsArray[1];
-            assertTrue(secondElement instanceof Record);
+            assertInstanceOf(Record.class, secondElement);
             final Object[] typeArray = ((Record) secondElement).getAsArray("type");
             assertEquals(1, typeArray.length);
 
             final Object firstType = typeArray[0];
-            assertTrue(firstType instanceof Record);
+            assertInstanceOf(Record.class, firstType);
             final Record firstTypeRecord = (Record) firstType;
             assertEquals("string", firstTypeRecord.getAsString("type"));
         }
@@ -155,7 +158,7 @@ class TestYamlTreeRowRecordReader {
 
             // child record should have a schema with "id" as the only field
             final Object childObject = firstRecord.getValue("child");
-            assertTrue(childObject instanceof Record);
+            assertInstanceOf(Record.class, childObject);
             final Record firstChildRecord = (Record) childObject;
             final RecordSchema firstChildSchema = firstChildRecord.getSchema();
 
@@ -177,7 +180,7 @@ class TestYamlTreeRowRecordReader {
 
             // child record should have a schema with "name" as the only field
             final Object secondChildObject = secondRecord.getValue("child");
-            assertTrue(secondChildObject instanceof Record);
+            assertInstanceOf(Record.class, secondChildObject);
             final Record secondChildRecord = (Record) secondChildObject;
             final RecordSchema secondChildSchema = secondChildRecord.getSchema();
 
@@ -343,7 +346,7 @@ class TestYamlTreeRowRecordReader {
 
                 final Record record = reader.nextRecord(coerceTypes, false);
                 final Object value = record.getValue(dateField);
-                assertTrue(value instanceof java.sql.Date, "With coerceTypes set to " + coerceTypes + ", value is not a Date");
+                assertInstanceOf(Date.class, value, "With coerceTypes set to " + coerceTypes + ", value is not a Date");
                 assertEquals(date, value.toString());
             }
         }
@@ -360,7 +363,7 @@ class TestYamlTreeRowRecordReader {
 
                 final Record record = reader.nextRecord(coerceTypes, false);
                 final Object value = record.getValue("timestamp");
-                assertTrue(value instanceof java.sql.Timestamp, "With coerceTypes set to " + coerceTypes + ", value is not a Timestamp");
+                assertInstanceOf(Timestamp.class, value, "With coerceTypes set to " + coerceTypes + ", value is not a Timestamp");
             }
         }
     }
@@ -406,7 +409,7 @@ class TestYamlTreeRowRecordReader {
                     RecordFieldType.DOUBLE, RecordFieldType.STRING, RecordFieldType.STRING, RecordFieldType.STRING, RecordFieldType.STRING, RecordFieldType.STRING);
             final List<RecordField> fields = schema.getFields();
             for (int i = 0; i < schema.getFields().size(); i++) {
-                assertTrue(fields.get(i).getDataType() instanceof ChoiceDataType);
+                assertInstanceOf(ChoiceDataType.class, fields.get(i).getDataType());
                 final ChoiceDataType choiceDataType = (ChoiceDataType) fields.get(i).getDataType();
                 assertEquals(expectedTypes.get(i), choiceDataType.getPossibleSubTypes().get(0).getFieldType());
             }
@@ -562,7 +565,7 @@ class TestYamlTreeRowRecordReader {
             final Object[] firstRecordValues = reader.nextRecord().getValues();
 
             final Object secondValue = firstRecordValues[1];
-            assertTrue(secondValue instanceof Long);
+            assertInstanceOf(Long.class, secondValue);
             assertEquals(832036744985577473L, secondValue);
 
             final Object unicodeValue = firstRecordValues[2];
@@ -611,16 +614,20 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Arrays.asList(
-            new MapRecord(expectedSchema, new HashMap<>() {{
-                put("integer", 1);
-                put("boolean", true);
-                put("booleanOrString", true);
-            }}),
-            new MapRecord(expectedSchema, new HashMap<>() {{
+            new MapRecord(expectedSchema, Map.of(
+                    "integer", 1,
+                    "boolean", true,
+                    "booleanOrString", true
+            )),
+            new MapRecord(expectedSchema, Map.of(
+                    "integer", 2,
+                    "string", "stringValue2",
+                    "booleanOrString", "booleanOrStringValue2"
+            )/*new HashMap<>() {{
                 put("integer", 2);
                 put("string", "stringValue2");
                 put("booleanOrString", "booleanOrStringValue2");
-            }})
+            }}*/)
         );
 
         testReadRecords(yamlPath, expected);
@@ -646,18 +653,16 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Arrays.asList(
-            new MapRecord(expectedRecordChoiceSchema, new HashMap<>() {{
-                put("record", new MapRecord(expectedRecordSchema1, new HashMap<>() {{
-                    put("integer", 1);
-                    put("boolean", true);
-                }}));
-            }}),
-            new MapRecord(expectedRecordChoiceSchema, new HashMap<>() {{
-                put("record", new MapRecord(expectedRecordSchema2, new HashMap<>() {{
-                    put("integer", 2);
-                    put("string", "stringValue2");
-                }}));
-            }})
+            new MapRecord(expectedRecordChoiceSchema, Map.of(
+                    "record", new MapRecord(expectedRecordSchema1, Map.of(
+                            "integer", 1,
+                            "boolean", true))
+            )),
+            new MapRecord(expectedRecordChoiceSchema, Map.of(
+                    "record", new MapRecord(expectedRecordSchema2, Map.of(
+                            "integer", 2,
+                            "string", "stringValue2"))
+            ))
         );
 
         testReadRecords(yamlPath, expected);
@@ -709,34 +714,30 @@ class TestYamlTreeRowRecordReader {
         //  while the explicit schema defines only (INT, BOOLEAN) and (INT, STRING) we can't tell which record schema to chose
         //  so we take the first one (INT, BOOLEAN) - as best effort - for both cases
         List<Object> expected = Arrays.asList(
-            new MapRecord(expectedRecordChoiceSchema, new HashMap<>() {{
-                put("record", new Object[]{
-                        new MapRecord(expectedChildSchema1, new HashMap<>() {{
-                            put("integer", 11);
-                            put("boolean", true);
-                            put("extraString", "extraStringValue11");
-                        }}),
-                        new MapRecord(expectedChildSchema1, new HashMap<>() {{
-                            put("integer", 12);
-                            put("boolean", false);
-                            put("extraString", "extraStringValue12");
-                        }})
-                });
-            }}),
-            new MapRecord(expectedRecordChoiceSchema, new HashMap<>() {{
-                put("record", new Object[]{
-                        new MapRecord(expectedChildSchema1, new HashMap<>() {{
-                            put("integer", 21);
-                            put("extraString", "extraStringValue21");
-                            put("string", "stringValue21");
-                        }}),
-                        new MapRecord(expectedChildSchema1, new HashMap<>() {{
-                            put("integer", 22);
-                            put("extraString", "extraStringValue22");
-                            put("string", "stringValue22");
-                        }})
-                });
-            }})
+            new MapRecord(expectedRecordChoiceSchema, Map.of("record", new Object[]{
+                new MapRecord(expectedChildSchema1, Map.of(
+                        "integer", 11,
+                        "boolean", true,
+                        "extraString", "extraStringValue11"
+                )),
+                new MapRecord(expectedChildSchema1, Map.of(
+                        "integer", 12,
+                        "boolean", false,
+                        "extraString", "extraStringValue12"
+                ))
+            })),
+            new MapRecord(expectedRecordChoiceSchema, Map.of("record", new Object[]{
+                new MapRecord(expectedChildSchema1, Map.of(
+                        "integer", 21,
+                        "extraString", "extraStringValue21",
+                        "string", "stringValue21"
+                )),
+                new MapRecord(expectedChildSchema1, Map.of(
+                        "integer", 22,
+                        "extraString", "extraStringValue22",
+                        "string", "stringValue22"
+                ))
+            }))
         );
 
         testReadRecords(yamlPath, schema, expected);
@@ -752,14 +753,14 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Arrays.asList(
-                new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                    put("id", 42);
-                    put("balance", 4750.89);
-                }}),
-                new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                    put("id", 43);
-                    put("balance", 48212.38);
-                }})
+                new MapRecord(expectedRecordSchema, Map.of(
+                        "id", 42,
+                        "balance", 4750.89
+                )),
+                new MapRecord(expectedRecordSchema, Map.of(
+                        "id", 43,
+                        "balance", 48212.38
+                ))
         );
 
         testNestedReadRecords(yamlPath, expected, "accounts");
@@ -775,10 +776,10 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Collections.singletonList(
-                new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                    put("id", 42);
-                    put("balance", 4750.89);
-                }})
+                new MapRecord(expectedRecordSchema, Map.of(
+                        "id", 42,
+                        "balance", 4750.89
+                ))
         );
 
         testNestedReadRecords(yamlPath, expected, "account");
@@ -794,14 +795,14 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Arrays.asList(
-                    new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                        put("id", "n312kj3");
-                        put("type", "employee");
-                    }}),
-                    new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                        put("id", "dl2kdff");
-                        put("type", "security");
-                    }})
+                    new MapRecord(expectedRecordSchema, Map.of(
+                            "id", "n312kj3",
+                            "type", "employee"
+                    )),
+                    new MapRecord(expectedRecordSchema, Map.of(
+                            "id", "dl2kdff",
+                            "type", "security"
+                    ))
         );
 
         testNestedReadRecords(yamlPath, expected, "accountIds");
@@ -834,14 +835,14 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Arrays.asList(
-                new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                    put("id", 42);
-                    put("balance", 4750.89);
-                }}),
-                new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                    put("id", 43);
-                    put("balance", 48212.38);
-                }})
+                new MapRecord(expectedRecordSchema, Map.of(
+                        "id", 42,
+                        "balance", 4750.89
+                )),
+                new MapRecord(expectedRecordSchema, Map.of(
+                        "id", 43,
+                        "balance", 48212.38
+                ))
         );
 
         testNestedReadRecords(yamlPath, expectedRecordSchema, expected, "accounts", SchemaApplicationStrategy.SELECTED_PART);
@@ -861,10 +862,10 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Collections.singletonList(
-                new MapRecord(accountSchema, new HashMap<>() {{
-                    put("id", 42);
-                    put("balance", 4750.89);
-                }})
+                new MapRecord(accountSchema, Map.of(
+                        "id", 42,
+                        "balance", 4750.89
+                ))
         );
 
         testNestedReadRecords(yamlPath, recordSchema, expected, "account", SchemaApplicationStrategy.WHOLE_JSON);
@@ -884,14 +885,14 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Arrays.asList(
-                new MapRecord(accountSchema, new HashMap<>() {{
-                    put("id", 42);
-                    put("balance", 4750.89);
-                }}),
-                new MapRecord(accountSchema, new HashMap<>() {{
-                    put("id", 43);
-                    put("balance", 48212.38);
-                }})
+                new MapRecord(accountSchema, Map.of(
+                        "id", 42,
+                        "balance", 4750.89
+                )),
+                new MapRecord(accountSchema, Map.of(
+                        "id", 43,
+                        "balance", 48212.38
+                ))
         );
 
         testNestedReadRecords(yamlPath, recordSchema, expected, "accounts", SchemaApplicationStrategy.WHOLE_JSON);
@@ -924,10 +925,10 @@ class TestYamlTreeRowRecordReader {
         ));
 
         List<Object> expected = Collections.singletonList(
-                new MapRecord(expectedRecordSchema, new HashMap<>() {{
-                    put("nestedLevel2Int", 111);
-                    put("nestedLevel2String", "root.level1.level2:string");
-                }})
+                new MapRecord(expectedRecordSchema, Map.of(
+                        "nestedLevel2Int", 111,
+                        "nestedLevel2String", "root.level1.level2:string"
+                ))
         );
 
         testNestedReadRecords(yamlPath, recordSchema, expected, "nestedLevel2Record", SchemaApplicationStrategy.WHOLE_JSON);
@@ -1088,7 +1089,7 @@ class TestYamlTreeRowRecordReader {
 
     private RecordSchema inferSchema(InputStream jsonStream, StartingFieldStrategy strategy, String startingFieldName) throws IOException {
         RecordSchema schema = new InferSchemaAccessStrategy<>(
-            (__, inputStream) -> new YamlRecordSource(inputStream, strategy, startingFieldName, StreamReadConstraints.defaults()),
+            (__, inputStream) -> new JsonRecordSource(inputStream, strategy, startingFieldName, new YamlParserFactory()),
             new JsonSchemaInference(new TimeValueInference(null, null, null)),
             mock(ComponentLog.class)
         ).getSchema(Collections.emptyMap(), jsonStream, null);

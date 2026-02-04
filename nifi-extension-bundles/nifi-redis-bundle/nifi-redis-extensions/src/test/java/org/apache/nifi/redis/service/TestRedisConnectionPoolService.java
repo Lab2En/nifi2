@@ -20,6 +20,7 @@ import org.apache.nifi.redis.RedisConnectionPool;
 import org.apache.nifi.redis.util.RedisUtils;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.ssl.SSLContextProvider;
+import org.apache.nifi.ssl.SSLContextService;
 import org.apache.nifi.util.MockConfigurationContext;
 import org.apache.nifi.util.MockProcessContext;
 import org.apache.nifi.util.StandardProcessorTestRunner;
@@ -31,15 +32,15 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
 
-import javax.net.ssl.SSLContext;
 import java.security.GeneralSecurityException;
+import javax.net.ssl.SSLContext;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestRedisConnectionPoolService {
 
-    public static final String SSL_CONTEXT_IDENTIFIER = "ssl-context-service";
+    public static final String SSL_CONTEXT_IDENTIFIER = SSLContextService.class.getSimpleName();
     private TestRunner testRunner;
     private FakeRedisProcessor proc;
     private RedisConnectionPool redisService;

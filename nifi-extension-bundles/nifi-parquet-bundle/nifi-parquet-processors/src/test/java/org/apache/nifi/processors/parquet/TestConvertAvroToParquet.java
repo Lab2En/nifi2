@@ -16,18 +16,7 @@
  */
 package org.apache.nifi.processors.parquet;
 
-import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
 import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileReader;
 import org.apache.avro.file.DataFileWriter;
@@ -51,13 +40,25 @@ import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnJre;
+import org.junit.jupiter.api.condition.JRE;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Unit tests for ConvertAvroToParquet processor
- */
+@DisabledOnJre(value = { JRE.JAVA_25 }, disabledReason = "java.security.auth.Subject.getSubject() is not supported")
 public class TestConvertAvroToParquet {
 
     private TestRunner runner;
@@ -91,7 +92,7 @@ public class TestConvertAvroToParquet {
                 .set("mylong", 2L)
                 .set("myfloat", 3.1f)
                 .set("mydouble", 4.1)
-                .set("mybytes", ByteBuffer.wrap("hello".getBytes(Charsets.UTF_8)))
+                .set("mybytes", ByteBuffer.wrap("hello".getBytes(StandardCharsets.UTF_8)))
                 .set("mystring", "hello")
                 .set("mynestedrecord", nestedRecord)
                 .set("myarray", new GenericData.Array<>(Schema.createArray(Schema.create(Schema.Type.INT)), Arrays.asList(1, 2)))

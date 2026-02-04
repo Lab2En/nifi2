@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Inject, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { FormBuilder, FormControl, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatInputModule } from '@angular/material/input';
@@ -26,20 +26,22 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
 import { Observable } from 'rxjs';
-import { SelectOption } from 'libs/shared/src';
-import { ParameterContextEntity } from '../../../../../../../state/shared';
 import { Client } from '../../../../../../../service/client.service';
 import { NifiSpinnerDirective } from '../../../../../../../ui/common/spinner/nifi-spinner.directive';
-import { NifiTooltipDirective, TextTip } from '@nifi/shared';
 import { EditComponentDialogRequest } from '../../../../../state/flow';
 import { ClusterConnectionService } from '../../../../../../../service/cluster-connection.service';
-import { TabbedDialog } from '../../../../../../../ui/common/tabbed-dialog/tabbed-dialog.component';
+import { TabbedDialog, TABBED_DIALOG_ID } from '../../../../../../../ui/common/tabbed-dialog/tabbed-dialog.component';
 import { ErrorContextKey } from '../../../../../../../state/error';
 import { ContextErrorBanner } from '../../../../../../../ui/common/context-error-banner/context-error-banner.component';
+import { openNewParameterContextDialog } from '../../../../../state/parameter/parameter.actions';
+import { Store } from '@ngrx/store';
+import { CanvasState } from '../../../../../state';
+import { ParameterContextEntity } from '../../../../../../../state/shared';
+import { NifiTooltipDirective, SelectOption, SortObjectByPropertyPipe, TextTip } from '@nifi/shared';
+import { selectCurrentUser } from '../../../../../../../state/current-user/current-user.selectors';
 
 @Component({
     selector: 'edit-process-group',
-    standalone: true,
     templateUrl: './edit-process-group.component.html',
     imports: [
         ReactiveFormsModule,
@@ -54,37 +56,68 @@ import { ContextErrorBanner } from '../../../../../../../ui/common/context-error
         NifiSpinnerDirective,
         NifiTooltipDirective,
         FormsModule,
-        ContextErrorBanner
+        ContextErrorBanner,
+        SortObjectByPropertyPipe
     ],
-    styleUrls: ['./edit-process-group.component.scss']
+    styleUrls: ['./edit-process-group.component.scss'],
+    providers: [
+        {
+            provide: TABBED_DIALOG_ID,
+            useValue: 'edit-process-group-selected-index'
+        }
+    ]
 })
 export class EditProcessGroup extends TabbedDialog {
+    request = inject<EditComponentDialogRequest>(MAT_DIALOG_DATA);
+    private formBuilder = inject(FormBuilder);
+    private client = inject(Client);
+    private clusterConnectionService = inject(ClusterConnectionService);
+    private store = inject<Store<CanvasState>>(Store);
+
     @Input() set parameterContexts(parameterContexts: ParameterContextEntity[]) {
-        parameterContexts.forEach((parameterContext) => {
-            if (parameterContext.permissions.canRead) {
-                this.parameterContextsOptions.push({
-                    text: parameterContext.component.name,
-                    value: parameterContext.id,
-                    description: parameterContext.component.description
-                });
+        if (parameterContexts !== undefined) {
+            this.parameterContextsOptions = [];
+            this._parameterContexts = parameterContexts;
+
+            if (parameterContexts.length === 0) {
+                this.parameterContextsOptions = [];
             } else {
-                this.parameterContextsOptions.push({
-                    text: parameterContext.id,
-                    value: parameterContext.id,
-                    disabled: this.request.entity.component.parameterContext.id !== parameterContext.id
+                parameterContexts.forEach((parameterContext) => {
+                    if (parameterContext.permissions.canRead && parameterContext.component) {
+                        this.parameterContextsOptions.push({
+                            text: parameterContext.component.name,
+                            value: parameterContext.id,
+                            description: parameterContext.component.description
+                        });
+                    } else {
+                        let disabled: boolean;
+                        if (this.request.entity.component.parameterContext) {
+                            disabled = this.request.entity.component.parameterContext.id !== parameterContext.id;
+                        } else {
+                            disabled = true;
+                        }
+
+                        this.parameterContextsOptions.push({
+                            text: parameterContext.id,
+                            value: parameterContext.id,
+                            disabled
+                        });
+                    }
                 });
             }
-        });
 
-        if (this.request.entity.component.parameterContext) {
-            this.editProcessGroupForm.addControl(
-                'parameterContext',
-                new FormControl(this.request.entity.component.parameterContext.id)
-            );
-        } else {
-            this.editProcessGroupForm.addControl('parameterContext', new FormControl(null));
+            if (this.request.entity.component.parameterContext) {
+                this.editProcessGroupForm
+                    .get('parameterContext')
+                    ?.setValue(this.request.entity.component.parameterContext.id);
+            }
         }
     }
+
+    get parameterContexts() {
+        return this._parameterContexts;
+    }
+
     @Input() saving$!: Observable<boolean>;
     @Output() editProcessGroup: EventEmitter<any> = new EventEmitter<any>();
 
@@ -92,10 +125,12 @@ export class EditProcessGroup extends TabbedDialog {
     protected readonly STATELESS: string = 'STATELESS';
     private initialMaxConcurrentTasks: number;
     private initialStatelessFlowTimeout: string;
+    private _parameterContexts: ParameterContextEntity[] = [];
 
     editProcessGroupForm: FormGroup;
     readonly: boolean;
     parameterContextsOptions: SelectOption[] = [];
+    currentUser$ = this.store.select(selectCurrentUser);
 
     executionEngineOptions: SelectOption[] = [
         {
@@ -158,20 +193,11 @@ export class EditProcessGroup extends TabbedDialog {
         }
     ];
 
-    constructor(
-        @Inject(MAT_DIALOG_DATA) public request: EditComponentDialogRequest,
-        private formBuilder: FormBuilder,
-        private client: Client,
-        private clusterConnectionService: ClusterConnectionService
-    ) {
-        super('edit-process-group-selected-index');
+    constructor() {
+        super();
+        const request = this.request;
 
         this.readonly = !request.entity.permissions.canWrite;
-
-        this.parameterContextsOptions.push({
-            text: 'No parameter context',
-            value: null
-        });
 
         this.editProcessGroupForm = this.formBuilder.group({
             name: new FormControl(request.entity.component.name, Validators.required),
@@ -195,7 +221,8 @@ export class EditProcessGroup extends TabbedDialog {
                 Validators.required
             ),
             logFileSuffix: new FormControl(request.entity.component.logFileSuffix),
-            comments: new FormControl(request.entity.component.comments)
+            comments: new FormControl(request.entity.component.comments),
+            parameterContext: new FormControl(null)
         });
 
         this.initialMaxConcurrentTasks = request.entity.component.maxConcurrentTasks;
@@ -256,6 +283,10 @@ export class EditProcessGroup extends TabbedDialog {
         }
 
         this.editProcessGroup.next(payload);
+    }
+
+    openNewParameterContextDialog(): void {
+        this.store.dispatch(openNewParameterContextDialog({ request: { parameterContexts: this._parameterContexts } }));
     }
 
     override isDirty(): boolean {

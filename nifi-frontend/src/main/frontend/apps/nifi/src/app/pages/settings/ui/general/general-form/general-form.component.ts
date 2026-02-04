@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-import { Component, Input } from '@angular/core';
-import { FormBuilder, FormControl, FormGroup, Validators } from '@angular/forms';
+import { Component, Input, inject } from '@angular/core';
+import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ControllerEntity, GeneralState, UpdateControllerConfigRequest } from '../../../state/general';
 import { Store } from '@ngrx/store';
 import { updateControllerConfig } from '../../../state/general/general.actions';
@@ -24,14 +24,35 @@ import { Client } from '../../../../../service/client.service';
 import { selectCurrentUser } from '../../../../../state/current-user/current-user.selectors';
 import { selectSaving } from '../../../state/general/general.selectors';
 import { ClusterConnectionService } from '../../../../../service/cluster-connection.service';
-import { TextTip } from '@nifi/shared';
+import { NifiTooltipDirective, TextTip } from '@nifi/shared';
+import { AsyncPipe } from '@angular/common';
+import { MatFormField } from '@angular/material/form-field';
+import { MatLabel } from '@angular/material/select';
+import { MatInput } from '@angular/material/input';
+import { MatButton } from '@angular/material/button';
+import { NifiSpinnerDirective } from '../../../../../ui/common/spinner/nifi-spinner.directive';
 
 @Component({
     selector: 'general-form',
     templateUrl: './general-form.component.html',
+    imports: [
+        AsyncPipe,
+        ReactiveFormsModule,
+        MatFormField,
+        MatLabel,
+        NifiTooltipDirective,
+        MatInput,
+        MatButton,
+        NifiSpinnerDirective
+    ],
     styleUrls: ['./general-form.component.scss']
 })
 export class GeneralForm {
+    private formBuilder = inject(FormBuilder);
+    private client = inject(Client);
+    private clusterConnectionService = inject(ClusterConnectionService);
+    private store = inject<Store<GeneralState>>(Store);
+
     private _controller!: ControllerEntity;
 
     @Input() set controller(controller: ControllerEntity) {
@@ -43,12 +64,7 @@ export class GeneralForm {
     currentUser$ = this.store.select(selectCurrentUser);
     controllerForm: FormGroup;
 
-    constructor(
-        private formBuilder: FormBuilder,
-        private client: Client,
-        private clusterConnectionService: ClusterConnectionService,
-        private store: Store<GeneralState>
-    ) {
+    constructor() {
         // build the form
         this.controllerForm = this.formBuilder.group({
             timerDrivenThreadCount: new FormControl('', Validators.required)

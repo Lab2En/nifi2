@@ -17,7 +17,6 @@
 package org.apache.nifi.web.api.dto.status;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import jakarta.xml.bind.annotation.XmlType;
 
 /**
@@ -106,7 +105,7 @@ public class PortStatusSnapshotDTO implements Cloneable {
      */
     @Schema(
             description = "The run status of the port.",
-            allowableValues = "Running, Stopped, Validating, Disabled, Invalid"
+            allowableValues = {"Running", "Stopped", "Validating", "Disabled", "Invalid"}
     )
     public String getRunStatus() {
         return runStatus;

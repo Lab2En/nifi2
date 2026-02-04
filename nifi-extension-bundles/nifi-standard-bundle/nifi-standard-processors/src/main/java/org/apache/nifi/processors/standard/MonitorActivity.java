@@ -147,7 +147,7 @@ public class MonitorActivity extends AbstractProcessor {
                     " if it's 'cluster', NiFi logs a warning message and act as 'node' scope.")
             .required(true)
             .allowableValues(SCOPE_NODE, SCOPE_CLUSTER)
-            .defaultValue(SCOPE_NODE.getValue())
+            .defaultValue(SCOPE_NODE)
             .build();
     public static final PropertyDescriptor REPORTING_NODE = new PropertyDescriptor.Builder()
             .name("Reporting Node")
@@ -159,10 +159,10 @@ public class MonitorActivity extends AbstractProcessor {
             .required(true)
             .allowableValues(REPORT_NODE_ALL, REPORT_NODE_PRIMARY)
             .dependsOn(MONITORING_SCOPE, SCOPE_CLUSTER)
-            .defaultValue(REPORT_NODE_ALL.getValue())
+            .defaultValue(REPORT_NODE_ALL)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             THRESHOLD,
             CONTINUALLY_SEND_MESSAGES,
             INACTIVITY_MESSAGE,
@@ -189,7 +189,7 @@ public class MonitorActivity extends AbstractProcessor {
                     + "period of inactivity")
             .build();
 
-    private final static Set<Relationship> RELATIONSHIPS = Set.of(
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
             REL_SUCCESS,
             REL_INACTIVE,
             REL_ACTIVITY_RESTORED
@@ -209,7 +209,7 @@ public class MonitorActivity extends AbstractProcessor {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnScheduled
@@ -435,13 +435,17 @@ public class MonitorActivity extends AbstractProcessor {
      *
      * @return The node connected between the last trigger and the current one.
      */
-    private boolean isReconnectedToCluster( final boolean isConnectedToCluster) {
+    private boolean isReconnectedToCluster(final boolean isConnectedToCluster) {
         return !connectedWhenLastTriggered.get() && isConnectedToCluster;
     }
 
     private boolean shouldThisNodeReport(final boolean isClusterScope, final ProcessContext context) {
-        final boolean shouldReportOnlyOnPrimary = shouldReportOnlyOnPrimary(isClusterScope, context);
-        return !isClusterScope || (!shouldReportOnlyOnPrimary || getNodeTypeProvider().isPrimary());
+        if (!isClusterScope) {
+            return true; // in monitoring mode 'node' activeness is examined at individual node separately
+        }
+
+        final String reportingNode = context.getProperty(REPORTING_NODE).getValue();
+        return reportingNode.equals(REPORT_NODE_ALL.getValue()) || getNodeTypeProvider().isPrimary();
     }
 
     private void sendInactivityMarker(ProcessContext context, ProcessSession session, long inactivityStartMillis,
@@ -555,7 +559,7 @@ public class MonitorActivity extends AbstractProcessor {
         public void update(FlowFile flowFile) {
             final long now = nowMillis();
             if ((now - this.getLastActivity()) > syncPeriodMillis) {
-                this.forceSync(); // Immediate synchronization if Flow Files are infrequent, to mitigate false reports
+                this.forceSync(); // Immediate synchronization if FlowFiles are infrequent, to mitigate false reports
             }
             this.lastSuccessfulTransfer = now;
             if (saveAttributes) {

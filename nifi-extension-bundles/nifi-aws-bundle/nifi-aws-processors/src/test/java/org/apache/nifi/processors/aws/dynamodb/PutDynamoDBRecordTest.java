@@ -18,9 +18,13 @@ package org.apache.nifi.processors.aws.dynamodb;
 
 import org.apache.nifi.json.JsonTreeReader;
 import org.apache.nifi.processor.ProcessContext;
-import org.apache.nifi.processors.aws.credentials.provider.service.AWSCredentialsProviderService;
+import org.apache.nifi.processors.aws.AbstractAwsProcessor;
+import org.apache.nifi.processors.aws.ObsoleteAbstractAwsProcessorProperties;
+import org.apache.nifi.processors.aws.credentials.provider.AwsCredentialsProviderService;
+import org.apache.nifi.proxy.ProxyConfigurationService;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.Assertions;
@@ -29,11 +33,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.invocation.InvocationOnMock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.mockito.stubbing.Answer;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -46,14 +48,16 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.io.FileInputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.apache.nifi.processors.aws.region.RegionUtil.REGION;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -73,7 +77,7 @@ public class PutDynamoDBRecordTest {
     private DynamoDbClient client;
 
     @Mock
-    private AWSCredentialsProviderService credentialsProviderService;
+    private AwsCredentialsProviderService credentialsProviderService;
 
     private ArgumentCaptor<BatchWriteItemRequest> captor;
 
@@ -144,7 +148,7 @@ public class PutDynamoDBRecordTest {
         final List<BatchWriteItemRequest> results = captor.getAllValues();
         Assertions.assertEquals(2, results.size());
 
-        final BatchWriteItemRequest result1 = results.get(0);
+        final BatchWriteItemRequest result1 = results.getFirst();
         assertTrue(result1.hasRequestItems());
         assertNotNull(result1.requestItems().get(TABLE_NAME));
         assertItemsConvertedProperly(result1.requestItems().get(TABLE_NAME), 25);
@@ -155,7 +159,7 @@ public class PutDynamoDBRecordTest {
         assertItemsConvertedProperly(result2.requestItems().get(TABLE_NAME), 4);
 
         runner.assertAllFlowFilesTransferred(PutDynamoDBRecord.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_SUCCESS).getFirst();
         Assertions.assertEquals("2", flowFile.getAttribute(PutDynamoDBRecord.DYNAMODB_CHUNKS_PROCESSED_ATTRIBUTE));
     }
 
@@ -168,7 +172,7 @@ public class PutDynamoDBRecordTest {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(PutDynamoDBRecord.REL_UNPROCESSED, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_UNPROCESSED).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_UNPROCESSED).getFirst();
         Assertions.assertEquals("1", flowFile.getAttribute(PutDynamoDBRecord.DYNAMODB_CHUNKS_PROCESSED_ATTRIBUTE));
     }
 
@@ -183,7 +187,7 @@ public class PutDynamoDBRecordTest {
         Assertions.assertEquals(4, captor.getValue().requestItems().get(TABLE_NAME).size());
 
         runner.assertAllFlowFilesTransferred(PutDynamoDBRecord.REL_SUCCESS, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_SUCCESS).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_SUCCESS).getFirst();
         Assertions.assertEquals("2", flowFile.getAttribute(PutDynamoDBRecord.DYNAMODB_CHUNKS_PROCESSED_ATTRIBUTE));
     }
 
@@ -196,7 +200,7 @@ public class PutDynamoDBRecordTest {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(PutDynamoDBRecord.REL_FAILURE, 1);
-        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_FAILURE).get(0);
+        final MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutDynamoDBRecord.REL_FAILURE).getFirst();
         Assertions.assertEquals("0", flowFile.getAttribute(PutDynamoDBRecord.DYNAMODB_CHUNKS_PROCESSED_ATTRIBUTE));
     }
 
@@ -212,7 +216,7 @@ public class PutDynamoDBRecordTest {
         final BatchWriteItemRequest result = captor.getValue();
         Assertions.assertEquals(1, result.requestItems().get(TABLE_NAME).size());
 
-        final Map<String, AttributeValue> item = result.requestItems().get(TABLE_NAME).iterator().next().putRequest().item();
+        final Map<String, AttributeValue> item = result.requestItems().get(TABLE_NAME).getFirst().putRequest().item();
         Assertions.assertEquals(4, item.size());
         Assertions.assertEquals(string("P0"), item.get("partition"));
         assertTrue(item.containsKey("generated"));
@@ -223,7 +227,7 @@ public class PutDynamoDBRecordTest {
     @Test
     public void testGeneratedSortKey() throws Exception {
         final TestRunner runner = getTestRunner();
-        runner.setProperty(PutDynamoDBRecord.SORT_KEY_STRATEGY, PutDynamoDBRecord.SORT_BY_SEQUENCE);
+        runner.setProperty(PutDynamoDBRecord.SORT_KEY_STRATEGY, PutDynamoDBRecord.SortKeyStrategy.BY_SEQUENCE);
         runner.setProperty(PutDynamoDBRecord.SORT_KEY_FIELD, "sort");
 
         runner.enqueue(new FileInputStream("src/test/resources/dynamodb/multipleChunks.json"));
@@ -279,6 +283,41 @@ public class PutDynamoDBRecordTest {
         runner.assertAllFlowFilesTransferred(PutDynamoDBRecord.REL_FAILURE, 1);
     }
 
+    @Test
+    void testMigration() throws InitializationException {
+        final Map<String, String> expected = Map.ofEntries(
+                Map.entry("aws-region", REGION.getName()),
+                Map.entry(AbstractAwsProcessor.OBSOLETE_AWS_CREDENTIALS_PROVIDER_SERVICE_PROPERTY_NAME, AbstractAwsProcessor.AWS_CREDENTIALS_PROVIDER_SERVICE.getName()),
+                Map.entry(ProxyConfigurationService.OBSOLETE_PROXY_CONFIGURATION_SERVICE, AbstractAwsProcessor.PROXY_CONFIGURATION_SERVICE.getName()),
+                Map.entry("Batch items for each request (between 1 and 50)", AbstractDynamoDBProcessor.BATCH_SIZE.getName()),
+                Map.entry("Json Document attribute", AbstractDynamoDBProcessor.JSON_DOCUMENT.getName()),
+                Map.entry("Character set of document", AbstractDynamoDBProcessor.DOCUMENT_CHARSET.getName()),
+                Map.entry("record-reader", PutDynamoDBRecord.RECORD_READER.getName()),
+                Map.entry("partition-key-strategy", PutDynamoDBRecord.PARTITION_KEY_STRATEGY.getName()),
+                Map.entry("partition-key-field", PutDynamoDBRecord.PARTITION_KEY_FIELD.getName()),
+                Map.entry("partition-key-attribute", PutDynamoDBRecord.PARTITION_KEY_ATTRIBUTE.getName()),
+                Map.entry("sort-key-strategy", PutDynamoDBRecord.SORT_KEY_STRATEGY.getName()),
+                Map.entry("sort-key-field", PutDynamoDBRecord.SORT_KEY_FIELD.getName())
+        );
+
+        final TestRunner runner = getTestRunner();
+        final PropertyMigrationResult propertyMigrationResult = runner.migrateProperties();
+
+        assertEquals(expected, propertyMigrationResult.getPropertiesRenamed());
+
+        Set<String> expectedRemoved = Set.of(
+                ObsoleteAbstractAwsProcessorProperties.OBSOLETE_ACCESS_KEY.getValue(),
+                ObsoleteAbstractAwsProcessorProperties.OBSOLETE_SECRET_KEY.getValue(),
+                ObsoleteAbstractAwsProcessorProperties.OBSOLETE_CREDENTIALS_FILE.getValue(),
+                ObsoleteAbstractAwsProcessorProperties.OBSOLETE_PROXY_HOST.getValue(),
+                ObsoleteAbstractAwsProcessorProperties.OBSOLETE_PROXY_PORT.getValue(),
+                ObsoleteAbstractAwsProcessorProperties.OBSOLETE_PROXY_USERNAME.getValue(),
+                ObsoleteAbstractAwsProcessorProperties.OBSOLETE_PROXY_PASSWORD.getValue()
+        );
+
+        assertEquals(expectedRemoved, propertyMigrationResult.getPropertiesRemoved());
+    }
+
     private TestRunner getTestRunner() throws InitializationException {
         final TestRunner runner = TestRunners.newTestRunner(testSubject);
 
@@ -293,7 +332,7 @@ public class PutDynamoDBRecordTest {
         runner.setProperty(PutDynamoDBRecord.TABLE, TABLE_NAME);
         runner.setProperty(PutDynamoDBRecord.PARTITION_KEY_STRATEGY, PutDynamoDBRecord.PARTITION_BY_FIELD);
         runner.setProperty(PutDynamoDBRecord.PARTITION_KEY_FIELD, "partition");
-        runner.setProperty(PutDynamoDBRecord.SORT_KEY_FIELD, PutDynamoDBRecord.SORT_NONE);
+        runner.setProperty(PutDynamoDBRecord.SORT_KEY_FIELD, PutDynamoDBRecord.SortKeyStrategy.NONE);
         return runner;
     }
 
@@ -317,7 +356,7 @@ public class PutDynamoDBRecordTest {
     private void setInsertionError() {
         final BatchWriteItemResponse outcome = mock(BatchWriteItemResponse.class);
         final Map<String, List<WriteRequest>> unprocessedItems = new HashMap<>();
-        final List<WriteRequest> writeResults = Arrays.asList(mock(WriteRequest.class));
+        final List<WriteRequest> writeResults = Collections.singletonList(mock(WriteRequest.class));
         unprocessedItems.put("test", writeResults);
         when(outcome.unprocessedItems()).thenReturn(unprocessedItems);
         when(outcome.hasUnprocessedItems()).thenReturn(true);
@@ -332,17 +371,14 @@ public class PutDynamoDBRecordTest {
     private void setExceedThroughputAtGivenChunk(final int chunkToFail) {
         final AtomicInteger numberOfCalls = new AtomicInteger(0);
 
-        when(client.batchWriteItem(captor.capture())).then(new Answer<Object>() {
-            @Override
-            public Object answer(InvocationOnMock invocationOnMock) throws Throwable {
-                final int calls = numberOfCalls.incrementAndGet();
+        when(client.batchWriteItem(captor.capture())).then(invocationOnMock -> {
+            final int calls = numberOfCalls.incrementAndGet();
 
-                if (calls >= chunkToFail) {
-                    throw ProvisionedThroughputExceededException.builder().message("Throughput exceeded")
-                            .awsErrorDetails(AwsErrorDetails.builder().errorCode("error code").errorMessage("error message").build()).build();
-                } else {
-                    return mock(BatchWriteItemResponse.class);
-                }
+            if (calls >= chunkToFail) {
+                throw ProvisionedThroughputExceededException.builder().message("Throughput exceeded")
+                        .awsErrorDetails(AwsErrorDetails.builder().errorCode("error code").errorMessage("error message").build()).build();
+            } else {
+                return mock(BatchWriteItemResponse.class);
             }
         });
     }

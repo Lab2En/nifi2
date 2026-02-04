@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { ContentViewerService } from '../../service/content-viewer.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ErrorHelper } from '../../../../service/error-helper.service';
@@ -27,12 +27,15 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 @Component({
     selector: 'hex-viewer',
-    standalone: true,
     templateUrl: './hex-viewer.component.html',
     imports: [],
     styleUrls: ['./hex-viewer.component.scss']
 })
 export class HexViewer {
+    private store = inject<Store<NiFiState>>(Store);
+    private contentViewerService = inject(ContentViewerService);
+    private errorHelper = inject(ErrorHelper);
+
     private static readonly KB_COUNT = 10;
 
     private static readonly MAX_CONTENT_BYTES = HexViewer.KB_COUNT * NiFiCommon.BYTES_IN_KILOBYTE;
@@ -43,11 +46,7 @@ export class HexViewer {
     hexdump: string = '';
     error: string | null = null;
 
-    constructor(
-        private store: Store<NiFiState>,
-        private contentViewerService: ContentViewerService,
-        private errorHelper: ErrorHelper
-    ) {
+    constructor() {
         this.store
             .select(selectRef)
             .pipe(isDefinedAndNotNull(), takeUntilDestroyed())

@@ -16,16 +16,7 @@
  */
 package org.apache.nifi.web.security.x509;
 
-import java.security.cert.X509Certificate;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import javax.security.auth.x500.X500Principal;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.nifi.authentication.AuthenticationResponse;
 import org.apache.nifi.authorization.AuthorizationRequest;
 import org.apache.nifi.authorization.AuthorizationResult;
 import org.apache.nifi.authorization.Authorizer;
@@ -34,10 +25,20 @@ import org.apache.nifi.authorization.user.NiFiUserDetails;
 import org.apache.nifi.authorization.user.StandardNiFiUser;
 import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.web.security.InvalidAuthenticationException;
+import org.apache.nifi.web.security.NiFiWebAuthenticationDetails;
 import org.apache.nifi.web.security.UntrustedProxyException;
 import org.apache.nifi.web.security.token.NiFiAuthenticationToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+
+import java.security.cert.X509Certificate;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import javax.security.auth.x500.X500Principal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -51,7 +52,6 @@ import static org.mockito.Mockito.when;
 
 public class X509AuthenticationProviderTest {
 
-    private static final String INVALID_CERTIFICATE = "invalid-certificate";
     private static final String IDENTITY_1 = "CN=identity-1";
     private static final String ANONYMOUS = "";
 
@@ -59,27 +59,15 @@ public class X509AuthenticationProviderTest {
     private static final String PROXY_1 = "CN=proxy-1";
     private static final String PROXY_2 = "CN=proxy-2";
 
+    private static final String ISSUER = "CN=issuer";
 
     private X509AuthenticationProvider x509AuthenticationProvider;
-    private X509IdentityProvider certificateIdentityProvider;
     private SubjectDnX509PrincipalExtractor extractor;
     private Authorizer authorizer;
 
     @BeforeEach
     public void setup() {
         extractor = new SubjectDnX509PrincipalExtractor();
-
-        certificateIdentityProvider = mock(X509IdentityProvider.class);
-        when(certificateIdentityProvider.authenticate(any(X509Certificate[].class))).then(invocation -> {
-            final X509Certificate[] certChain = invocation.getArgument(0);
-            final String identity = extractor.extractPrincipal(certChain[0]).toString();
-
-            if (INVALID_CERTIFICATE.equals(identity)) {
-                throw new IllegalArgumentException();
-            }
-
-            return new AuthenticationResponse(identity, identity, TimeUnit.MILLISECONDS.convert(12, TimeUnit.HOURS), "");
-        });
 
         authorizer = mock(Authorizer.class);
         when(authorizer.authorize(any(AuthorizationRequest.class))).then(invocation -> {
@@ -92,18 +80,13 @@ public class X509AuthenticationProviderTest {
             return AuthorizationResult.approved();
         });
 
-        x509AuthenticationProvider = new X509AuthenticationProvider(certificateIdentityProvider, authorizer, NiFiProperties.createBasicNiFiProperties(null));
-    }
-
-    @Test
-    public void testInvalidCertificate() {
-        assertThrows(InvalidAuthenticationException.class, () -> x509AuthenticationProvider.authenticate(getX509Request("", INVALID_CERTIFICATE)));
+        x509AuthenticationProvider = new X509AuthenticationProvider(authorizer, NiFiProperties.createBasicNiFiProperties(null));
     }
 
     @Test
     public void testNoProxyChain() {
         final NiFiAuthenticationToken auth = (NiFiAuthenticationToken) x509AuthenticationProvider.authenticate(getX509Request("", IDENTITY_1));
-        final NiFiUser user = ((NiFiUserDetails) auth.getDetails()).getNiFiUser();
+        final NiFiUser user = ((NiFiUserDetails) auth.getPrincipal()).getNiFiUser();
 
         assertNotNull(user);
         assertEquals(IDENTITY_1, user.getIdentity());
@@ -118,7 +101,7 @@ public class X509AuthenticationProviderTest {
     @Test
     public void testOneProxy() {
         final NiFiAuthenticationToken auth = (NiFiAuthenticationToken) x509AuthenticationProvider.authenticate(getX509Request(buildProxyChain(IDENTITY_1), PROXY_1));
-        final NiFiUser user = ((NiFiUserDetails) auth.getDetails()).getNiFiUser();
+        final NiFiUser user = ((NiFiUserDetails) auth.getPrincipal()).getNiFiUser();
 
         assertNotNull(user);
         assertEquals(IDENTITY_1, user.getIdentity());
@@ -132,14 +115,12 @@ public class X509AuthenticationProviderTest {
     @Test
     public void testAnonymousWithOneProxy() {
         // override the setting to enable anonymous authentication
-        final Map<String, String> additionalProperties = new HashMap<String, String>() {{
-            put(NiFiProperties.SECURITY_ANONYMOUS_AUTHENTICATION, Boolean.TRUE.toString());
-        }};
+        final Map<String, String> additionalProperties = Map.of(NiFiProperties.SECURITY_ANONYMOUS_AUTHENTICATION, Boolean.TRUE.toString());
         final NiFiProperties properties = NiFiProperties.createBasicNiFiProperties(null, additionalProperties);
-        x509AuthenticationProvider = new X509AuthenticationProvider(certificateIdentityProvider, authorizer, properties);
+        x509AuthenticationProvider = new X509AuthenticationProvider(authorizer, properties);
 
         final NiFiAuthenticationToken auth = (NiFiAuthenticationToken) x509AuthenticationProvider.authenticate(getX509Request(buildProxyChain(ANONYMOUS), PROXY_1));
-        final NiFiUser user = ((NiFiUserDetails) auth.getDetails()).getNiFiUser();
+        final NiFiUser user = ((NiFiUserDetails) auth.getPrincipal()).getNiFiUser();
 
         assertNotNull(user);
         assertEquals(StandardNiFiUser.ANONYMOUS_IDENTITY, user.getIdentity());
@@ -158,7 +139,7 @@ public class X509AuthenticationProviderTest {
     @Test
     public void testTwoProxies() {
         final NiFiAuthenticationToken auth = (NiFiAuthenticationToken) x509AuthenticationProvider.authenticate(getX509Request(buildProxyChain(IDENTITY_1, PROXY_2), PROXY_1));
-        final NiFiUser user = ((NiFiUserDetails) auth.getDetails()).getNiFiUser();
+        final NiFiUser user = ((NiFiUserDetails) auth.getPrincipal()).getNiFiUser();
 
         assertNotNull(user);
         assertEquals(IDENTITY_1, user.getIdentity());
@@ -185,10 +166,10 @@ public class X509AuthenticationProviderTest {
         additionalProperties.put(NiFiProperties.SECURITY_ANONYMOUS_AUTHENTICATION, Boolean.TRUE.toString());
 
         final NiFiProperties properties = NiFiProperties.createBasicNiFiProperties(null, additionalProperties);
-        x509AuthenticationProvider = new X509AuthenticationProvider(certificateIdentityProvider, authorizer, properties);
+        x509AuthenticationProvider = new X509AuthenticationProvider(authorizer, properties);
 
         final NiFiAuthenticationToken auth = (NiFiAuthenticationToken) x509AuthenticationProvider.authenticate(getX509Request(buildProxyChain(IDENTITY_1, ANONYMOUS), PROXY_1));
-        final NiFiUser user = ((NiFiUserDetails) auth.getDetails()).getNiFiUser();
+        final NiFiUser user = ((NiFiUserDetails) auth.getPrincipal()).getNiFiUser();
 
         assertNotNull(user);
         assertEquals(IDENTITY_1, user.getIdentity());
@@ -264,16 +245,19 @@ public class X509AuthenticationProviderTest {
     }
 
     private X509AuthenticationRequestToken getX509Request(final String proxyChain, final String identity) {
-        return getX509Request(proxyChain, null, identity);
-    }
-
-    private X509AuthenticationRequestToken getX509Request(final String proxyChain, final String proxiedEntityGroups, final String identity) {
-        return new X509AuthenticationRequestToken(proxyChain, proxiedEntityGroups, extractor, new X509Certificate[]{getX509Certificate(identity)}, "");
+        return new X509AuthenticationRequestToken(
+            proxyChain,
+            null,
+            extractor,
+            new X509Certificate[]{getX509Certificate(identity)},
+            "",
+            new NiFiWebAuthenticationDetails(new MockHttpServletRequest()));
     }
 
     private X509Certificate getX509Certificate(final String identity) {
         final X509Certificate certificate = mock(X509Certificate.class);
-        when(certificate.getSubjectX500Principal()).then(invocation -> new X500Principal(identity));
+        when(certificate.getSubjectX500Principal()).thenReturn(new X500Principal(identity));
+        when(certificate.getIssuerX500Principal()).thenReturn(new X500Principal(ISSUER));
         return certificate;
     }
 }

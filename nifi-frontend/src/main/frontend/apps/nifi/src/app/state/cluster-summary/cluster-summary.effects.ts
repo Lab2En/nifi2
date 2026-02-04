@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { concatLatestFrom } from '@ngrx/operators';
 import * as ClusterSummaryActions from './cluster-summary.actions';
@@ -23,25 +23,22 @@ import { acknowledgeClusterConnectionChange, setDisconnectionAcknowledged } from
 import { asyncScheduler, catchError, delay, filter, from, interval, map, of, switchMap, takeUntil, tap } from 'rxjs';
 import { ClusterService } from '../../service/cluster.service';
 import { selectClusterSummary } from './cluster-summary.selectors';
-import { isDefinedAndNotNull } from 'libs/shared/src';
+import { isDefinedAndNotNull, MEDIUM_DIALOG } from '@nifi/shared';
 import { Store } from '@ngrx/store';
 import { ClusterSummary, ClusterSummaryState } from './index';
 import { HttpErrorResponse } from '@angular/common/http';
 import * as ErrorActions from '../error/error.actions';
 import { OkDialog } from '../../ui/common/ok-dialog/ok-dialog.component';
-import { MEDIUM_DIALOG } from 'libs/shared/src';
 import { MatDialog } from '@angular/material/dialog';
 import { ErrorHelper } from '../../service/error-helper.service';
 
 @Injectable()
 export class ClusterSummaryEffects {
-    constructor(
-        private actions$: Actions,
-        private clusterService: ClusterService,
-        private store: Store<ClusterSummaryState>,
-        private dialog: MatDialog,
-        private errorHelper: ErrorHelper
-    ) {}
+    private actions$ = inject(Actions);
+    private clusterService = inject(ClusterService);
+    private store = inject<Store<ClusterSummaryState>>(Store);
+    private dialog = inject(MatDialog);
+    private errorHelper = inject(ErrorHelper);
 
     loadClusterSummary$ = createEffect(() =>
         this.actions$.pipe(
@@ -104,7 +101,7 @@ export class ClusterSummaryEffects {
                 tap(({ connectedToCluster }) => {
                     const message = connectedToCluster
                         ? 'This node just joined the cluster. Any modifications to the data flow made here will replicate across the cluster.'
-                        : 'This node is currently not connected to the cluster. Any modifications to the data flow made here will not replicate across the cluster.';
+                        : 'This node is currently not connected to the cluster. Any modifications to the data flow made here will not replicate across the cluster and will revert upon rejoining.';
 
                     const dialogReference = this.dialog.open(OkDialog, {
                         ...MEDIUM_DIALOG,

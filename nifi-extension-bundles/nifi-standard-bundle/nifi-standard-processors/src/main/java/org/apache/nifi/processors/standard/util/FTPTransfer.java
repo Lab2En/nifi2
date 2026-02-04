@@ -16,23 +16,6 @@
  */
 package org.apache.nifi.processors.standard.util;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.regex.Pattern;
-
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
 import org.apache.commons.net.ftp.FTPReply;
@@ -58,6 +41,23 @@ import org.apache.nifi.proxy.ProxyConfiguration;
 import org.apache.nifi.proxy.ProxySpec;
 import org.apache.nifi.stream.io.StreamUtils;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Pattern;
+
 public class FTPTransfer implements FileTransfer {
 
     public static final String CONNECTION_MODE_ACTIVE = "Active";
@@ -67,6 +67,7 @@ public class FTPTransfer implements FileTransfer {
     public static final String FTP_TIMEVAL_FORMAT = "yyyyMMddHHmmss";
 
     // Obsolete property names
+    public static final String OBSOLETE_UTF8_ENCODING = "ftp-use-utf8";
     private static final String OBSOLETE_PROXY_TYPE = "Proxy Type";
     private static final String OBSOLETE_PROXY_HOST = "Proxy Host";
     private static final String OBSOLETE_PROXY_PORT = "Proxy Port";
@@ -100,8 +101,7 @@ public class FTPTransfer implements FileTransfer {
         .addValidator(StandardValidators.DATA_SIZE_VALIDATOR)
         .build();
     public static final PropertyDescriptor UTF8_ENCODING = new PropertyDescriptor.Builder()
-            .name("ftp-use-utf8")
-            .displayName("Use UTF-8 Encoding")
+            .name("Use UTF-8 Encoding")
             .description("Tells the client to use UTF-8 encoding when processing files and filenames. If set to true, the server must also support UTF-8 encoding.")
             .required(true)
             .allowableValues("true", "false")
@@ -218,12 +218,12 @@ public class FTPTransfer implements FileTransfer {
         int count = 0;
         final FTPFile[] files;
 
-        if (path == null || path.trim().isEmpty()) {
+        if (path == null || path.isBlank()) {
             files = client.listFiles(".");
         } else {
             files = client.listFiles(path);
         }
-        if (files.length == 0 && path != null && !path.trim().isEmpty()) {
+        if (files.length == 0 && path != null && !path.isBlank()) {
             // throw exception if directory doesn't exist
             final boolean cdSuccessful = setWorkingDirectory(path);
             if (!cdSuccessful) {
@@ -421,7 +421,7 @@ public class FTPTransfer implements FileTransfer {
         }
 
         final String lastModifiedTime = ctx.getProperty(LAST_MODIFIED_TIME).evaluateAttributeExpressions(flowFile).getValue();
-        if (lastModifiedTime != null && !lastModifiedTime.trim().isEmpty()) {
+        if (lastModifiedTime != null && !lastModifiedTime.isBlank()) {
             try {
                 final DateTimeFormatter informat = DateTimeFormatter.ofPattern(FILE_MODIFY_DATE_ATTR_FORMAT, Locale.US);
                 final OffsetDateTime fileModifyTime = OffsetDateTime.parse(lastModifiedTime, informat);
@@ -436,7 +436,7 @@ public class FTPTransfer implements FileTransfer {
             }
         }
         final String permissions = ctx.getProperty(PERMISSIONS).evaluateAttributeExpressions(flowFile).getValue();
-        if (permissions != null && !permissions.trim().isEmpty()) {
+        if (permissions != null && !permissions.isBlank()) {
             try {
                 int perms = numberPermissions(permissions);
                 if (perms >= 0) {
@@ -601,7 +601,7 @@ public class FTPTransfer implements FileTransfer {
         } else if (numPattern.matcher(perms).matches()) {
             try {
                 number = Integer.parseInt(perms, 8);
-            } catch (NumberFormatException ignore) {
+            } catch (NumberFormatException ignored) {
             }
         }
         return number;

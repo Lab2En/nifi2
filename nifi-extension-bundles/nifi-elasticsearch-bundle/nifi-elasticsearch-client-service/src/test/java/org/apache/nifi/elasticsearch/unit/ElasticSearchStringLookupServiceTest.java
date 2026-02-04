@@ -20,8 +20,8 @@ package org.apache.nifi.elasticsearch.unit;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.nifi.elasticsearch.ElasticSearchClientService;
 import org.apache.nifi.elasticsearch.ElasticSearchStringLookupService;
-import org.apache.nifi.elasticsearch.TestControllerServiceProcessor;
 import org.apache.nifi.elasticsearch.TestElasticSearchClientService;
+import org.apache.nifi.util.NoOpProcessor;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class ElasticSearchStringLookupServiceTest {
+class ElasticSearchStringLookupServiceTest {
     private ElasticSearchClientService mockClientService;
     private ElasticSearchStringLookupService lookupService;
 
@@ -45,19 +45,18 @@ public class ElasticSearchStringLookupServiceTest {
     public void setup() throws Exception {
         mockClientService = new TestElasticSearchClientService();
         lookupService = new ElasticSearchStringLookupService();
-        TestRunner runner = TestRunners.newTestRunner(TestControllerServiceProcessor.class);
+        TestRunner runner = TestRunners.newTestRunner(NoOpProcessor.class);
         runner.addControllerService("clientService", mockClientService);
         runner.addControllerService("lookupService", lookupService);
         runner.enableControllerService(mockClientService);
         runner.setProperty(lookupService, ElasticSearchStringLookupService.CLIENT_SERVICE, "clientService");
         runner.setProperty(lookupService, ElasticSearchStringLookupService.INDEX, "users");
-        runner.setProperty(TestControllerServiceProcessor.CLIENT_SERVICE, "clientService");
-        runner.setProperty(TestControllerServiceProcessor.LOOKUP_SERVICE, "lookupService");
         runner.enableControllerService(lookupService);
     }
 
+    @SuppressWarnings("unchecked")
     @Test
-    public void simpleLookupTest() throws Exception {
+    void simpleLookupTest() throws Exception {
         Map<String, Object> coordinates = new HashMap<>();
         coordinates.put(ElasticSearchStringLookupService.ID, "12345");
 

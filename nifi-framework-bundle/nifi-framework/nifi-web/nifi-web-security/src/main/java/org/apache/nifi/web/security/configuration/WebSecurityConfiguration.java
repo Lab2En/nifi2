@@ -16,6 +16,8 @@
  */
 package org.apache.nifi.web.security.configuration;
 
+import org.apache.nifi.deprecation.log.DeprecationLogger;
+import org.apache.nifi.deprecation.log.DeprecationLoggerFactory;
 import org.apache.nifi.util.NiFiProperties;
 import org.apache.nifi.web.security.StandardAuthenticationEntryPoint;
 import org.apache.nifi.web.security.anonymous.NiFiAnonymousAuthenticationFilter;
@@ -44,9 +46,9 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizationCodeGra
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.oauth2.client.web.OAuth2LoginAuthenticationFilter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
-import org.springframework.security.saml2.provider.service.web.authentication.Saml2WebSsoAuthenticationFilter;
-import org.springframework.security.saml2.provider.service.web.Saml2WebSsoAuthenticationRequestFilter;
 import org.springframework.security.saml2.provider.service.web.Saml2MetadataFilter;
+import org.springframework.security.saml2.provider.service.web.Saml2WebSsoAuthenticationRequestFilter;
+import org.springframework.security.saml2.provider.service.web.authentication.Saml2WebSsoAuthenticationFilter;
 import org.springframework.security.saml2.provider.service.web.authentication.logout.Saml2LogoutRequestFilter;
 import org.springframework.security.saml2.provider.service.web.authentication.logout.Saml2LogoutResponseFilter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -54,8 +56,8 @@ import org.springframework.security.web.access.ExceptionTranslationFilter;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.AndRequestMatcher;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatchers;
@@ -73,6 +75,8 @@ import java.util.stream.Collectors;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class WebSecurityConfiguration {
+    private static final DeprecationLogger deprecationLogger = DeprecationLoggerFactory.getLogger(WebSecurityConfiguration.class);
+
     private static final List<String> UNFILTERED_PATHS = List.of(
             "/access/token",
             "/access/logout/complete",
@@ -80,7 +84,7 @@ public class WebSecurityConfiguration {
     );
 
     private static final RequestMatcher UNFILTERED_PATHS_REQUEST_MATCHER = new OrRequestMatcher(
-            UNFILTERED_PATHS.stream().map(AntPathRequestMatcher::new).collect(Collectors.toList())
+            UNFILTERED_PATHS.stream().map(PathPatternRequestMatcher.withDefaults()::matcher).collect(Collectors.toList())
     );
 
     /**
@@ -148,6 +152,10 @@ public class WebSecurityConfiguration {
                 .addFilterBefore(x509AuthenticationFilter, AnonymousAuthenticationFilter.class)
                 .addFilterBefore(bearerTokenAuthenticationFilter, AnonymousAuthenticationFilter.class)
                 .addFilterBefore(new AuthenticationUserFilter(), ExceptionTranslationFilter.class);
+
+        if (properties.isAnonymousAuthenticationAllowed()) {
+            deprecationLogger.warn("Anonymous Authentication [{}] is deprecated for removal", NiFiProperties.SECURITY_ANONYMOUS_AUTHENTICATION);
+        }
 
         if (properties.isAnonymousAuthenticationAllowed() || properties.isHttpEnabled()) {
             http.addFilterAfter(anonymousAuthenticationFilter, AnonymousAuthenticationFilter.class);

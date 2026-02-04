@@ -17,6 +17,15 @@
 
 package org.apache.nifi.controller.state.config;
 
+import org.apache.nifi.components.state.Scope;
+import org.apache.nifi.controller.state.ConfigParseException;
+import org.apache.nifi.util.DomUtils;
+import org.apache.nifi.xml.processing.ProcessingException;
+import org.apache.nifi.xml.processing.parsers.DocumentProvider;
+import org.apache.nifi.xml.processing.parsers.StandardDocumentProvider;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -26,14 +35,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.nifi.components.state.Scope;
-import org.apache.nifi.controller.state.ConfigParseException;
-import org.apache.nifi.util.DomUtils;
-import org.apache.nifi.xml.processing.ProcessingException;
-import org.apache.nifi.xml.processing.parsers.DocumentProvider;
-import org.apache.nifi.xml.processing.parsers.StandardDocumentProvider;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
 
 public class StateManagerConfiguration {
     private final Map<String, StateProviderConfiguration> providers;
@@ -110,7 +111,7 @@ public class StateManagerConfiguration {
             throw new ConfigParseException("State Management config file " + configFile + " is not a valid configuration file, "
                 + "as a " + elementName + " element does not contain an \"id\" element");
         }
-        if (id.trim().isEmpty()) {
+        if (id.isBlank()) {
             throw new ConfigParseException("State Management config file " + configFile + " is not a valid configuration file, "
                 + "as a " + elementName + "'s \"id\" element is empty");
         }
@@ -120,7 +121,7 @@ public class StateManagerConfiguration {
             throw new ConfigParseException("State Management config file " + configFile + " is not a valid configuration file, "
                 + "as a " + elementName + " element does not contain an \"class\" element");
         }
-        if (className.trim().isEmpty()) {
+        if (className.isBlank()) {
             throw new ConfigParseException("State Management config file " + configFile + " is not a valid configuration file, "
                 + "as a " + elementName + "'s \"class\" element is empty");
         }

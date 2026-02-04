@@ -24,9 +24,13 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 public class CorrelationAttributePartitioner implements FlowFilePartitioner {
+    private static final int INDEX_OFFSET = 1;
+
+    // Multiplier from com.google.common.hash.Hashing.LinearCongruentialGenerator
+    private static final long LCG_MULTIPLIER = 2862933555777941757L;
+
     private static final Logger logger = LoggerFactory.getLogger(CorrelationAttributePartitioner.class);
 
     private final String partitioningAttribute;
@@ -68,8 +72,38 @@ public class CorrelationAttributePartitioner implements FlowFilePartitioner {
         return false;
     }
 
+    /*
+     * Method implementation based on Google Guava com.google.common.hash.Hashing.consistentHash()
+     *
+     * Assigns an index number in the range [0 - (partitions-1)] with a uniform distribution across partitions
+     * while minimizing redistribution if the number of partitions changes.
+     */
     private int findIndex(final long hash, final int partitions) {
-        final Random random = new Random(hash);
-        return random.nextInt(partitions);
+        final LinearCongruentialGenerator generator = new LinearCongruentialGenerator(hash);
+        int candidate = 0;
+
+        while (true) {
+            final double nextGenerated = generator.nextDouble();
+            final int nextCandidate = candidate + INDEX_OFFSET;
+            final int next = (int) (nextCandidate / nextGenerated);
+            if (next >= 0 && next < partitions) {
+                candidate = next;
+            } else {
+                return candidate;
+            }
+        }
+    }
+
+    private static final class LinearCongruentialGenerator {
+        private long state;
+
+        private LinearCongruentialGenerator(final long seed) {
+            this.state = seed;
+        }
+
+        private double nextDouble() {
+            state = LCG_MULTIPLIER * state + INDEX_OFFSET;
+            return ((double) ((int) (state >>> 33) + 1)) / 0x1.0p31;
+        }
     }
 }

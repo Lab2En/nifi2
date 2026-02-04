@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Component, OnDestroy, OnInit, TemplateRef, ViewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit, TemplateRef, ViewChild, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { selectCurrentUser } from '../../../../state/current-user/current-user.selectors';
 import {
@@ -39,8 +39,7 @@ import {
 import { distinctUntilChanged } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, FormGroup, Validators } from '@angular/forms';
-import { NiFiCommon, TextTip } from '@nifi/shared';
-import { ComponentType, isDefinedAndNotNull, SelectOption } from 'libs/shared/src';
+import { ComponentType, isDefinedAndNotNull, NiFiCommon, SelectOption, TextTip } from '@nifi/shared';
 import { AccessPolicyEntity, Action, PolicyStatus, ResourceAction } from '../../state/shared';
 import { selectFlowConfiguration } from '../../../../state/flow-configuration/flow-configuration.selectors';
 import { loadTenants, resetTenantsState } from '../../state/tenants/tenants.actions';
@@ -52,9 +51,14 @@ import { ErrorContextKey } from '../../../../state/error';
 @Component({
     selector: 'global-access-policies',
     templateUrl: './component-access-policies.component.html',
-    styleUrls: ['./component-access-policies.component.scss']
+    styleUrls: ['./component-access-policies.component.scss'],
+    standalone: false
 })
 export class ComponentAccessPolicies implements OnInit, OnDestroy {
+    private store = inject<Store<AccessPolicyState>>(Store);
+    private formBuilder = inject(FormBuilder);
+    private nifiCommon = inject(NiFiCommon);
+
     flowConfiguration$ = this.store.select(selectFlowConfiguration);
     accessPolicyState$ = this.store.select(selectAccessPolicyState);
     policyComponentState$ = this.store.select(selectPolicyComponentState);
@@ -134,11 +138,7 @@ export class ComponentAccessPolicies implements OnInit, OnDestroy {
     @ViewChild('inheritedFromGlobalParameterContexts') inheritedFromGlobalParameterContexts!: TemplateRef<any>;
     @ViewChild('inheritedFromProcessGroup') inheritedFromProcessGroup!: TemplateRef<any>;
 
-    constructor(
-        private store: Store<AccessPolicyState>,
-        private formBuilder: FormBuilder,
-        private nifiCommon: NiFiCommon
-    ) {
+    constructor() {
         this.policyForm = this.formBuilder.group({
             policyAction: new FormControl(this.policyActionOptions[0].value, Validators.required)
         });

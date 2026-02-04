@@ -20,13 +20,26 @@ import com.google.api.client.http.HttpTransport;
 import com.google.api.client.util.DateTime;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
+import com.google.api.services.drive.model.User;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.util.list.AbstractListProcessor;
+import org.apache.nifi.processor.util.list.ListedEntityTracker;
+import org.apache.nifi.processors.gcp.util.GoogleUtils;
 import org.apache.nifi.util.EqualsWrapper;
+import org.apache.nifi.util.PropertyMigrationResult;
+import org.apache.nifi.util.TestRunner;
+import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 import static java.util.Arrays.asList;
@@ -45,7 +58,7 @@ public class ListGoogleDriveSimpleTest {
     private String listingModeAsString = "EXECUTION";
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         mockProcessContext = mock(ProcessContext.class, RETURNS_DEEP_STUBS);
         mockDriverService = mock(Drive.class, RETURNS_DEEP_STUBS);
 
@@ -62,15 +75,49 @@ public class ListGoogleDriveSimpleTest {
                 return mockDriverService;
             }
         };
-
-        testSubject.onScheduled(mockProcessContext);
     }
 
     @Test
-    void testCreatedListableEntityContainsCorrectData() throws Exception {
+    void testMigrateProperties() {
+        TestRunner testRunner = TestRunners.newTestRunner(ListGoogleDrive.class);
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry(ListedEntityTracker.OLD_TRACKING_STATE_CACHE_PROPERTY_NAME, ListGoogleDrive.TRACKING_STATE_CACHE.getName()),
+                Map.entry(ListedEntityTracker.OLD_TRACKING_TIME_WINDOW_PROPERTY_NAME, ListGoogleDrive.TRACKING_TIME_WINDOW.getName()),
+                Map.entry(ListedEntityTracker.OLD_INITIAL_LISTING_TARGET_PROPERTY_NAME, ListGoogleDrive.INITIAL_LISTING_TARGET.getName()),
+                Map.entry(GoogleDriveTrait.OLD_CONNECT_TIMEOUT_PROPERTY_NAME, GoogleDriveTrait.CONNECT_TIMEOUT.getName()),
+                Map.entry(GoogleDriveTrait.OLD_READ_TIMEOUT_PROPERTY_NAME, GoogleDriveTrait.READ_TIMEOUT.getName()),
+                Map.entry("folder-id", ListGoogleDrive.FOLDER_ID.getName()),
+                Map.entry("recursive-search", ListGoogleDrive.RECURSIVE_SEARCH.getName()),
+                Map.entry("min-age", ListGoogleDrive.MIN_AGE.getName()),
+                Map.entry(GoogleUtils.OLD_GCP_CREDENTIALS_PROVIDER_SERVICE_PROPERTY_NAME, GoogleUtils.GCP_CREDENTIALS_PROVIDER_SERVICE.getName()),
+                Map.entry(ProxyServiceMigration.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyServiceMigration.PROXY_CONFIGURATION_SERVICE),
+                Map.entry("target-system-timestamp-precision", AbstractListProcessor.TARGET_SYSTEM_TIMESTAMP_PRECISION.getName()),
+                Map.entry("listing-strategy", AbstractListProcessor.LISTING_STRATEGY.getName()),
+                Map.entry("record-writer", AbstractListProcessor.RECORD_WRITER.getName())
+        );
+
+        final PropertyMigrationResult propertyMigrationResult = testRunner.migrateProperties();
+        assertEquals(expectedRenamed, propertyMigrationResult.getPropertiesRenamed());
+
+        final Set<String> expectedRemoved = Set.of(
+                "Distributed Cache Service"
+        );
+
+        assertEquals(expectedRemoved, propertyMigrationResult.getPropertiesRemoved());
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"drive_id"})
+    void testCreatedListableEntityContainsCorrectData(String driveId) throws Exception {
         // GIVEN
         Long minTimestamp = 0L;
         listingModeAsString = "EXECUTION";
+
+        String folderId = "folder_id";
+        String folderName = "folder_name";
+
+        String driveName = driveId != null ? "drive_name" : null;
 
         String id = "id_1";
         String filename = "file_name_1";
@@ -78,14 +125,40 @@ public class ListGoogleDriveSimpleTest {
         long createdTime = 123456L;
         long modifiedTime = 234567L;
         String mimeType = "mime_type_1";
+        String owner = "user1";
+        String lastModifyingUser = "user2";
+        String webViewLink = "http://web.view";
+        String webContentLink = "http://web.content";
+
+        when(mockProcessContext.getProperty(ListGoogleDrive.FOLDER_ID)
+                .evaluateAttributeExpressions()
+                .getValue()
+        ).thenReturn(folderId);
+
+        when(mockDriverService.files()
+                .get(folderId)
+                .setSupportsAllDrives(true)
+                .setFields("name, driveId")
+                .execute()
+        ).thenReturn(new File()
+                .setName(folderName)
+                .setDriveId(driveId)
+        );
+
+        when(mockDriverService.drives()
+                .get(driveId)
+                .setFields("name")
+                .execute()
+                .getName()
+        ).thenReturn(driveName);
 
         when(mockDriverService.files()
                 .list()
                 .setSupportsAllDrives(true)
                 .setIncludeItemsFromAllDrives(true)
-                .setQ("('null' in parents) and (mimeType != 'application/vnd.google-apps.folder') and (mimeType != 'application/vnd.google-apps.shortcut') and trashed = false")
+                .setQ("('" + folderId + "' in parents) and (mimeType != 'application/vnd.google-apps.shortcut') and trashed = false")
                 .setPageToken(null)
-                .setFields("nextPageToken, files(id, name, size, createdTime, modifiedTime, mimeType)")
+                .setFields("nextPageToken, files(id, name, size, createdTime, modifiedTime, mimeType, owners, lastModifyingUser, webViewLink, webContentLink)")
                 .execute()
                 .getFiles()
         ).thenReturn(singletonList(
@@ -95,7 +168,11 @@ public class ListGoogleDriveSimpleTest {
                         size,
                         new DateTime(createdTime),
                         new DateTime(modifiedTime),
-                        mimeType
+                        mimeType,
+                        owner,
+                        lastModifyingUser,
+                        webViewLink,
+                        webContentLink
                 )
         ));
 
@@ -104,11 +181,25 @@ public class ListGoogleDriveSimpleTest {
                         .id(id)
                         .fileName(filename)
                         .size(size)
+                        .sizeAvailable(true)
                         .createdTime(createdTime)
                         .modifiedTime(modifiedTime)
                         .mimeType(mimeType)
+                        .path(folderName)
+                        .owner(owner)
+                        .lastModifyingUser(lastModifyingUser)
+                        .webViewLink(webViewLink)
+                        .webContentLink(webContentLink)
+                        .parentFolderId(folderId)
+                        .parentFolderName(folderName)
+                        .listedFolderId(folderId)
+                        .listedFolderName(folderName)
+                        .sharedDriveId(driveId)
+                        .sharedDriveName(driveName)
                         .build()
         );
+
+        testSubject.onScheduled(mockProcessContext);
 
         // WHEN
         List<GoogleDriveFileInfo> actual = testSubject.performListing(mockProcessContext, minTimestamp, null);
@@ -119,10 +210,22 @@ public class ListGoogleDriveSimpleTest {
                 GoogleDriveFileInfo::getIdentifier,
                 GoogleDriveFileInfo::getName,
                 GoogleDriveFileInfo::getSize,
+                GoogleDriveFileInfo::isSizeAvailable,
                 GoogleDriveFileInfo::getTimestamp,
                 GoogleDriveFileInfo::getCreatedTime,
                 GoogleDriveFileInfo::getModifiedTime,
-                GoogleDriveFileInfo::getMimeType
+                GoogleDriveFileInfo::getMimeType,
+                GoogleDriveFileInfo::getPath,
+                GoogleDriveFileInfo::getOwner,
+                GoogleDriveFileInfo::getLastModifyingUser,
+                GoogleDriveFileInfo::getWebViewLink,
+                GoogleDriveFileInfo::getWebContentLink,
+                GoogleDriveFileInfo::getParentFolderId,
+                GoogleDriveFileInfo::getParentFolderName,
+                GoogleDriveFileInfo::getListedFolderId,
+                GoogleDriveFileInfo::getListedFolderName,
+                GoogleDriveFileInfo::getSharedDriveId,
+                GoogleDriveFileInfo::getSharedDriveName
         );
 
         List<EqualsWrapper<GoogleDriveFileInfo>> expectedWrapper = wrapList(expected, propertyProviders);
@@ -137,8 +240,11 @@ public class ListGoogleDriveSimpleTest {
             Long size,
             DateTime createdTime,
             DateTime modifiedTime,
-            String mimeType
-    ) {
+            String mimeType,
+            String owner,
+            String lastModifyingUser,
+            String webViewLink,
+            String webContentLink) {
         File file = new File();
 
         file
@@ -147,7 +253,11 @@ public class ListGoogleDriveSimpleTest {
                 .setMimeType(mimeType)
                 .setCreatedTime(createdTime)
                 .setModifiedTime(modifiedTime)
-                .setSize(size);
+                .setSize(size)
+                .setOwners(List.of(new User().setDisplayName(owner)))
+                .setLastModifyingUser(new User().setDisplayName(lastModifyingUser))
+                .setWebViewLink(webViewLink)
+                .setWebContentLink(webContentLink);
 
         return file;
     }

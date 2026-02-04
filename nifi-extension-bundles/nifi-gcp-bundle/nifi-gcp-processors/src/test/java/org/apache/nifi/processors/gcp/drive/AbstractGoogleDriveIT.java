@@ -27,6 +27,7 @@ import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.File;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.processor.Processor;
+import org.apache.nifi.processors.gcp.credentials.factory.AuthenticationStrategy;
 import org.apache.nifi.processors.gcp.credentials.factory.CredentialPropertyDescriptors;
 import org.apache.nifi.processors.gcp.credentials.service.GCPCredentialsControllerService;
 import org.apache.nifi.processors.gcp.util.GoogleUtils;
@@ -78,7 +79,7 @@ public abstract class AbstractGoogleDriveIT<T extends GoogleDriveTrait & Process
         driveService = new Drive.Builder(
                 httpTransport,
                 JSON_FACTORY,
-                testSubject.getHttpCredentialsAdapter(
+                testSubject.createHttpRequestInitializer(
                         testRunner.getProcessContext(),
                         DriveScopes.all()
                 )
@@ -106,6 +107,7 @@ public abstract class AbstractGoogleDriveIT<T extends GoogleDriveTrait & Process
         GCPCredentialsControllerService gcpCredentialsControllerService = new GCPCredentialsControllerService();
         testRunner.addControllerService("gcp_credentials_provider_service", gcpCredentialsControllerService);
 
+        testRunner.setProperty(gcpCredentialsControllerService, CredentialPropertyDescriptors.AUTHENTICATION_STRATEGY, AuthenticationStrategy.SERVICE_ACCOUNT_JSON_FILE);
         testRunner.setProperty(gcpCredentialsControllerService, CredentialPropertyDescriptors.SERVICE_ACCOUNT_JSON_FILE, CREDENTIAL_JSON_FILE_PATH);
         testRunner.enableControllerService(gcpCredentialsControllerService);
         testRunner.setProperty(GoogleUtils.GCP_CREDENTIALS_PROVIDER_SERVICE, "gcp_credentials_provider_service");
@@ -123,7 +125,7 @@ public abstract class AbstractGoogleDriveIT<T extends GoogleDriveTrait & Process
 
         fileMetaData.setMimeType("application/vnd.google-apps.folder");
 
-        Drive.Files.Create create = driveService.files()
+        Drive.Files.Create create = driveService.files() //NOPMD
                 .create(fileMetaData)
                 .setSupportsAllDrives(true)
                 .setFields("id");
@@ -144,7 +146,7 @@ public abstract class AbstractGoogleDriveIT<T extends GoogleDriveTrait & Process
 
         AbstractInputStreamContent content = new ByteArrayContent("text/plain", fileContent.getBytes(StandardCharsets.UTF_8));
 
-        Drive.Files.Create create = driveService.files()
+        Drive.Files.Create create = driveService.files() //NOPMD
                 .create(fileMetadata, content)
                 .setSupportsAllDrives(true)
                 .setFields("id, name, modifiedTime, createdTime");

@@ -31,24 +31,23 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.dto.splunk.EventIndexStatusRequest;
 import org.apache.nifi.dto.splunk.EventIndexStatusResponse;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.scheduling.SchedulingStrategy;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import org.apache.nifi.scheduling.SchedulingStrategy;
+import java.util.stream.Stream;
 
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @Tags({"splunk", "logs", "http", "acknowledgement"})
@@ -89,16 +88,15 @@ public class QuerySplunkIndexingStatus extends SplunkAPICall {
                     "FlowFiles are timing out or unknown by the Splunk server will transferred to \"undetermined\" relationship.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
             RELATIONSHIP_ACKNOWLEDGED,
             RELATIONSHIP_UNACKNOWLEDGED,
             RELATIONSHIP_UNDETERMINED,
             RELATIONSHIP_FAILURE
-    )));
+    );
 
     static final PropertyDescriptor TTL = new PropertyDescriptor.Builder()
-            .name("ttl")
-            .displayName("Maximum Waiting Time")
+            .name("Maximum Waiting Time")
             .description(
                     "The maximum time the processor tries to acquire acknowledgement confirmation for an index, from the point of registration. " +
                     "After the given amount of time, the processor considers the index as not acknowledged and transfers the FlowFile to the \"unacknowledged\" relationship.")
@@ -108,8 +106,7 @@ public class QuerySplunkIndexingStatus extends SplunkAPICall {
             .build();
 
     static final PropertyDescriptor MAX_QUERY_SIZE = new PropertyDescriptor.Builder()
-            .name("max-query-size")
-            .displayName("Maximum Query Size")
+            .name("Maximum Query Size")
             .description(
                     "The maximum number of acknowledgement identifiers the outgoing query contains in one batch. " +
                     "It is recommended not to set it too low in order to reduce network communication.")
@@ -118,17 +115,20 @@ public class QuerySplunkIndexingStatus extends SplunkAPICall {
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
             .build();
 
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = Stream.concat(
+            getCommonPropertyDescriptors().stream(),
+            Stream.of(
+                TTL,
+                MAX_QUERY_SIZE
+            )
+    ).toList();
+
     private volatile Integer maxQuerySize;
     private volatile Integer ttl;
 
     @Override
     public List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        final List<PropertyDescriptor> result = new ArrayList<>();
-        final List<PropertyDescriptor> common = super.getSupportedPropertyDescriptors();
-        result.addAll(common);
-        result.add(TTL);
-        result.add(MAX_QUERY_SIZE);
-        return result;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -137,6 +137,7 @@ public class QuerySplunkIndexingStatus extends SplunkAPICall {
     }
 
     @OnScheduled
+    @Override
     public void onScheduled(final ProcessContext context) {
         super.onScheduled(context);
         maxQuerySize = context.getProperty(MAX_QUERY_SIZE).asInteger();
@@ -144,6 +145,7 @@ public class QuerySplunkIndexingStatus extends SplunkAPICall {
     }
 
     @OnStopped
+    @Override
     public void onStopped() {
         super.onStopped();
         maxQuerySize = null;
@@ -168,7 +170,7 @@ public class QuerySplunkIndexingStatus extends SplunkAPICall {
 
             if (!sentAt.isPresent() || !ackId.isPresent()) {
                 getLogger().error("Flow file ({}) attributes {} and {} are expected to be set using 64-bit integer values!",
-                        new Object[]{flowFile.getId(), SplunkAPICall.RESPONDED_AT_ATTRIBUTE, SplunkAPICall.ACKNOWLEDGEMENT_ID_ATTRIBUTE});
+                        flowFile.getId(), SplunkAPICall.RESPONDED_AT_ATTRIBUTE, SplunkAPICall.ACKNOWLEDGEMENT_ID_ATTRIBUTE);
                 session.transfer(flowFile, RELATIONSHIP_FAILURE);
             } else {
                 undetermined.put(ackId.get(), flowFile);
@@ -217,6 +219,13 @@ public class QuerySplunkIndexingStatus extends SplunkAPICall {
             getLogger().error("Error during communication with Splunk server", e);
             session.transfer(undetermined.values(), RELATIONSHIP_FAILURE);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        super.migrateProperties(config);
+        config.renameProperty("ttl", TTL.getName());
+        config.renameProperty("max-query-size", MAX_QUERY_SIZE.getName());
     }
 
     private RequestMessage createRequestMessage(Map<Long, FlowFile> undetermined) throws IOException {

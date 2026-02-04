@@ -27,7 +27,13 @@ import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
+import org.apache.nifi.components.listen.ListenComponent;
+import org.apache.nifi.components.listen.ListenPort;
+import org.apache.nifi.components.listen.StandardListenPort;
+import org.apache.nifi.components.listen.TransportProtocol;
+import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractSessionFactoryProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSessionFactory;
@@ -57,11 +63,10 @@ import java.util.concurrent.atomic.AtomicReference;
             + "E.g.: file.txt is uploaded to /Folder1/SubFolder, then the value of the path attribute will be \"/Folder1/SubFolder/\" "
             + "(note that it ends with a separator character).")
 })
-public class ListenFTP extends AbstractSessionFactoryProcessor {
+public class ListenFTP extends AbstractSessionFactoryProcessor implements ListenComponent {
 
     public static final PropertyDescriptor SSL_CONTEXT_SERVICE = new PropertyDescriptor.Builder()
-            .name("ssl-context-service")
-            .displayName("SSL Context Service")
+            .name("SSL Context Service")
             .description("Specifies the SSL Context Service that can be used to create secure connections. "
                     + "If an SSL Context Service is selected, then a keystore file must also be specified in the SSL Context Service. "
                     + "Without a keystore file, the processor cannot be started successfully."
@@ -75,9 +80,8 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
             .identifiesControllerService(SSLContextProvider.class)
             .build();
 
-    public static final PropertyDescriptor BIND_ADDRESS = new PropertyDescriptor.Builder()
-            .name("bind-address")
-            .displayName("Bind Address")
+    public static final PropertyDescriptor ADDRESS = new PropertyDescriptor.Builder()
+            .name("Address")
             .description("The address the FTP server should be bound to. If not set (or set to 0.0.0.0), "
                     + "the server binds to all available addresses (i.e. all network interfaces of the host machine).")
             .required(false)
@@ -86,18 +90,17 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor PORT = new PropertyDescriptor.Builder()
-            .name("listening-port")
-            .displayName("Listening Port")
+            .name("Port")
             .description("The Port to listen on for incoming connections. On Linux, root privileges are required to use port numbers below 1024.")
             .required(true)
             .defaultValue("2221")
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+            .identifiesListenPort(TransportProtocol.TCP, "ftp")
             .addValidator(StandardValidators.PORT_VALIDATOR)
             .build();
 
     public static final PropertyDescriptor USERNAME = new PropertyDescriptor.Builder()
-            .name("username")
-            .displayName("Username")
+            .name("Username")
             .description("The name of the user that is allowed to log in to the FTP server. "
                     + "If a username is provided, a password must also be provided. "
                     + "If no username is specified, anonymous connections will be permitted.")
@@ -107,8 +110,7 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
             .build();
 
     public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder()
-            .name("password")
-            .displayName("Password")
+            .name("Password")
             .description("If the Username is set, then a password must also be specified. "
                     + "The password provided by the client trying to log in to the FTP server will be checked against this password.")
             .required(false)
@@ -117,8 +119,8 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
             .sensitive(true)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
-            BIND_ADDRESS,
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
+            ADDRESS,
             PORT,
             USERNAME,
             PASSWORD,
@@ -130,15 +132,26 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
             .description("Relationship for successfully received files.")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS = Set.of(RELATIONSHIP_SUCCESS);
+    private static final Set<Relationship> RELATIONSHIPS = Set.of(
+            RELATIONSHIP_SUCCESS
+    );
 
     private volatile FtpServer ftpServer;
     private volatile CountDownLatch sessionFactorySetSignal;
     private final AtomicReference<ProcessSessionFactory> sessionFactory = new AtomicReference<>();
 
     @Override
+    public void migrateProperties(final PropertyConfiguration propertyConfiguration) {
+        propertyConfiguration.renameProperty("ssl-context-service", SSL_CONTEXT_SERVICE.getName());
+        propertyConfiguration.renameProperty("bind-address", ADDRESS.getName());
+        propertyConfiguration.renameProperty("listening-port", PORT.getName());
+        propertyConfiguration.renameProperty("username", USERNAME.getName());
+        propertyConfiguration.renameProperty("password", PASSWORD.getName());
+    }
+
+    @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
@@ -153,7 +166,7 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
 
             String username = context.getProperty(USERNAME).evaluateAttributeExpressions().getValue();
             String password = context.getProperty(PASSWORD).evaluateAttributeExpressions().getValue();
-            String bindAddress = context.getProperty(BIND_ADDRESS).evaluateAttributeExpressions().getValue();
+            String bindAddress = context.getProperty(ADDRESS).evaluateAttributeExpressions().getValue();
             int port = context.getProperty(PORT).evaluateAttributeExpressions().asInteger();
             final SSLContextProvider sslContextProvider = context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextProvider.class);
 
@@ -178,6 +191,24 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
         } else {
             getLogger().warn("Ftp server already started.");
         }
+    }
+
+    @Override
+    public List<ListenPort> getListenPorts(final ConfigurationContext context) {
+        final Integer portNumber = context.getProperty(PORT).evaluateAttributeExpressions().asInteger();
+        final List<ListenPort> ports;
+        if (portNumber == null) {
+            ports = List.of();
+        } else {
+            final ListenPort port = StandardListenPort.builder()
+                .portNumber(portNumber)
+                .portName(PORT.getDisplayName())
+                .transportProtocol(TransportProtocol.TCP)
+                .applicationProtocols(List.of("ftp"))
+                .build();
+            ports = List.of(port);
+        }
+        return ports;
     }
 
     @OnStopped
@@ -219,12 +250,12 @@ public class ListenFTP extends AbstractSessionFactoryProcessor {
     }
 
     private void validateBindAddress(ValidationContext context, Collection<ValidationResult> validationResults) {
-        String bindAddress = context.getProperty(BIND_ADDRESS).evaluateAttributeExpressions().getValue();
+        String bindAddress = context.getProperty(ADDRESS).evaluateAttributeExpressions().getValue();
         try {
             InetAddress.getByName(bindAddress);
         } catch (UnknownHostException e) {
-            String explanation = String.format("'%s' is unknown", BIND_ADDRESS.getDisplayName());
-            validationResults.add(createValidationResult(BIND_ADDRESS.getDisplayName(), explanation));
+            String explanation = String.format("'%s' is unknown", ADDRESS.getDisplayName());
+            validationResults.add(createValidationResult(ADDRESS.getDisplayName(), explanation));
         }
     }
 

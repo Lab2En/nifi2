@@ -21,8 +21,8 @@ import org.apache.nifi.registry.db.entity.BucketItemEntityType;
 import org.apache.nifi.registry.db.entity.BundleEntity;
 import org.apache.nifi.registry.db.entity.FlowEntity;
 import org.apache.nifi.registry.extension.bundle.BundleType;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.RowMapper;
-import org.springframework.lang.Nullable;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -35,7 +35,7 @@ public class BucketItemEntityRowMapper implements RowMapper<BucketItemEntity> {
         final BucketItemEntityType type = BucketItemEntityType.valueOf(rs.getString("ITEM_TYPE"));
 
         // Create the appropriate type of sub-class, eventually populate specific data for each type
-        final BucketItemEntity item;
+        BucketItemEntity item = null;
         switch (type) {
             case FLOW:
                 item = new FlowEntity();
@@ -46,10 +46,6 @@ public class BucketItemEntityRowMapper implements RowMapper<BucketItemEntity> {
                 bundleEntity.setGroupId(rs.getString("BUNDLE_GROUP_ID"));
                 bundleEntity.setArtifactId(rs.getString("BUNDLE_ARTIFACT_ID"));
                 item = bundleEntity;
-                break;
-            default:
-                // should never happen
-                item = new BucketItemEntity();
                 break;
         }
 

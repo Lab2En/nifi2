@@ -16,13 +16,12 @@
  */
 package org.apache.nifi.amqp.processors;
 
-import java.io.IOException;
-import java.util.concurrent.TimeoutException;
-
-import org.apache.nifi.logging.ComponentLog;
-
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
+import org.apache.nifi.logging.ComponentLog;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Base class for implementing publishing and consuming AMQP workers.
@@ -89,7 +88,7 @@ abstract class AMQPWorker implements AutoCloseable {
      * @param value the value of the property
      */
     void validateStringProperty(String propertyName, String value) {
-        if (value == null || value.trim().length() == 0) {
+        if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("'" + propertyName + "' must not be null or empty");
         }
     }

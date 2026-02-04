@@ -16,11 +16,11 @@
  */
 package org.apache.nifi.web.client.provider.service;
 
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import mockwebserver3.RecordedRequest;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.RecordedRequest;
 import org.apache.nifi.proxy.ProxyConfiguration;
 import org.apache.nifi.proxy.ProxyConfigurationService;
 import org.apache.nifi.reporting.InitializationException;
@@ -29,7 +29,9 @@ import org.apache.nifi.security.ssl.EphemeralKeyStoreBuilder;
 import org.apache.nifi.security.ssl.StandardSslContextBuilder;
 import org.apache.nifi.security.ssl.StandardTrustManagerBuilder;
 import org.apache.nifi.ssl.SSLContextProvider;
+import org.apache.nifi.util.MockPropertyConfiguration;
 import org.apache.nifi.util.NoOpProcessor;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.apache.nifi.web.client.api.HttpResponseEntity;
@@ -44,10 +46,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.X509TrustManager;
-import javax.security.auth.x500.X500Principal;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
@@ -58,6 +56,11 @@ import java.security.KeyStore;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
+import java.util.Map;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.X509TrustManager;
+import javax.security.auth.x500.X500Principal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -92,8 +95,6 @@ class StandardWebClientServiceProviderTest {
     private static final String PROXY_AUTHENTICATE_BASIC_REALM = "Basic realm=\"Authentication Required\"";
 
     private static final String PROXY_AUTHORIZATION_HEADER = "Proxy-Authorization";
-
-    private static final boolean TUNNEL_PROXY_DISABLED = false;
 
     static SSLContext sslContext;
 
@@ -130,8 +131,9 @@ class StandardWebClientServiceProviderTest {
     }
 
     @BeforeEach
-    void setRunner() throws InitializationException {
+    void setRunner() throws InitializationException, IOException {
         mockWebServer = new MockWebServer();
+        mockWebServer.start();
 
         runner = TestRunners.newTestRunner(NoOpProcessor.class);
 
@@ -141,7 +143,7 @@ class StandardWebClientServiceProviderTest {
 
     @AfterEach
     void shutdownServer() throws IOException {
-        mockWebServer.shutdown();
+        mockWebServer.close();
     }
 
     @Test
@@ -193,14 +195,14 @@ class StandardWebClientServiceProviderTest {
         assertNotNull(webClientService);
 
         final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
-        mockWebServer.useHttps(sslSocketFactory, TUNNEL_PROXY_DISABLED);
+        mockWebServer.useHttps(sslSocketFactory);
 
         assertGetUriCompleted(webClientService);
     }
 
     @Test
     void testGetWebServiceClientProxyConfigurationGetUri() throws InitializationException, InterruptedException {
-        final Proxy proxy = mockWebServer.toProxyAddress();
+        final Proxy proxy = mockWebServer.getProxyAddress();
         final InetSocketAddress proxyAddress = (InetSocketAddress) proxy.address();
 
         final ProxyConfiguration proxyConfiguration = new ProxyConfiguration();
@@ -216,9 +218,10 @@ class StandardWebClientServiceProviderTest {
         when(proxyConfigurationService.getIdentifier()).thenReturn(PROXY_SERVICE_ID);
         when(proxyConfigurationService.getConfiguration()).thenReturn(proxyConfiguration);
 
-        mockWebServer.enqueue(new MockResponse()
-                .setResponseCode(HttpResponseStatus.PROXY_AUTHENTICATION_REQUIRED.getCode())
-                .setHeader(PROXY_AUTHENTICATE_HEADER, PROXY_AUTHENTICATE_BASIC_REALM)
+        mockWebServer.enqueue(new MockResponse.Builder()
+                .code(HttpResponseStatus.PROXY_AUTHENTICATION_REQUIRED.getCode())
+                .addHeader(PROXY_AUTHENTICATE_HEADER, PROXY_AUTHENTICATE_BASIC_REALM)
+                .build()
         );
 
         runner.addControllerService(PROXY_SERVICE_ID, proxyConfigurationService);
@@ -234,16 +237,39 @@ class StandardWebClientServiceProviderTest {
         assertGetUriCompleted(webClientService);
 
         final RecordedRequest proxyAuthorizationRequest = mockWebServer.takeRequest();
-        final String proxyAuthorization = proxyAuthorizationRequest.getHeader(PROXY_AUTHORIZATION_HEADER);
+        final String proxyAuthorization = proxyAuthorizationRequest.getHeaders().get(PROXY_AUTHORIZATION_HEADER);
         final String credentials = Credentials.basic(username, password);
         assertEquals(credentials, proxyAuthorization);
+    }
+
+    @Test
+    void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = Map.ofEntries(
+                Map.entry("connect-timeout", StandardWebClientServiceProvider.CONNECT_TIMEOUT.getName()),
+                Map.entry("read-timeout", StandardWebClientServiceProvider.READ_TIMEOUT.getName()),
+                Map.entry("write-timeout", StandardWebClientServiceProvider.WRITE_TIMEOUT.getName()),
+                Map.entry("redirect-handling-strategy", StandardWebClientServiceProvider.REDIRECT_HANDLING_STRATEGY.getName()),
+                Map.entry("ssl-context-service", StandardWebClientServiceProvider.SSL_CONTEXT_SERVICE.getName()),
+                Map.entry(ProxyConfigurationService.OBSOLETE_PROXY_CONFIGURATION_SERVICE, ProxyConfigurationService.PROXY_CONFIGURATION_SERVICE.getName())
+        );
+
+        final Map<String, String> propertyValues = Map.of();
+        final MockPropertyConfiguration configuration = new MockPropertyConfiguration(propertyValues);
+        provider.migrateProperties(configuration);
+
+        final PropertyMigrationResult result = configuration.toPropertyMigrationResult();
+        final Map<String, String> propertiesRenamed = result.getPropertiesRenamed();
+
+        assertEquals(expectedRenamed, propertiesRenamed);
     }
 
     private void assertGetUriCompleted(final WebClientService webClientService) throws InterruptedException {
         final URI uri = mockWebServer.url(ROOT_PATH).newBuilder().host(LOCALHOST).build().uri();
 
         final HttpResponseStatus httpResponseStatus = HttpResponseStatus.OK;
-        final MockResponse mockResponse = new MockResponse().setResponseCode(httpResponseStatus.getCode());
+        final MockResponse mockResponse = new MockResponse.Builder()
+                .code(httpResponseStatus.getCode())
+                .build();
         mockWebServer.enqueue(mockResponse);
 
         final HttpResponseEntity httpResponseEntity = webClientService.get().uri(uri).retrieve();
@@ -252,7 +278,7 @@ class StandardWebClientServiceProviderTest {
         assertEquals(httpResponseStatus.getCode(), httpResponseEntity.statusCode());
 
         final RecordedRequest request = mockWebServer.takeRequest();
-        final HttpUrl requestUrl = request.getRequestUrl();
+        final HttpUrl requestUrl = request.getUrl();
         assertNotNull(requestUrl);
 
         final URI requestUri = requestUrl.uri();

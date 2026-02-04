@@ -17,9 +17,9 @@
 package org.apache.nifi.registry.serialization;
 
 import org.apache.nifi.flow.ExternalControllerServiceReference;
-import org.apache.nifi.registry.flow.VersionedFlowSnapshot;
 import org.apache.nifi.flow.VersionedProcessGroup;
 import org.apache.nifi.flow.VersionedProcessor;
+import org.apache.nifi.registry.flow.VersionedFlowSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -70,7 +70,7 @@ public class TestFlowContentSerializer {
         // make sure we can read the version from the input stream and it should be the current version
         final Integer version = serializer.readDataModelVersion(in);
         assertEquals(serializer.getCurrentDataModelVersion(), version);
-        assertEquals(false, serializer.isProcessGroupVersion(version));
+        assertFalse(serializer.isProcessGroupVersion(version));
 
         // make sure we can deserialize back to FlowContent
         final FlowContent deserializedFlowContent = serializer.deserializeFlowContent(version, in);
@@ -190,7 +190,7 @@ public class TestFlowContentSerializer {
 
         assertNotNull(processGroup);
         assertNotNull(processGroup.getProcessors());
-        assertTrue(processGroup.getProcessors().size() > 0);
+        assertFalse(processGroup.getProcessors().isEmpty());
         //System.out.printf("processGroup=" + processGroup);
     }
 
@@ -212,7 +212,7 @@ public class TestFlowContentSerializer {
 
         assertNotNull(processGroup);
         assertNotNull(processGroup.getProcessors());
-        assertTrue(processGroup.getProcessors().size() > 0);
+        assertFalse(processGroup.getProcessors().isEmpty());
         //System.out.printf("processGroup=" + processGroup);
     }
 

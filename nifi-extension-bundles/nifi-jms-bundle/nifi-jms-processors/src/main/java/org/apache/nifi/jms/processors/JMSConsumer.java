@@ -16,15 +16,6 @@
  */
 package org.apache.nifi.jms.processors;
 
-import org.apache.nifi.jms.processors.MessageBodyToBytesConverter.MessageConversionException;
-import org.apache.nifi.logging.ComponentLog;
-import org.apache.nifi.processor.exception.ProcessException;
-import org.springframework.jms.connection.CachingConnectionFactory;
-import org.springframework.jms.core.JmsTemplate;
-import org.springframework.jms.core.SessionCallback;
-import org.springframework.jms.support.JmsHeaders;
-import org.springframework.jms.support.JmsUtils;
-
 import jakarta.jms.BytesMessage;
 import jakarta.jms.Destination;
 import jakarta.jms.JMSException;
@@ -37,6 +28,15 @@ import jakarta.jms.Session;
 import jakarta.jms.StreamMessage;
 import jakarta.jms.TextMessage;
 import jakarta.jms.Topic;
+import org.apache.nifi.jms.processors.MessageBodyToBytesConverter.MessageConversionException;
+import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.processor.exception.ProcessException;
+import org.springframework.jms.connection.CachingConnectionFactory;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.core.SessionCallback;
+import org.springframework.jms.support.JmsHeaders;
+import org.springframework.jms.support.JmsUtils;
+
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -91,56 +91,50 @@ class JMSConsumer extends JMSWorker {
      */
     public void consumeMessageSet(final String destinationName, String errorQueueName, final boolean durable, final boolean shared, final String subscriptionName, final String messageSelector,
                                   final String charset, final int batchSize, final Consumer<List<JMSResponse>> messageSetConsumer) {
-        doWithJmsTemplate(destinationName, durable, shared, subscriptionName, messageSelector, new MessageReceiver() {
-            @Override
-            public void consume(Session session, MessageConsumer messageConsumer) throws JMSException {
-                final List<JMSResponse> jmsResponses = new ArrayList<>();
-                int batchCounter = 0;
+        doWithJmsTemplate(destinationName, durable, shared, subscriptionName, messageSelector, (session, messageConsumer) -> {
+            final List<JMSResponse> jmsResponses = new ArrayList<>();
+            int batchCounter = 0;
 
-                JMSResponse response;
-                while (batchCounter < batchSize && (response = receiveMessage(session, messageConsumer, charset, errorQueueName)) != null) {
-                    response.setBatchOrder(batchCounter);
-                    jmsResponses.add(response);
-                    batchCounter++;
-                }
+            JMSResponse response;
+            while (batchCounter < batchSize && (response = receiveMessage(session, messageConsumer, charset, errorQueueName)) != null) {
+                response.setBatchOrder(batchCounter);
+                jmsResponses.add(response);
+                batchCounter++;
+            }
 
-                if (!jmsResponses.isEmpty()) {
-                    // Provide the JMSResponse to the processor to handle. It is the responsibility of the
-                    // processor to handle acknowledgment of the message (if Client Acknowledge), and it is
-                    // the responsibility of the processor to handle closing the Message Consumer.
-                    // Both of these actions can be handled by calling the acknowledge() or reject() methods of
-                    // the JMSResponse.
-                    messageSetConsumer.accept(jmsResponses);
-                }
+            if (!jmsResponses.isEmpty()) {
+                // Provide the JMSResponse to the processor to handle. It is the responsibility of the
+                // processor to handle acknowledgment of the message (if Client Acknowledge), and it is
+                // the responsibility of the processor to handle closing the Message Consumer.
+                // Both of these actions can be handled by calling the acknowledge() or reject() methods of
+                // the JMSResponse.
+                messageSetConsumer.accept(jmsResponses);
             }
         });
     }
 
     private void doWithJmsTemplate(String destinationName, boolean durable, boolean shared, String subscriptionName, String messageSelector, MessageReceiver messageReceiver) {
-        this.jmsTemplate.execute(new SessionCallback<Void>() {
-            @Override
-            public Void doInJms(final Session session) throws JMSException {
+        this.jmsTemplate.execute((SessionCallback<Void>) session -> {
 
-                final MessageConsumer messageConsumer = createMessageConsumer(session, destinationName, durable, shared, subscriptionName, messageSelector);
+            final MessageConsumer messageConsumer = createMessageConsumer(session, destinationName, durable, shared, subscriptionName, messageSelector);
+            try {
+                messageReceiver.consume(session, messageConsumer);
+            } catch (Exception e) {
+                // We need to call recover to ensure that in the event of
+                // abrupt end or exception the current session will stop message
+                // delivery and restart with the oldest unacknowledged message
                 try {
-                    messageReceiver.consume(session, messageConsumer);
-                } catch (Exception e) {
-                    // We need to call recover to ensure that in the event of
-                    // abrupt end or exception the current session will stop message
-                    // delivery and restart with the oldest unacknowledged message
-                    try {
-                        session.recover();
-                    } catch (Exception e1) {
-                        // likely the session is closed...need to catch this so that the root cause of failure is propagated
-                        processLog.debug("Failed to recover JMS session while handling initial error. The recover error is: ", e1);
-                    }
-
-                    JmsUtils.closeMessageConsumer(messageConsumer);
-                    throw e;
+                    session.recover();
+                } catch (Exception e1) {
+                    // likely the session is closed...need to catch this so that the root cause of failure is propagated
+                    processLog.debug("Failed to recover JMS session while handling initial error. The recover error is: ", e1);
                 }
 
-                return null;
+                JmsUtils.closeMessageConsumer(messageConsumer);
+                throw e;
             }
+
+            return null;
         }, true);
     }
 

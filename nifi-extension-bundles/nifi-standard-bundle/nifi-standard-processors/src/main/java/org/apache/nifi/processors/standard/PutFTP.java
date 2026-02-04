@@ -75,7 +75,7 @@ public class PutFTP extends PutFileTransfer<FTPTransfer> {
             .fromPropertyDescriptor(FTPTransfer.REMOTE_PATH)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES).build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             FTPTransfer.HOSTNAME,
             FTPTransfer.PORT,
             FTPTransfer.USERNAME,
@@ -101,13 +101,13 @@ public class PutFTP extends PutFileTransfer<FTPTransfer> {
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @Override
     public void migrateProperties(PropertyConfiguration config) {
-        super.migrateProperties(config);
         FTPTransfer.migrateProxyProperties(config);
+        config.renameProperty(FTPTransfer.OBSOLETE_UTF8_ENCODING, FTPTransfer.UTF8_ENCODING.getName());
     }
 
     @Override

@@ -23,6 +23,8 @@ import org.apache.nifi.annotation.lifecycle.OnEnabled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.migration.PropertyConfiguration;
+import org.apache.nifi.migration.ProxyServiceMigration;
 import org.apache.nifi.processors.azure.AzureServiceEndpoints;
 import org.apache.nifi.processors.azure.storage.utils.AzureStorageUtils;
 
@@ -57,7 +59,7 @@ public class AzureStorageCredentialsControllerService_v12 extends AbstractContro
             .dependsOn(CREDENTIALS_TYPE, AzureStorageCredentialsType.SERVICE_PRINCIPAL, AzureStorageCredentialsType.MANAGED_IDENTITY)
             .build();
 
-    private static final List<PropertyDescriptor> PROPERTIES = List.of(
+    private static final List<PropertyDescriptor> PROPERTY_DESCRIPTORS = List.of(
             ACCOUNT_NAME,
             ENDPOINT_SUFFIX,
             CREDENTIALS_TYPE,
@@ -74,7 +76,7 @@ public class AzureStorageCredentialsControllerService_v12 extends AbstractContro
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return PROPERTIES;
+        return PROPERTY_DESCRIPTORS;
     }
 
     @OnEnabled
@@ -108,5 +110,19 @@ public class AzureStorageCredentialsControllerService_v12 extends AbstractContro
             default:
                 throw new IllegalArgumentException("Unhandled credentials type: " + credentialsType);
         }
+    }
+
+    @Override
+    public void migrateProperties(PropertyConfiguration config) {
+        config.renameProperty(AzureStorageUtils.OLD_CREDENTIALS_TYPE_DESCRIPTOR_NAME, AzureStorageUtils.CREDENTIALS_TYPE.getName());
+        config.renameProperty(AzureStorageUtils.STORAGE_ACCOUNT_KEY_PROPERTY_DESCRIPTOR_NAME, ACCOUNT_KEY.getName());
+        config.renameProperty(AzureStorageUtils.STORAGE_ACCOUNT_NAME_PROPERTY_DESCRIPTOR_NAME, ACCOUNT_NAME.getName());
+        config.renameProperty(AzureStorageUtils.STORAGE_ENDPOINT_SUFFIX_PROPERTY_DESCRIPTOR_NAME, ENDPOINT_SUFFIX.getName());
+        config.renameProperty(AzureStorageUtils.STORAGE_SAS_TOKEN_PROPERTY_DESCRIPTOR_NAME, SAS_TOKEN.getName());
+        config.renameProperty(AzureStorageUtils.OLD_MANAGED_IDENTITY_CLIENT_ID_DESCRIPTOR_NAME, MANAGED_IDENTITY_CLIENT_ID.getName());
+        config.renameProperty(AzureStorageUtils.OLD_SERVICE_PRINCIPAL_TENANT_ID_DESCRIPTOR_NAME, SERVICE_PRINCIPAL_TENANT_ID.getName());
+        config.renameProperty(AzureStorageUtils.OLD_SERVICE_PRINCIPAL_CLIENT_ID_DESCRIPTOR_NAME, SERVICE_PRINCIPAL_CLIENT_ID.getName());
+        config.renameProperty(AzureStorageUtils.OLD_SERVICE_PRINCIPAL_CLIENT_SECRET_DESCRIPTOR_NAME, SERVICE_PRINCIPAL_CLIENT_SECRET.getName());
+        ProxyServiceMigration.renameProxyConfigurationServiceProperty(config);
     }
 }

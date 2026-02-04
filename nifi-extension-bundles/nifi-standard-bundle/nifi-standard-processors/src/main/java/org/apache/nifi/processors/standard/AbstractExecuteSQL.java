@@ -19,6 +19,7 @@ package org.apache.nifi.processors.standard;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
+import org.apache.nifi.components.DescribedValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.dbcp.DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
@@ -26,6 +27,7 @@ import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.FragmentAttributes;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -56,7 +58,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-
 public abstract class AbstractExecuteSQL extends AbstractProcessor {
 
     public static final String RESULT_ROW_COUNT = "executesql.row.count";
@@ -80,6 +81,11 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .name("failure")
             .description("SQL query execution failed. Incoming FlowFile will be penalized and routed to this relationship")
             .build();
+    static final List<String> OBSOLETE_MAX_ROWS_PER_FLOW_FILE = List.of(
+            "esql-max-rows",
+            "Max Rows Per Flow File"
+    );
+
     protected Set<Relationship> relationships;
 
     public static final PropertyDescriptor DBCP_SERVICE = new PropertyDescriptor.Builder()
@@ -90,8 +96,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor SQL_PRE_QUERY = new PropertyDescriptor.Builder()
-            .name("sql-pre-query")
-            .displayName("SQL Pre-Query")
+            .name("SQL Pre-Query")
             .description("A semicolon-delimited list of queries executed before the main SQL query is executed. " +
                     "For example, set session properties before main query. " +
                     "It's possible to include semicolons in the statements themselves by escaping them with a backslash ('\\;'). " +
@@ -101,9 +106,9 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
 
-    public static final PropertyDescriptor SQL_SELECT_QUERY = new PropertyDescriptor.Builder()
-            .name("SQL select query")
-            .description("The SQL select query to execute. The query can be empty, a constant value, or built from attributes "
+    public static final PropertyDescriptor SQL_QUERY = new PropertyDescriptor.Builder()
+            .name("SQL Query")
+            .description("The SQL query to execute. The query can be empty, a constant value, or built from attributes "
                     + "using Expression Language. If this property is specified, it will be used regardless of the content of "
                     + "incoming flowfiles. If this property is empty, the content of the incoming flow file is expected "
                     + "to contain a valid SQL select query, to be issued by the processor to the database. Note that Expression "
@@ -114,8 +119,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor SQL_POST_QUERY = new PropertyDescriptor.Builder()
-            .name("sql-post-query")
-            .displayName("SQL Post-Query")
+            .name("SQL Post-Query")
             .description("A semicolon-delimited list of queries executed after the main SQL query is executed. " +
                     "Example like setting session properties after main query. " +
                     "It's possible to include semicolons in the statements themselves by escaping them with a backslash ('\\;'). " +
@@ -137,8 +141,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor MAX_ROWS_PER_FLOW_FILE = new PropertyDescriptor.Builder()
-            .name("esql-max-rows")
-            .displayName("Max Rows Per Flow File")
+            .name("Max Rows Per FlowFile")
             .description("The maximum number of result rows that will be included in a single FlowFile. This will allow you to break up very large "
                     + "result sets into multiple FlowFiles. If the value specified is zero, then all rows are returned in a single FlowFile.")
             .defaultValue("0")
@@ -148,8 +151,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor OUTPUT_BATCH_SIZE = new PropertyDescriptor.Builder()
-            .name("esql-output-batch-size")
-            .displayName("Output Batch Size")
+            .name("Output Batch Size")
             .description("The number of output FlowFiles to queue before committing the process session. When set to zero, the session will be committed when all result set rows "
                     + "have been processed and the output FlowFiles are ready for transfer to the downstream relationship. For large result sets, this can cause a large burst of FlowFiles "
                     + "to be transferred at the end of processor execution. If this property is set, then when the specified number of FlowFiles are ready for transfer, then the session will "
@@ -162,8 +164,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor FETCH_SIZE = new PropertyDescriptor.Builder()
-            .name("esql-fetch-size")
-            .displayName("Fetch Size")
+            .name("Fetch Size")
             .description("The number of result rows to be fetched from the result set at a time. This is a hint to the database driver and may not be "
                     + "honored and/or exact. If the value specified is zero, then the hint is ignored.")
             .defaultValue("0")
@@ -173,8 +174,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
             .build();
 
     public static final PropertyDescriptor AUTO_COMMIT = new PropertyDescriptor.Builder()
-            .name("esql-auto-commit")
-            .displayName("Set Auto Commit")
+            .name("Set Auto Commit")
             .description("Enables or disables the auto commit functionality of the DB connection. Default value is 'true'. " +
                     "The default value can be used with most of the JDBC drivers and this functionality doesn't have any impact in most of the cases " +
                     "since this processor is used to read data. " +
@@ -185,6 +185,17 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
                     "More Details of this behaviour in PostgreSQL driver can be found in https://jdbc.postgresql.org//documentation/head/query.html. ")
             .allowableValues("true", "false")
             .defaultValue("true")
+            .required(true)
+            .build();
+
+    public static final PropertyDescriptor CONTENT_OUTPUT_STRATEGY = new PropertyDescriptor.Builder()
+            .name("Content Output Strategy")
+            .description("""
+                    Specifies the strategy for writing FlowFile content when processing input FlowFiles.
+                    The strategy applies when handling queries that do not produce results.
+                    """)
+            .allowableValues(ContentOutputStrategy.class)
+            .defaultValue(ContentOutputStrategy.EMPTY)
             .required(true)
             .build();
 
@@ -202,10 +213,21 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
         return propDescriptors;
     }
 
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        config.renameProperty("sql-pre-query", SQL_PRE_QUERY.getName());
+        config.renameProperty("SQL select query", SQL_QUERY.getName());
+        config.renameProperty("sql-post-query", SQL_POST_QUERY.getName());
+        config.renameProperty("esql-output-batch-size", OUTPUT_BATCH_SIZE.getName());
+        config.renameProperty("esql-fetch-size", FETCH_SIZE.getName());
+        config.renameProperty("esql-auto-commit", AUTO_COMMIT.getName());
+        OBSOLETE_MAX_ROWS_PER_FLOW_FILE.forEach(obsoleteName -> config.renameProperty(obsoleteName, MAX_ROWS_PER_FLOW_FILE.getName()));
+    }
+
     @OnScheduled
     public void setup(ProcessContext context) {
-        // If the query is not set, then an incoming flow file is needed. Otherwise fail the initialization
-        if (!context.getProperty(SQL_SELECT_QUERY).isSet() && !context.hasIncomingConnection()) {
+        // If the query is not set, then an incoming flow file is needed. Otherwise, fail the initialization
+        if (!context.getProperty(SQL_QUERY).isSet() && !context.hasIncomingConnection()) {
             final String errorString = "Either the Select Query must be specified or there must be an incoming connection "
                     + "providing flowfile(s) containing a SQL select query";
             getLogger().error(errorString);
@@ -230,6 +252,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
         }
 
         final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
+        Map<String, String> retainedFlowFileAttributes = null;
 
         final ComponentLog logger = getLogger();
         final int queryTimeout = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions(fileToProcess).asTimePeriod(TimeUnit.SECONDS).intValue();
@@ -244,8 +267,8 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
         SqlWriter sqlWriter = configureSqlWriter(session, context, fileToProcess);
 
         String selectQuery;
-        if (context.getProperty(SQL_SELECT_QUERY).isSet()) {
-            selectQuery = context.getProperty(SQL_SELECT_QUERY).evaluateAttributeExpressions(fileToProcess).getValue();
+        if (context.getProperty(SQL_QUERY).isSet()) {
+            selectQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions(fileToProcess).getValue();
         } else {
             // If the query is not set, then an incoming flow file is required, and expected to contain a valid SQL select query.
             // If there is no incoming connection, onTrigger will not be called as the processor will fail when scheduled.
@@ -277,7 +300,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
                 }
                 st.setQueryTimeout(queryTimeout); // timeout in seconds
 
-                // Execute pre-query, throw exception and cleanup Flow Files if fail
+                // Execute pre-query, throw exception and cleanup FlowFiles if fail
                 Pair<String, SQLException> failure = executeConfigStatements(con, preQueries);
                 if (failure != null) {
                     // In case of failure, assigning config query to "selectQuery" to follow current error handling
@@ -301,7 +324,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
                     JdbcCommon.setSensitiveParameters(st, sqlParameters);
                 }
 
-                logger.debug("Executing query {}", selectQuery);
+                logger.info("Executing query {}", selectQuery);
 
                 int fragmentIndex = 0;
                 final String fragmentId = UUID.randomUUID().toString();
@@ -386,8 +409,10 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
                                     // If we've reached the batch size, send out the flow files
                                     if (outputBatchSize > 0 && resultSetFlowFiles.size() >= outputBatchSize) {
                                         session.transfer(resultSetFlowFiles, REL_SUCCESS);
-                                        // Need to remove the original input file if it exists
+                                        // Need to remove the original input file if it exists,
+                                        // but save the attributes to add them to the failure flow file if it is created
                                         if (fileToProcess != null) {
+                                            retainedFlowFileAttributes = new HashMap<>(fileToProcess.getAttributes());
                                             session.remove(fileToProcess);
                                             fileToProcess = null;
                                         }
@@ -433,7 +458,7 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
                     }
                 }
 
-                // Execute post-query, throw exception and cleanup Flow Files if fail
+                // Execute post-query, throw exception and cleanup FlowFiles if fail
                 failure = executeConfigStatements(con, postQueries);
                 if (failure != null) {
                     selectQuery = failure.getLeft();
@@ -456,7 +481,13 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
                         session.remove(fileToProcess);
                     } else {
                         // If we had no results then transfer the original flow file downstream to trigger processors
-                        session.transfer(setFlowFileEmptyResults(session, fileToProcess, sqlWriter), REL_SUCCESS);
+                        final ContentOutputStrategy contentOutputStrategy = context.getProperty(CONTENT_OUTPUT_STRATEGY).asAllowableValue(ContentOutputStrategy.class);
+                        if (ContentOutputStrategy.ORIGINAL == contentOutputStrategy) {
+                            session.transfer(fileToProcess, REL_SUCCESS);
+                        } else {
+                            // Set Empty Results as the default behavior based on strategy or null property
+                            session.transfer(setFlowFileEmptyResults(session, fileToProcess, sqlWriter), REL_SUCCESS);
+                        }
                     }
                 } else if (resultCount == 0) {
                     // If we had no inbound FlowFile, no exceptions, and the SQL generated no result sets (Insert/Update/Delete statements only)
@@ -468,20 +499,27 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
         } catch (final ProcessException | SQLException e) {
             //If we had at least one result then it's OK to drop the original file, but if we had no results then
             //  pass the original flow file down the line to trigger downstream processors
-            if (fileToProcess == null) {
+            //  or create a new empty flow file with the original attributes if the original file no longer exists
+            FlowFile failureFlowFile = fileToProcess;
+            if (failureFlowFile == null && retainedFlowFileAttributes != null) {
+                failureFlowFile = session.create();
+                failureFlowFile = session.putAllAttributes(failureFlowFile, retainedFlowFileAttributes);
+            }
+
+            if (failureFlowFile == null) {
                 // This can happen if any exceptions occur while setting up the connection, statement, etc.
                 logger.error("Unable to execute SQL select query [{}]. No FlowFile to route to failure", selectQuery, e);
                 context.yield();
             } else {
                 if (context.hasIncomingConnection()) {
-                    logger.error("Unable to execute SQL select query [{}] for {} routing to failure", selectQuery, fileToProcess, e);
-                    fileToProcess = session.penalize(fileToProcess);
+                    logger.error("Unable to execute SQL select query [{}] for {} routing to failure", selectQuery, failureFlowFile, e);
+                    failureFlowFile = session.penalize(failureFlowFile);
                 } else {
                     logger.error("Unable to execute SQL select query [{}] routing to failure", selectQuery, e);
                     context.yield();
                 }
-                session.putAttribute(fileToProcess, RESULT_ERROR_MESSAGE, e.getMessage());
-                session.transfer(fileToProcess, REL_FAILURE);
+                session.putAttribute(failureFlowFile, RESULT_ERROR_MESSAGE, e.getMessage());
+                session.transfer(failureFlowFile, REL_FAILURE);
             }
         }
     }
@@ -531,4 +569,38 @@ public abstract class AbstractExecuteSQL extends AbstractProcessor {
     }
 
     protected abstract SqlWriter configureSqlWriter(ProcessSession session, ProcessContext context, FlowFile fileToProcess);
+
+    enum ContentOutputStrategy implements DescribedValue {
+        EMPTY(
+            "Empty",
+            "Overwrite the input FlowFile content with an empty result set"
+        ),
+        ORIGINAL(
+            "Original",
+            "Retain the input FlowFile content without changes"
+        );
+
+        private final String displayName;
+        private final String description;
+
+        ContentOutputStrategy(final String displayName, final String description) {
+            this.displayName = displayName;
+            this.description = description;
+        }
+
+        @Override
+        public String getValue() {
+            return name();
+        }
+
+        @Override
+        public String getDisplayName() {
+            return this.displayName;
+        }
+
+        @Override
+        public String getDescription() {
+            return this.description;
+        }
+    }
 }
