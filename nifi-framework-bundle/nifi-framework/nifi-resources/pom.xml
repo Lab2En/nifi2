@@ -82,7 +82,7 @@
         <nifi.sensitive.props.algorithm>NIFI_PBKDF2_AES_GCM_256</nifi.sensitive.props.algorithm>
 
         <nifi.remote.input.socket.port>9990</nifi.remote.input.socket.port>
-        <nifi.remote.input.secure>true</nifi.remote.input.secure>
+        <nifi.remote.input.secure/>
 
         <!-- persistent provenance repository properties -->
         <nifi.provenance.repository.implementation>org.apache.nifi.provenance.WriteAheadProvenanceRepository</nifi.provenance.repository.implementation>
@@ -123,11 +123,11 @@
         <nifi.asset.manager.properties.directory>./assets</nifi.asset.manager.properties.directory>
 
         <!-- nifi.properties: web properties -->
-        <nifi.web.http.host />
-        <nifi.web.http.port />
+        <nifi.web.http.host>127.0.0.1</nifi.web.http.host>
+        <nifi.web.http.port>8085</nifi.web.http.port>
         <nifi.web.http.network.interface.default />
-        <nifi.web.https.host>localhost</nifi.web.https.host>
-        <nifi.web.https.port>8443</nifi.web.https.port>
+        <nifi.web.https.host/>
+        <nifi.web.https.port/>
         <nifi.web.https.network.interface.default />
         <nifi.web.https.application.protocols>h2 http/1.1</nifi.web.https.application.protocols>
         <nifi.jetty.work.dir>./work/jetty</nifi.jetty.work.dir>
@@ -147,15 +147,15 @@
         <!-- nifi.properties: security properties -->
         <nifi.security.autoreload.enabled>false</nifi.security.autoreload.enabled>
         <nifi.security.autoreload.interval>10 secs</nifi.security.autoreload.interval>
-        <nifi.security.keystore>./conf/keystore.p12</nifi.security.keystore>
+        <nifi.security.keystore/>
         <nifi.security.keystore.certificate />
         <nifi.security.keystore.privateKey />
-        <nifi.security.keystoreType>PKCS12</nifi.security.keystoreType>
+        <nifi.security.keystoreType/>
         <nifi.security.keystorePasswd />
         <nifi.security.keyPasswd />
-        <nifi.security.truststore>./conf/truststore.p12</nifi.security.truststore>
+        <nifi.security.truststore/>
         <nifi.security.truststore.certificate />
-        <nifi.security.truststoreType>PKCS12</nifi.security.truststoreType>
+        <nifi.security.truststoreType/>
         <nifi.security.truststorePasswd />
         <nifi.security.user.authorizer>managed-authorizer</nifi.security.user.authorizer>
         <nifi.security.allow.anonymous.authentication>false</nifi.security.allow.anonymous.authentication>
@@ -163,11 +163,11 @@
         <nifi.security.user.jws.key.rotation.period>PT1H</nifi.security.user.jws.key.rotation.period>
 
         <!-- nifi.properties: openid connect -->
-        <nifi.security.user.oidc.discovery.url >http://www.tamky.xyz:8080/realms/setl-nifi/.well-known/openid-configuration</nifi.security.user.oidc.discovery.url>
+        <nifi.security.user.oidc.discovery.url />
         <nifi.security.user.oidc.connect.timeout>5 secs</nifi.security.user.oidc.connect.timeout>
         <nifi.security.user.oidc.read.timeout>5 secs</nifi.security.user.oidc.read.timeout>
-        <nifi.security.user.oidc.client.id>nifi2</nifi.security.user.oidc.client.id>
-        <nifi.security.user.oidc.client.secret>gke5sfEVdqPLOXCILLyP4PZFPHeu5v46</nifi.security.user.oidc.client.secret>
+        <nifi.security.user.oidc.client.id />
+        <nifi.security.user.oidc.client.secret />
         <nifi.security.user.oidc.preferred.jwsalgorithm />
         <!-- Set additional scopes to support Refresh Token retrieval -->
         <nifi.security.user.oidc.additional.scopes>offline_access</nifi.security.user.oidc.additional.scopes>
