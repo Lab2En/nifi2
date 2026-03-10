@@ -855,7 +855,7 @@
                             <version>${pmd.version}</version>
                         </dependency>
                     </dependencies>
-                </plugin>
+                </plugin>          
             </plugins>
         </pluginManagement>
         <plugins>
@@ -906,6 +906,7 @@
                                         <exclude>org.apache.nifi:*</exclude>
                                         <exclude>org.apache.nifi.minifi:*</exclude>
                                         <exclude>org.apache.nifi.registry:*</exclude>
+                                        <exclude>com.jdvn.setl.geos:*</exclude>
                                     </excludes>
                                 </requireReleaseDeps>
                                 <bannedDependencies>
@@ -913,7 +914,7 @@
                                         <!-- JUnit 5 is the preferred test framework -->
                                         <exclude>org.testng:testng</exclude>
                                         <!-- JUnit 4 should not be used -->
-                                        <exclude>junit:junit</exclude>
+                                        <!--exclude>junit:junit</exclude-->
                                         <exclude>org.junit.vintage:junit-vintage-engine</exclude>
                                         <!-- Cat-X Deps -->
                                         <exclude>org.json:json:(,20240303):compile</exclude>

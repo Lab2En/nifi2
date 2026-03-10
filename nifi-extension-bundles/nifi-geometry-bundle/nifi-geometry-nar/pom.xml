@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.jdvn.setl.geos</groupId>
+        <artifactId>nifi-geometry-bundle</artifactId>
+        <version>2.8.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>nifi-geometry-nar</artifactId>
+    <packaging>nar</packaging>
+    <properties>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <source.skip>true</source.skip>
+    </properties>
+
+    <dependencies> 
+        <dependency>
+            <groupId>com.jdvn.setl.geos</groupId>
+            <artifactId>nifi-gss-nar</artifactId>
+            <version>2.8.0-SNAPSHOT</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>com.jdvn.setl.geos</groupId>
+            <artifactId>nifi-geometry-processors</artifactId>
+            <version>2.8.0-SNAPSHOT</version>
+        </dependency>        
+        <!--dependency>
+            <groupId>com.jdvn.setl.geos</groupId>
+            <artifactId>nifi-geometry-viewer</artifactId>
+            <version>2.8.0-SNAPSHOT</version>
+            <type>war</type>
+        </dependency-->
+    </dependencies> 
+</project>
