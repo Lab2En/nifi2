@@ -36,6 +36,12 @@ jobs:
       with:
         maven-version: 3.9.12
     - run: mvn --version
+    - name: Install GSS jdbc
+      working-directory: ./ext_libs
+      run: mvn install:install-file -DgroupId=com.cci -DartifactId=gss36.jdbc -Dversion=3.6 -Dpackaging=jar -Dfile=gss36.jdbc.jar -DgeneratePom=true         
+    - name: Install GSS interfaces
+      working-directory: ./ext_libs
+      run: mvn install:install-file -DgroupId=com.cci -DartifactId=gss.interfaces -Dversion=1.1.0 -Dpackaging=jar -Dfile=gss.interfaces.jar -DgeneratePom=true    
     - name: Build with Maven
       run: mvn -T1C clean install -DskipTests
     - name: Docker Login
