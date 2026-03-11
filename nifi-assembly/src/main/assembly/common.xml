@@ -162,6 +162,7 @@
             <useTransitiveDependencies>false</useTransitiveDependencies>
             <includes>
                 <include>org.apache.nifi:*:nar</include>
+                <include>com.jdvn.setl.geos:*:nar</include>
             </includes>
         </dependencySet>
     </dependencySets>
