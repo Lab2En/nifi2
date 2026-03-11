@@ -249,7 +249,7 @@ public class PutGSS extends AbstractProcessor {
             .description("If true, the Processor will attempt to translate field names into the appropriate column names for the table specified. "
                     + "If false, the field names must match the column names exactly, or the column will not be updated")
             .allowableValues("true", "false")
-            .defaultValue("true")
+            .defaultValue("false")
             .build();
 
     static final PropertyDescriptor UNMATCHED_FIELD_BEHAVIOR = new Builder()
