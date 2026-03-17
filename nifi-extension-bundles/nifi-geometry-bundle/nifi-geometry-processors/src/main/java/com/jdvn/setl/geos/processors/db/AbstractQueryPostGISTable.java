@@ -627,7 +627,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         	}        	
         }
 		
-		query.append(", to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
+		query.append(", to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.US') AS Changed FROM ");
 		query.append(tableName).append(" S, ").append(eventTable).append(" E WHERE ");
 		first = true;
 		for (String e : Ids) {
@@ -641,7 +641,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 			String maxValueKey = getStateKey(eventTable, CDC_UPDATE_DATETIME, dbAdapter);
 			String maxValue = stateMap.get(maxValueKey);
 			if (maxValue != null)
-				query.append(" AND to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') > ").append("'").append(maxValue).append("'");
+				query.append(" AND to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.US') > ").append("'").append(maxValue).append("'");
 			
 		}
 		return query.toString();
@@ -660,7 +660,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 		
 		query = new StringBuilder("SELECT ");
 		query.append(IdsString);
-		query.append(", to_char(Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
+		query.append(", to_char(Changed,'YYYY-MM-DD HH24.MI.SS.US') AS Changed FROM ");
 		query.append(eventTable);
 		query.append(" WHERE Event='d'");
 		
@@ -668,7 +668,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 			String maxValueKey = getStateKey(eventTable, CDC_DELETE_DATETIME, dbAdapter);
 			String maxValue = stateMap.get(maxValueKey);
 			if (maxValue != null)
-				query.append(" AND to_char(Changed,'YYYY-MM-DD HH24.MI.SS.FF3') > ").append("'").append(maxValue).append("'");
+				query.append(" AND to_char(Changed,'YYYY-MM-DD HH24.MI.SS.US') > ").append("'").append(maxValue).append("'");
 		}
 		return query.toString();
 
@@ -1250,17 +1250,21 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         	            		fullyQualifiedMaxValueKey = getStateKey(setl_table, CDC_DELETE_DATETIME, dbAdapter);
         			        	maxValueString = newColMap.get(fullyQualifiedMaxValueKey);	            		
         	            	}
-        	            	DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss.S");
-        	            	Date maxTimestampValue = null;
-        		            if (maxValueString != null) {
-        		            	maxTimestampValue = dateFormat.parse(maxValueString);
-        		            }
-        		        	String latestTime = resultSet.getString(CDC_EVENT_DATETIME);
-        		        	Date colTimestampValue = dateFormat.parse(latestTime);
-        		        	
-        		            if (maxTimestampValue == null || colTimestampValue.compareTo(maxTimestampValue) > 0) {
-        		            	newColMap.put(fullyQualifiedMaxValueKey, dateFormat.format(colTimestampValue));
-        		            }  	            	
+//        	            	DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss.S");
+//        	            	Date maxTimestampValue = null;
+//        		            if (maxValueString != null) {
+//        		            	maxTimestampValue = dateFormat.parse(maxValueString);
+//        		            }
+//        		        	String latestTime = resultSet.getString(CDC_EVENT_DATETIME);
+//        		        	Date colTimestampValue = dateFormat.parse(latestTime);
+//        		        	
+//        		            if (maxTimestampValue == null || colTimestampValue.compareTo(maxTimestampValue) > 0) {
+//        		            	newColMap.put(fullyQualifiedMaxValueKey, dateFormat.format(colTimestampValue));
+//        		            }  	         
+        	            	String latestTime = resultSet.getString(CDC_EVENT_DATETIME).trim();
+        	            	if (maxValueString == null || latestTime.compareTo(maxValueString) > 0) {
+        	            	    newColMap.put(fullyQualifiedMaxValueKey, latestTime);
+        	            	}		
         	            }                         
                     }                  
                     
