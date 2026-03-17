@@ -1142,12 +1142,15 @@ public class PutPostGIS extends AbstractProcessor {
 	            sqlBuilder.append(",").append(SETL_UUID);
 	            sqlBuilder.append(") VALUES (");
 	            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size() + 1));  // + 1 for new NIFIUID filed
-	            sqlBuilder.append(")");            	
+	            sqlBuilder.append(")"); 
+	            sqlBuilder.append(" ON CONFLICT (").append(SETL_UUID).append(") DO NOTHING"); 
             } else {
 	            sqlBuilder.append(") VALUES (");
 	            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size()));
-	            sqlBuilder.append(")");             	
+	            sqlBuilder.append(")");     
+	            sqlBuilder.append(" ON CONFLICT DO NOTHING");
             }
+            
 
 
             if (fieldsFound.get() == 0) {

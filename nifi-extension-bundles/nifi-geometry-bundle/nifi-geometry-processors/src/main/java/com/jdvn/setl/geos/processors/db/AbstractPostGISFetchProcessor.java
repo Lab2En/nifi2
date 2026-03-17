@@ -370,7 +370,9 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
 		try {
 			stmt = connection.createStatement();
 			final StringBuilder sqlBuilder = new StringBuilder();
-			// SET UP LATER
+			// Currently manually run script generate triggers
+			// from ./resources/track_events_postgres.sql and create_drop_triggers.sql
+			// Setup in code is in plan.
 			stmt.execute(sqlBuilder.toString());
 			
 			getLogger().info("Triggers for event trackers are created.!");
