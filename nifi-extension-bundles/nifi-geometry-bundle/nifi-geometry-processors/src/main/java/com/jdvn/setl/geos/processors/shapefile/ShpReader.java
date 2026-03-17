@@ -522,49 +522,52 @@ public class ShpReader extends AbstractProcessor {
 				session.read(flowFile, new InputStreamCallback() {
 					@Override
 					public void process(final InputStream in) {						
-						String targetDir = flowFile.getAttributes().get("filename");
-						targetDir = targetDir.substring(0, targetDir.length() - 4); // remove .zip extension
+						String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
+						String dirLocation = flowFile.getAttribute(GeoUtils.SHP_ZIP_LOCATION);
 						
-						String geoName = flowFile.getAttributes().get(GeoUtils.SHP_ZIP_MARK);
-						String dirLocation = flowFile.getAttributes().get(GeoUtils.SHP_ZIP_LOCATION);
-						
-					    File TEMP_UNZIP_DIR = new File(System.getProperty("java.io.tmpdir") + File.separator + targetDir);
+						Path tempDir = null;
 						try {
-						    System.out.println(System.getProperty("java.io.tmpdir"));
-						    System.out.println("Unzip at : " + TEMP_UNZIP_DIR.getPath());
-						    
-						    Path destPath = TEMP_UNZIP_DIR.toPath();						    
-					        ZipInputStream zis = new ZipInputStream(in);
-					        ZipEntry zipEntry;
-					        // while there are entries I process them
-					        while ((zipEntry = zis.getNextEntry()) != null)
-					        {
-								Path resolvedPath = destPath.resolve(zipEntry.getName().substring(zipEntry.getName().lastIndexOf("/")+1)).normalize();
-								if (!resolvedPath.startsWith(destPath)) {
-									throw new IOException("The requested zip-entry '" + zipEntry.getName()
-											+ "' does not belong to the requested destination");
-								}
-								if (zipEntry.isDirectory()) {
-									Files.createDirectories(resolvedPath);
-								} 
-								else {
-									if (!Files.isDirectory(resolvedPath.getParent())) {
-										Files.createDirectories(resolvedPath.getParent());
-									}
-									try (FileOutputStream outStream = new FileOutputStream(resolvedPath.toFile())) {
-										IOUtils.copy(zis, outStream);
-									}
-								}
-					        }
-					        final File shpFile = new File(TEMP_UNZIP_DIR.toPath() + "/" + geoName + ".shp");
-					        writeShpFileToAvroRecordSet(session, shpFile, dirLocation, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);
-					        // Clean files in temp folder
-					        FileUtils.deleteDirectory(TEMP_UNZIP_DIR);
-						} catch (IOException e) {
-							logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
-						}
-						finally {
+							tempDir = Files.createTempDirectory("nifi-shp-unzip-" + UUID.randomUUID().toString());
+							logger.info("Unzipping {} to {}", new Object[]{filename, tempDir});
 							
+							try (ZipInputStream zis = new ZipInputStream(in)) {
+								ZipEntry zipEntry;
+								while ((zipEntry = zis.getNextEntry()) != null) {
+									Path resolvedPath = tempDir.resolve(zipEntry.getName()).normalize();
+									if (!resolvedPath.startsWith(tempDir)) {
+										throw new IOException("Zip entry is outside of the target directory: " + zipEntry.getName());
+									}
+									if (zipEntry.isDirectory()) {
+										Files.createDirectories(resolvedPath);
+									} else {
+										Files.createDirectories(resolvedPath.getParent());
+										try (FileOutputStream outStream = new FileOutputStream(resolvedPath.toFile())) {
+											IOUtils.copy(zis, outStream);
+										}
+									}
+									zis.closeEntry();
+								}
+							}
+							
+							// Find all .shp files in the unzipped directory recursively
+							List<File> shpFiles = (List<File>) FileUtils.listFiles(tempDir.toFile(), new String[]{"shp"}, true);
+							if (shpFiles.isEmpty()) {
+								logger.warn("No .shp files found in ZIP FlowFile: {}", new Object[]{filename});
+							} else {
+								for (File shpFile : shpFiles) {
+									writeShpFileToAvroRecordSet(session, shpFile, dirLocation, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);
+								}
+							}
+						} catch (IOException e) {
+							logger.error("Failed to process ZIP FlowFile {} due to {}", new Object[]{flowFile, e});
+						} finally {
+							if (tempDir != null) {
+								try {
+									FileUtils.deleteDirectory(tempDir.toFile());
+								} catch (IOException e) {
+									logger.warn("Failed to clean up temp directory {}", new Object[]{tempDir, e});
+								}
+							}
 						}
 					}
 				});

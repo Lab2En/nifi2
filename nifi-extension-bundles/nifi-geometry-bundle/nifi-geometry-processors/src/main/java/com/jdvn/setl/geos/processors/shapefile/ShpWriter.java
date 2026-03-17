@@ -88,6 +88,7 @@ public class ShpWriter extends AbstractProcessor {
     public static final String FAIL_RESOLUTION = "fail";
 
     public static final String FRAGMENT_ID = FragmentAttributes.FRAGMENT_ID.key();
+    public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();
     
     public static final String FILE_MODIFY_DATE_ATTRIBUTE = "file.lastModifiedTime";
     public static final String FILE_MODIFY_DATE_ATTR_FORMAT = "yyyy-MM-dd'T'HH:mm:ssZ";
@@ -273,7 +274,41 @@ public class ShpWriter extends AbstractProcessor {
         final boolean merged = context.getProperty(MERGE_PARTS).asBoolean();
         String filename = merged ? rootname + ".shp" : rootname + part_name;
         
-        final File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
+        final String directoryPath = context.getProperty(DIRECTORY).evaluateAttributeExpressions(flowFile).getValue();
+        final File srcFile = new File(directoryPath, filename);
+        
+        final String conflictResolution = context.getProperty(CONFLICT_RESOLUTION).getValue();
+        final boolean createDirs = context.getProperty(CREATE_DIRS).asBoolean();
+        
+        if (createDirs && !srcFile.getParentFile().exists()) {
+            if (!srcFile.getParentFile().mkdirs()) {
+                logger.error("Unable to create directory {} for {}, transferring to failure", new Object[]{srcFile.getParentFile(), flowFile});
+                session.transfer(flowFile, REL_FAILURE);
+                return;
+            }
+        }
+
+        if (srcFile.exists()) {
+            if (conflictResolution.equals(IGNORE_RESOLUTION)) {
+                session.transfer(flowFile, REL_SUCCESS);
+                return;
+            } else if (conflictResolution.equals(FAIL_RESOLUTION)) {
+                logger.error("File {} already exists and Conflict Resolution Strategy is set to '{}', transferring to failure", new Object[]{srcFile, FAIL_RESOLUTION});
+                session.transfer(flowFile, REL_FAILURE);
+                return;
+            } else if (conflictResolution.equals(REPLACE_RESOLUTION)) {
+                String fragIndex = flowFile.getAttribute(FRAGMENT_INDEX);
+                // Only delete if it's not a fragment or it's the first fragment
+                if (fragIndex == null || fragIndex.equals("0")) {
+                    if (!deleteShapefile(srcFile)) {
+                        logger.error("Unable to delete existing shapefile {} to replace it, transferring to failure", new Object[]{srcFile});
+                        session.transfer(flowFile, REL_FAILURE);
+                        return;
+                    }
+                }
+            }
+        }
+
         String charset_in = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
         String charset_flow = flowFile.getAttributes().get(GeoUtils.GEO_CHAR_SET) == null ? "UTF-8" : flowFile.getAttributes().get(GeoUtils.GEO_CHAR_SET);
         final String charset = charset_in == null ? charset_flow : charset_in;
@@ -327,6 +362,23 @@ public class ShpWriter extends AbstractProcessor {
 		session.getProvenanceReporter().send(flowFile, srcFile.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 		session.transfer(flowFile, REL_SUCCESS);
 	}
+
+	private boolean deleteShapefile(File shpFile) {
+		final String absolutePath = shpFile.getAbsolutePath();
+		final String baseName = absolutePath.substring(0, absolutePath.lastIndexOf('.'));
+		final String[] extensions = { ".shp", ".shx", ".dbf", ".prj", ".cpg", ".fix", ".qix", ".sbn", ".sbx" };
+		boolean deletedAll = true;
+		for (final String ext : extensions) {
+			final File f = new File(baseName + ext);
+			if (f.exists()) {
+				if (!f.delete()) {
+					deletedAll = false;
+				}
+			}
+		}
+		return deletedAll;
+	}
+
 	public boolean createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {
 		final ComponentLog logger = getLogger();
 		SimpleFeatureType schema = null;
