@@ -41,6 +41,18 @@ export const BUNDLED_IMAGE_VIEWER: ContentViewer = {
     ]
 };
 
+export const MAP_VIEWER_URL: string = '/content-viewer/map-viewer';
+export const BUNDLED_MAP_VIEWER: ContentViewer = {
+    displayName: 'Bundled Map Viewer',
+    uri: MAP_VIEWER_URL,
+    supportedMimeTypes: [
+        {
+            displayName: 'map',
+            mimeTypes: ['application/avro+geowkt', 'application/avro+geotiles']
+        }
+    ]
+};
+
 export interface SupportedMimeTypes {
     displayName: string;
     mimeTypes: string[];

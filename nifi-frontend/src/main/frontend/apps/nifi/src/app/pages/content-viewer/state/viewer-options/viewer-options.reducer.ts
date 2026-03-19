@@ -16,7 +16,7 @@
  */
 
 import { createReducer, on } from '@ngrx/store';
-import { BUNDLED_HEX_VIEWER, BUNDLED_IMAGE_VIEWER, ViewerOptionsState } from './index';
+import { BUNDLED_HEX_VIEWER, BUNDLED_IMAGE_VIEWER, BUNDLED_MAP_VIEWER, ViewerOptionsState } from './index';
 import {
     loadContentViewerOptions,
     loadContentViewerOptionsSuccess,
@@ -25,7 +25,7 @@ import {
 
 export const initialState: ViewerOptionsState = {
     contentViewers: null,
-    bundledContentViewers: [BUNDLED_HEX_VIEWER, BUNDLED_IMAGE_VIEWER],
+    bundledContentViewers: [BUNDLED_HEX_VIEWER, BUNDLED_IMAGE_VIEWER, BUNDLED_MAP_VIEWER],
     status: 'pending'
 };
 

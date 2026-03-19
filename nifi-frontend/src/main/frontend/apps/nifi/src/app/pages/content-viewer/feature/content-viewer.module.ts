@@ -27,6 +27,7 @@ import { contentViewersFeatureKey, reducers } from '../state';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { HexViewer } from '../ui/hex-viewer/hex-viewer.component';
 import { ImageViewer } from '../ui/image-viewer/image-viewer.component';
+import { MapViewer } from '../ui/map-viewer/map-viewer.component';
 import { ContentEffects } from '../state/content/content.effects';
 import { ExternalViewerEffects } from '../state/external-viewer/external-viewer.effects';
 import { NifiTooltipDirective } from '@nifi/shared';
@@ -44,6 +45,7 @@ import { NifiTooltipDirective } from '@nifi/shared';
         ReactiveFormsModule,
         HexViewer,
         ImageViewer,
+		MapViewer,
         NgOptimizedImage,
         NifiTooltipDirective
     ]

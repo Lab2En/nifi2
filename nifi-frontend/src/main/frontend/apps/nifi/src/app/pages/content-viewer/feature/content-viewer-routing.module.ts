@@ -21,6 +21,7 @@ import { ContentViewerComponent } from './content-viewer.component';
 import { HexViewer } from '../ui/hex-viewer/hex-viewer.component';
 import { ImageViewer } from '../ui/image-viewer/image-viewer.component';
 import { ExternalViewer } from '../ui/external-viewer/external-viewer.component';
+import { MapViewer } from '../ui/map-viewer/map-viewer.component';
 
 const routes: Routes = [
     {
@@ -35,6 +36,10 @@ const routes: Routes = [
                 path: 'image-viewer',
                 component: ImageViewer
             },
+			{
+				path: 'map-viewer',
+				component: MapViewer
+			},	
             {
                 path: 'external',
                 component: ExternalViewer

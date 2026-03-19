@@ -30,7 +30,7 @@
         <module>nifi-wpsservice-api-nar</module>        
         <module>nifi-wpsservice-nar</module>                
         <module>nifi-geometry-processors</module>
-        <!--module>nifi-geometry-viewer</module-->
+        <module>nifi-geometry-viewer</module>
      </modules>
 
 	<repositories>

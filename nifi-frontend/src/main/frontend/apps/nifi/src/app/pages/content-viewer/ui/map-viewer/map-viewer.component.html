@@ -1,0 +1,20 @@
+<div class="map-container">
+    <h2>Map Viewer</h2>
+    
+    <div *ngIf="apiResponse; else loading">
+        <div class="status-card">
+            <p><strong>Message from API:</strong> {{ apiResponse.message }}</p>
+            <p><strong>Status:</strong> {{ apiResponse.status }}</p>
+        </div>
+        
+        <div id="map-canvas" style="height: 400px; border: 1px solid #ccc;">
+            Map Placeholder for: {{ ref }}
+        </div>
+    </div>
+
+    <ng-template #loading>
+        <div class="loading-spinner">
+            Loading Geometry Data from NiFi...
+        </div>
+    </ng-template>
+</div>
