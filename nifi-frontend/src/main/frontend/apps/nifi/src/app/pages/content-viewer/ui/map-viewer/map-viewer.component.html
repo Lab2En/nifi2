@@ -1,3 +1,13 @@
 <div class="map-container">
+    <div class="map-controls">
+        <div class="control-card">
+            <h3 class="text-sm font-bold mb-2">Layer Settings</h3>
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" [checked]="showBuildings" (change)="toggleVectorLayer($event)" />
+                <span class="text-xs">Seoul Buildings (Vector)</span>
+            </label>
+        </div>
+    </div>
+
     <div id="map-canvas"></div>
 </div>

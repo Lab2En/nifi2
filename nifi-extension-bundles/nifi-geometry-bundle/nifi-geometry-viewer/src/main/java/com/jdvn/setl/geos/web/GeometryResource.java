@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
@@ -29,4 +30,36 @@ public class GeometryResource {
             return Response.serverError().entity(e.getMessage()).build();
         }
     }
+    
+    @GET
+    @Path("/tiles/{z}/{x}/{y}")
+    @Produces("application/x-protobuf") // Standard MVT mime-type
+    public Response getVectorTile(
+            @PathParam("z") int z,
+            @PathParam("x") int x,
+            @PathParam("y") int y) {
+        try {
+            logger.info("Fetching tile at Z:{}, X:{}, Y:{}", z, x, y);
+
+            // 1. Fetch your data (from Avro, Database, or Cache)
+            // byte[] tileData = myGeometryService.generateMvt(z, x, y);
+
+            // Placeholder: Replace this with your actual MVT generation logic
+            byte[] tileData = new byte[0]; 
+
+            if (tileData == null || tileData.length == 0) {
+                return Response.noContent().build();
+            }
+
+            return Response.ok(tileData)
+                    .header("Content-Type", "application/x-protobuf")
+                    // Optional: Add GZIP compression header if your data is large
+                    // .header("Content-Encoding", "gzip") 
+                    .build();
+            
+        } catch (Exception e) {
+            logger.error("Error generating vector tile", e);
+            return Response.serverError().entity(e.getMessage()).build();
+        }
+    }    
 }

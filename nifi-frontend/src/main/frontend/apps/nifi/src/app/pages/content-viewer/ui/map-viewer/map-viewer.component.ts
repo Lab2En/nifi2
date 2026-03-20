@@ -24,6 +24,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
     ref: string | null = null;
     apiResponse: any = null;
+    showBuildings = true;
 
     constructor() {
         this.store
@@ -41,32 +42,60 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
     private initializeMap(): void {
         this.map = new maplibregl.Map({
-            container: 'map-canvas', // matches ID in HTML
-            style: 'https://demotiles.maplibre.org/style.json', // Vector style
-            center: [100.5018, 13.7563], // Default to Bangkok or [0,0]
-            zoom: 5,
+            container: 'map-canvas',
+            style: 'https://demotiles.maplibre.org/style.json',
+            center: [127.0276, 37.4979], // Gangnam, Seoul
+            zoom: 13,
             trackResize: true
         });
-
         this.map.addControl(new maplibregl.NavigationControl());
-
         this.map.on('load', () => {
-            this.map?.resize();
-            console.log('MapLibre ready');
+            if (!this.map) return;
+            // 1. Add the Vector Source
+            this.map.addSource('tegola', {
+                type: 'vector',
+                tiles: ['https://tiles-c.sntglobal.net/maps/keangnam/{z}/{x}/{y}.vector.pbf'],
+                minzoom: 0,
+                maxzoom: 20
+            });
+
+            // 2. Add the Buildings Layer
+            this.map.addLayer({
+                id: 'kn_buildings',
+                type: 'fill',
+                source: 'tegola',
+                'source-layer': 'kn_buildings',
+                paint: {
+                    'fill-color': '#0786e0',
+                    'fill-opacity': 0.8,
+                    'fill-outline-color': '#ffffff'
+                }
+            });
+
+            this.map.resize();
+
+            // Load NiFi GeoJSON if it exists
             if (this.apiResponse) {
                 this.updateMapSource(this.apiResponse);
             }
         });
     }
 
+    // This matches the call in your HTML
+    toggleVectorLayer(event: Event): void {
+        this.showBuildings = (event.target as HTMLInputElement).checked;
+        if (this.map?.getLayer('kn_buildings')) {
+            const visibility = this.showBuildings ? 'visible' : 'none';
+            this.map.setLayoutProperty('kn_buildings', 'visibility', visibility);
+        }
+    }
+
     private loadMapData(ref: string): void {
         const url = `/${this.contextPath}/api/geometry/hello?ref=${encodeURIComponent(ref)}`;
-
         this.http.get(url).subscribe({
             next: (data: any) => {
                 this.apiResponse = data;
-                // If map is already loaded, update it now
-                if (this.map?.loaded()) {
+                if (this.map?.isStyleLoaded()) {
                     this.updateMapSource(data);
                 }
             },
@@ -76,26 +105,21 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
     private updateMapSource(data: any): void {
         if (!this.map || !data) return;
-
-        // Assuming your API returns a 'message' that contains GeoJSON
-        // OR change this to 'data' if your API returns GeoJSON directly
         const geoJsonData = data.geoJson || data;
 
         if (this.map.getSource('niFiData')) {
             (this.map.getSource('niFiData') as maplibregl.GeoJSONSource).setData(geoJsonData);
         } else {
-            this.map.addSource('niFiData', {
-                type: 'geojson',
-                data: geoJsonData
-            });
-
+            this.map.addSource('niFiData', { type: 'geojson', data: geoJsonData });
             this.map.addLayer({
                 id: 'niFiLayer',
-                type: 'circle', // or 'fill' / 'line' depending on your geometry
+                type: 'circle',
                 source: 'niFiData',
                 paint: {
-                    'circle-radius': 6,
-                    'circle-color': '#007cbf'
+                    'circle-radius': 8,
+                    'circle-color': '#ffcc00',
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#000000'
                 }
             });
         }
