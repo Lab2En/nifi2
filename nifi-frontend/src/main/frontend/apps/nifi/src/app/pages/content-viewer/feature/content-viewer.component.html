@@ -55,11 +55,16 @@
             </div>
         </form>
     </div>
-    <div class="p-2 flex-1 flex border overflow-y-auto">
+    <div
+        class="flex-1 flex border"
+        [class.p-2]="mimeType !== 'application/avro+geowkt' && mimeType !== 'application/avro+geotiles'"
+        [class.overflow-y-auto]="mimeType !== 'application/avro+geowkt' && mimeType !== 'application/avro+geotiles'"
+        [class.p-0]="mimeType === 'application/avro+geowkt' || mimeType === 'application/avro+geotiles'"
+        [class.overflow-hidden]="mimeType === 'application/avro+geowkt' || mimeType === 'application/avro+geotiles'">
         @if (viewerSelected) {
             <router-outlet></router-outlet>
         } @else {
-            <div class="unset">No data reference specified</div>
+            <div class="unset p-4">No data reference specified</div>
         }
     </div>
 </div>
