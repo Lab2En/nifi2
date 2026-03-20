@@ -13,7 +13,6 @@
     width: 100%;
     height: 100%;
     position: relative;
-    flex: 1;
 }
 
 #map-canvas {
@@ -22,35 +21,64 @@
     bottom: 0;
     left: 0;
     right: 0;
-    width: 100%;
-    height: 100%;
 }
 
-/* UI Overlay styling */
 .map-controls {
     position: absolute;
-    top: 12px;
-    left: 12px;
+    top: 15px;
+    left: 15px;
     z-index: 10;
 
     .control-card {
-        background: white;
-        padding: 10px 15px;
-        border-radius: 6px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
-        border: 1px solid #ddd;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 12px;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        min-width: 180px;
+        backdrop-filter: blur(4px);
+    }
+}
 
-        h3 {
-            margin: 0 0 8px 0;
-            color: #333;
+.layer-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+    cursor: pointer;
+    transition: opacity 0.2s;
+
+    &:hover {
+        opacity: 0.8;
+    }
+
+    input {
+        cursor: pointer;
+    }
+
+    .label-text {
+        font-size: 12px;
+        color: #333;
+        margin-left: 8px;
+        font-family: sans-serif;
+    }
+
+    .indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        margin-left: 8px;
+
+        &.remote {
+            background-color: #ff0000;
+            border: 1px solid #900;
         }
-
-        label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #555;
-            user-select: none;
+        &.local {
+            background-color: #0786e0;
+            border: 1px solid #004a80;
+        }
+        &.geojson {
+            background-color: #ffcc00;
+            border: 1px solid #b28f00;
+            border-radius: 50%;
         }
     }
 }

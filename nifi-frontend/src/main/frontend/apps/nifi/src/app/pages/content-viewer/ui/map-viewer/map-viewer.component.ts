@@ -24,7 +24,13 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
     ref: string | null = null;
     apiResponse: any = null;
-    showBuildings = true;
+
+    // Track visibility for each layer individually
+    layerVisibility = {
+        remote: true,
+        local: true,
+        geojson: true
+    };
 
     constructor() {
         this.store
@@ -41,52 +47,68 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     }
 
     private initializeMap(): void {
+        const nifiTileUrl = `${window.location.origin}/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}`;
+        const remoteTileUrl = 'https://tiles-c.sntglobal.net/maps/keangnam/{z}/{x}/{y}.vector.pbf';
+
         this.map = new maplibregl.Map({
             container: 'map-canvas',
             style: 'https://demotiles.maplibre.org/style.json',
-            center: [127.0276, 37.4979], // Gangnam, Seoul
+            center: [127.0276, 37.4979],
             zoom: 13,
             trackResize: true
         });
+
         this.map.addControl(new maplibregl.NavigationControl());
+
         this.map.on('load', () => {
             if (!this.map) return;
-            // 1. Add the Vector Source
-            this.map.addSource('tegola', {
+
+            // --- SOURCES ---
+            this.map.addSource('remote-source', {
                 type: 'vector',
-                tiles: ['https://tiles-c.sntglobal.net/maps/keangnam/{z}/{x}/{y}.vector.pbf'],
-                minzoom: 0,
-                maxzoom: 20
+                tiles: [remoteTileUrl]
             });
 
-            // 2. Add the Buildings Layer
+            this.map.addSource('nifi-source', {
+                type: 'vector',
+                tiles: [nifiTileUrl]
+            });
+
+            // --- LAYERS ---
+            // 1. Remote Layer (Red)
             this.map.addLayer({
-                id: 'kn_buildings',
+                id: 'remote-layer',
                 type: 'fill',
-                source: 'tegola',
+                source: 'remote-source',
                 'source-layer': 'kn_buildings',
-                paint: {
-                    'fill-color': '#0786e0',
-                    'fill-opacity': 0.8,
-                    'fill-outline-color': '#ffffff'
-                }
+                layout: { visibility: 'visible' },
+                paint: { 'fill-color': '#ff0000', 'fill-opacity': 0.4 }
+            });
+
+            // 2. Local Layer (Blue)
+            this.map.addLayer({
+                id: 'local-layer',
+                type: 'fill',
+                source: 'nifi-source',
+                'source-layer': 'kn_buildings',
+                layout: { visibility: 'visible' },
+                paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.7 }
             });
 
             this.map.resize();
-
-            // Load NiFi GeoJSON if it exists
-            if (this.apiResponse) {
-                this.updateMapSource(this.apiResponse);
-            }
+            if (this.apiResponse) this.updateMapSource(this.apiResponse);
         });
     }
 
-    // This matches the call in your HTML
-    toggleVectorLayer(event: Event): void {
-        this.showBuildings = (event.target as HTMLInputElement).checked;
-        if (this.map?.getLayer('kn_buildings')) {
-            const visibility = this.showBuildings ? 'visible' : 'none';
-            this.map.setLayoutProperty('kn_buildings', 'visibility', visibility);
+    // New Toggle Method for Individual Layers
+    toggleLayer(layerKey: 'remote' | 'local' | 'geojson', layerId: string): void {
+        if (!this.map) return;
+        // Flip the boolean state
+        this.layerVisibility[layerKey] = !this.layerVisibility[layerKey];
+        // Update MapLibre layout property
+        if (this.map.getLayer(layerId)) {
+            const visibility = this.layerVisibility[layerKey] ? 'visible' : 'none';
+            this.map.setLayoutProperty(layerId, 'visibility', visibility);
         }
     }
 
@@ -95,39 +117,30 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         this.http.get(url).subscribe({
             next: (data: any) => {
                 this.apiResponse = data;
-                if (this.map?.isStyleLoaded()) {
-                    this.updateMapSource(data);
-                }
+                if (this.map?.isStyleLoaded()) this.updateMapSource(data);
             },
-            error: (err) => console.error('Failed to contact Geometry API', err)
+            error: (err) => console.error('API Error:', err)
         });
     }
 
     private updateMapSource(data: any): void {
         if (!this.map || !data) return;
         const geoJsonData = data.geoJson || data;
-
         if (this.map.getSource('niFiData')) {
             (this.map.getSource('niFiData') as maplibregl.GeoJSONSource).setData(geoJsonData);
         } else {
             this.map.addSource('niFiData', { type: 'geojson', data: geoJsonData });
             this.map.addLayer({
-                id: 'niFiLayer',
+                id: 'geojson-layer',
                 type: 'circle',
                 source: 'niFiData',
-                paint: {
-                    'circle-radius': 8,
-                    'circle-color': '#ffcc00',
-                    'circle-stroke-width': 2,
-                    'circle-stroke-color': '#000000'
-                }
+                layout: { visibility: this.layerVisibility.geojson ? 'visible' : 'none' },
+                paint: { 'circle-radius': 8, 'circle-color': '#ffcc00', 'circle-stroke-width': 2 }
             });
         }
     }
 
     ngOnDestroy(): void {
-        if (this.map) {
-            this.map.remove();
-        }
+        if (this.map) this.map.remove();
     }
 }

@@ -14,22 +14,39 @@ import jakarta.ws.rs.core.Response;
 @Path("/geometry")
 public class GeometryResource {
 	private static final Logger logger = LoggerFactory.getLogger(GeometryResource.class);
-    @GET
-    @Path("/hello")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response getHello(@QueryParam("ref") String ref) {
-        try {
-            logger.info("Successfully reached GeometryResource with ref: {}", ref);
-            
-            // Return a raw String to test if Jersey can send basic data
-            String json = "{\"message\": \"Hello World Map\", \"status\": \"Success\"}";
-            
-            return Response.ok(json).build();
-        } catch (Exception e) {
-            logger.error("Error in getHello", e);
-            return Response.serverError().entity(e.getMessage()).build();
-        }
-    }
+	@GET
+	@Path("/hello")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getHello(@QueryParam("ref") String ref) {
+	    try {
+	        logger.info("Successfully reached GeometryResource with ref: {}", ref);
+	        
+	        // This is a valid GeoJSON FeatureCollection
+	        // It places a single point in the center of Gangnam
+	        String geoJson = "{" +
+	            "  \"type\": \"FeatureCollection\"," +
+	            "  \"features\": [" +
+	            "    {" +
+	            "      \"type\": \"Feature\"," +
+	            "      \"geometry\": {" +
+	            "        \"type\": \"Point\"," +
+	            "        \"coordinates\": [127.0276, 37.4979]" +
+	            "      }," +
+	            "      \"properties\": {" +
+	            "        \"name\": \"Gangnam Center Point\"," +
+	            "        \"ref\": \"" + ref + "\"," +
+	            "        \"status\": \"Success\"" +
+	            "      }" +
+	            "    }" +
+	            "  ]" +
+	            "}";
+	        
+	        return Response.ok(geoJson).build();
+	    } catch (Exception e) {
+	        logger.error("Error in getHello", e);
+	        return Response.serverError().entity(e.getMessage()).build();
+	    }
+	}
     
     @GET
     @Path("/tiles/{z}/{x}/{y}")

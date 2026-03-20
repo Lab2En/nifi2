@@ -1,13 +1,35 @@
 <div class="map-container">
     <div class="map-controls">
         <div class="control-card">
-            <h3 class="text-sm font-bold mb-2">Layer Settings</h3>
-            <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" [checked]="showBuildings" (change)="toggleVectorLayer($event)" />
-                <span class="text-xs">Seoul Buildings (Vector)</span>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Layer Manager</h3>
+
+            <label class="layer-item">
+                <input
+                    type="checkbox"
+                    [checked]="layerVisibility.remote"
+                    (change)="toggleLayer('remote', 'remote-layer')" />
+                <span class="indicator remote"></span>
+                <span class="label-text">Remote Tiles (SNT)</span>
+            </label>
+
+            <label class="layer-item">
+                <input
+                    type="checkbox"
+                    [checked]="layerVisibility.local"
+                    (change)="toggleLayer('local', 'local-layer')" />
+                <span class="indicator local"></span>
+                <span class="label-text">My NiFi Tiles</span>
+            </label>
+
+            <label class="layer-item">
+                <input
+                    type="checkbox"
+                    [checked]="layerVisibility.geojson"
+                    (change)="toggleLayer('geojson', 'geojson-layer')" />
+                <span class="indicator geojson"></span>
+                <span class="label-text">NiFi API (GeoJSON)</span>
             </label>
         </div>
     </div>
-
     <div id="map-canvas"></div>
 </div>
