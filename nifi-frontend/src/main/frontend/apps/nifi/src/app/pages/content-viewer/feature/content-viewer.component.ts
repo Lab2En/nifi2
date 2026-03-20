@@ -88,6 +88,10 @@ export class ContentViewerComponent implements OnInit, OnDestroy {
 
                 // process all external viewer options
                 externalViewerOptions.forEach((contentViewer) => {
+                    // Skip the old style map viewer which now is just fot providing APIs
+                    if (contentViewer.displayName.toLowerCase().includes('geometry')) {
+                        return;
+                    }
                     contentViewer.supportedMimeTypes.forEach((supportedMimeTypes) => {
                         const supportedMimeTypeId = this.supportedMimeTypeId++;
 
