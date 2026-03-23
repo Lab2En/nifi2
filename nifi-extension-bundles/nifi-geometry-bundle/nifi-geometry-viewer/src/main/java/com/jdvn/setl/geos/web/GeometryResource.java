@@ -121,12 +121,13 @@ public class GeometryResource {
             sb.append("]");
             
             final String json = sb.toString();
-            logger.info("JSON Generated from Avro: {}", json);
-
+            
             // 4. Return formatted JSON
-//            final ObjectMapper mapper = new ObjectMapper();
-//            final Object objectJson = mapper.readValue(json, Object.class);
-//            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(objectJson);
+            final ObjectMapper mapper = new ObjectMapper();
+            final Object objectJson = mapper.readValue(json, Object.class);
+            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(objectJson);
+            
+            logger.info("JSON Generated from Tiles: {}", prettyJson);
 
             //return Response.ok(prettyJson).build();
 
