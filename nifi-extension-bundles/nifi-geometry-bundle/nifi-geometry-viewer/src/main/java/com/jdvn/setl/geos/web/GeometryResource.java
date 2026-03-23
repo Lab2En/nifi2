@@ -67,7 +67,9 @@ public class GeometryResource {
 	    }
 	}
 
-    @GET
+	
+    @SuppressWarnings("unchecked")
+	@GET
     @Path("/tiles/{z}/{x}/{y}")
     @Produces("application/x-protobuf")
     public Response getVectorTile(
@@ -80,17 +82,104 @@ public class GeometryResource {
         logger.info("Fetching tile at Z:{}, X:{}, Y:{} for ref: {}", z, x, y, ref);
 
         try {
-            logger.info("Start to gen tiles");
-
-            // 1. Initialize NiFi Content Access
-            final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
+            // 1. Initialize Context
             final ServletContext servletContext = request.getServletContext();
-            final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
+  
+            // 2. Retrieve Attributes using Reflection as this bundle is isolated from Nifi2 
+			Object contentAccessObj = servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
+			if (contentAccessObj != null) {
+				try {
+					java.lang.reflect.Field facadeField = contentAccessObj.getClass().getDeclaredField("serviceFacade");
+					facadeField.setAccessible(true);
+					Object serviceFacade = facadeField.get(contentAccessObj);
 
-            // 2. Retrieve Content
-            final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
+					if (serviceFacade != null) {
+						Object dto = null;
+						String[] parts = ref.split("/");
+
+						if (ref.contains("/provenance-events/")) {
+							// PROVENANCE EVENT LOGIC URL usually: .../provenance-events/{id}/content/...
+							String eventId = "";
+							for (int i = 0; i < parts.length; i++) {
+								if ("provenance-events".equals(parts[i])) {
+									eventId = parts[i + 1];
+									break;
+								}
+							}
+
+							// Remove query params if present (e.g. 1?clientId=...)
+							if (eventId.contains("?")) {
+								eventId = eventId.substring(0, eventId.indexOf("?"));
+							}
+
+							java.lang.reflect.Method getProvMethod = serviceFacade.getClass()
+									.getMethod("getProvenanceEvent", Long.class);
+							dto = getProvMethod.invoke(serviceFacade, Long.valueOf(eventId));
+
+						} else if (ref.contains("/flowfile-queues/")) {
+							// --- QUEUE FLOWFILE LOGIC ---
+							java.lang.reflect.Method getFlowFileMethod = serviceFacade.getClass()
+									.getMethod("getFlowFile", String.class, String.class);
+
+							String connectionId = parts[parts.length - 4];
+							String flowFileUuid = parts[parts.length - 2];
+
+							dto = getFlowFileMethod.invoke(serviceFacade, connectionId, flowFileUuid);
+						}
+
+						// --- EXTRACT ATTRIBUTES FROM DTO ---
+						if (dto != null) {
+							java.lang.reflect.Method getAttributesMethod = dto.getClass().getMethod("getAttributes");
+							Object attributesObj = getAttributesMethod.invoke(dto);
+
+							java.util.Map<String, String> finalAttributes = new java.util.HashMap<>();
+
+							if (attributesObj instanceof java.util.Map) {
+								// This handles the FlowFileDTO case
+								finalAttributes.putAll((java.util.Map<String, String>) attributesObj);
+
+							} else if (attributesObj instanceof java.util.Collection) {
+								// This handles the ProvenanceEventDTO case (TreeSet of AttributeDTO)
+								java.util.Collection<?> attributeSet = (java.util.Collection<?>) attributesObj;
+								for (Object attrDto : attributeSet) {
+									try {
+										// Use reflection to get 'name' and 'value' from AttributeDTO
+										java.lang.reflect.Method getName = attrDto.getClass().getMethod("getName");
+										java.lang.reflect.Method getValue = attrDto.getClass().getMethod("getValue");
+
+										String name = (String) getName.invoke(attrDto);
+										String value = (String) getValue.invoke(attrDto);
+
+										if (name != null) {
+											finalAttributes.put(name, value);
+										}
+									} catch (Exception e) {
+										logger.error("Failed to extract individual attribute from Provenance set: "
+												+ e.getMessage());
+									}
+								}
+							}
+
+							if (!finalAttributes.isEmpty()) {
+								logger.info("Successfully retrieved {} attributes", finalAttributes.size());
+								finalAttributes.forEach((k, v) -> logger.info("Attribute: {} = {}", k, v));
+							}
+						} else {
+							logger.error("Metadata DTO not found for ref: {}", ref);
+						}
+					}
+				} catch (Exception e) {
+					logger.error("Could not extract Metadata from ServiceFacade: " + e.getMessage(), e);
+				}
+			}            
             
-            // 3. Process Avro into JSON String (Your original logic)
+			// 3. Initialize NiFi Content Access
+            final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
+            final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
+            // 4. Retrieve Content
+            final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
+        	                
+            // 5. Process Avro into JSON String (Your original logic)
             final StringBuilder sb = new StringBuilder();
             sb.append("[");
             
@@ -127,16 +216,14 @@ public class GeometryResource {
             final Object objectJson = mapper.readValue(json, Object.class);
             String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(objectJson);
             
-            logger.info("JSON Generated from Tiles: {}", prettyJson);
+            //logger.info("JSON Generated from Tiles: {}", prettyJson);
 
             //return Response.ok(prettyJson).build();
 
         } catch (Exception e) {
             logger.error("Error processing Avro content in /hello", e);
         }
-        logger.info("End to gen tiles");
-        
-        
+                
         // to feed your VectorTileEncoder.
         byte[] tileData = new byte[0]; 
 
