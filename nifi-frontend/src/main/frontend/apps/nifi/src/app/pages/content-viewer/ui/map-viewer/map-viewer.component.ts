@@ -25,7 +25,6 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     ref: string | null = null;
     apiResponse: any = null;
 
-    // Track visibility for each layer individually
     layerVisibility = {
         remote: true,
         local: true,
@@ -39,6 +38,10 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             .subscribe((ref) => {
                 this.ref = ref;
                 this.loadMapData(ref);
+                // If map is already loaded, update/add the NiFi source
+                if (this.map?.isStyleLoaded()) {
+                    this.addNifiTileSource(ref);
+                }
             });
     }
 
@@ -47,7 +50,6 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     }
 
     private initializeMap(): void {
-        const nifiTileUrl = `${window.location.origin}/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}`;
         const remoteTileUrl = 'https://tiles-c.sntglobal.net/maps/keangnam/{z}/{x}/{y}.vector.pbf';
 
         this.map = new maplibregl.Map({
@@ -63,49 +65,57 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         this.map.on('load', () => {
             if (!this.map) return;
 
-            // --- SOURCES ---
+            // 1. Add Remote Source
             this.map.addSource('remote-source', {
                 type: 'vector',
                 tiles: [remoteTileUrl]
             });
 
-            this.map.addSource('nifi-source', {
-                type: 'vector',
-                tiles: [nifiTileUrl]
-            });
-
-            // --- LAYERS ---
-            // 1. Remote Layer (Red)
             this.map.addLayer({
                 id: 'remote-layer',
                 type: 'fill',
                 source: 'remote-source',
                 'source-layer': 'kn_buildings',
-                layout: { visibility: 'visible' },
                 paint: { 'fill-color': '#ff0000', 'fill-opacity': 0.4 }
             });
 
-            // 2. Local Layer (Blue)
-            this.map.addLayer({
-                id: 'local-layer',
-                type: 'fill',
-                source: 'nifi-source',
-                'source-layer': 'kn_buildings',
-                layout: { visibility: 'visible' },
-                paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.7 }
-            });
+            // 2. Add Local Source if ref is already present
+            if (this.ref) {
+                this.addNifiTileSource(this.ref);
+            }
 
             this.map.resize();
-            if (this.apiResponse) this.updateMapSource(this.apiResponse);
         });
     }
 
-    // New Toggle Method for Individual Layers
+    private addNifiTileSource(ref: string): void {
+        if (!this.map) return;
+
+        // If source already exists, we must remove it to update the URL with the new ref
+        if (this.map.getSource('nifi-source')) {
+            if (this.map.getLayer('local-layer')) this.map.removeLayer('local-layer');
+            this.map.removeSource('nifi-source');
+        }
+
+        const nifiTileUrl = `${window.location.origin}/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}?ref=${encodeURIComponent(ref)}`;
+        this.map.addSource('nifi-source', {
+            type: 'vector',
+            tiles: [nifiTileUrl]
+        });
+
+        this.map.addLayer({
+            id: 'local-layer',
+            type: 'fill',
+            source: 'nifi-source',
+            'source-layer': 'kn_buildings', // Match your Avro layer name later
+            layout: { visibility: this.layerVisibility.local ? 'visible' : 'none' },
+            paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.7 }
+        });
+    }
+
     toggleLayer(layerKey: 'remote' | 'local' | 'geojson', layerId: string): void {
         if (!this.map) return;
-        // Flip the boolean state
         this.layerVisibility[layerKey] = !this.layerVisibility[layerKey];
-        // Update MapLibre layout property
         if (this.map.getLayer(layerId)) {
             const visibility = this.layerVisibility[layerKey] ? 'visible' : 'none';
             this.map.setLayoutProperty(layerId, 'visibility', visibility);
