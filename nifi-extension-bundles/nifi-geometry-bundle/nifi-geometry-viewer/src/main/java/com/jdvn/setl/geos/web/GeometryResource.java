@@ -84,21 +84,6 @@ public class GeometryResource {
 
             // 1. Initialize NiFi Content Access
             final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
-//            final ContentRequestContext requestContext = new ContentRequestContext() {
-//                @Override
-//                public String getDataUri() {
-//                    return ref; // This is the only one NiFi truly needs to find your FlowFile
-//                }
-//
-//                @Override
-//                public String getClientId() {
-//                    return null;
-//                }               
-//                @Override
-//                public String getClusterNodeId() {
-//                    return null;
-//                }
-//            };
             final ServletContext servletContext = request.getServletContext();
             final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
 
@@ -139,11 +124,11 @@ public class GeometryResource {
             logger.info("JSON Generated from Avro: {}", json);
 
             // 4. Return formatted JSON
-            final ObjectMapper mapper = new ObjectMapper();
-            final Object objectJson = mapper.readValue(json, Object.class);
-            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(objectJson);
+//            final ObjectMapper mapper = new ObjectMapper();
+//            final Object objectJson = mapper.readValue(json, Object.class);
+//            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(objectJson);
 
-            return Response.ok(prettyJson).build();
+            //return Response.ok(prettyJson).build();
 
         } catch (Exception e) {
             logger.error("Error processing Avro content in /hello", e);

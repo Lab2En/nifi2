@@ -84,6 +84,12 @@ export class MapViewer implements AfterViewInit, OnDestroy {
                 this.addNifiTileSource(this.ref);
             }
 
+            // --- ADDED ONLY THIS LINE ---
+            // If the GeoJSON API call finished before map was ready, draw it now.
+            if (this.apiResponse) {
+                this.updateMapSource(this.apiResponse);
+            }
+
             this.map.resize();
         });
     }
@@ -91,7 +97,6 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     private addNifiTileSource(ref: string): void {
         if (!this.map) return;
 
-        // If source already exists, we must remove it to update the URL with the new ref
         if (this.map.getSource('nifi-source')) {
             if (this.map.getLayer('local-layer')) this.map.removeLayer('local-layer');
             this.map.removeSource('nifi-source');
@@ -107,7 +112,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             id: 'local-layer',
             type: 'fill',
             source: 'nifi-source',
-            'source-layer': 'kn_buildings', // Match your Avro layer name later
+            'source-layer': 'kn_buildings',
             layout: { visibility: this.layerVisibility.local ? 'visible' : 'none' },
             paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.7 }
         });
@@ -141,7 +146,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         } else {
             this.map.addSource('niFiData', { type: 'geojson', data: geoJsonData });
             this.map.addLayer({
-                id: 'geojson-layer',
+                id: 'geojson-layer', // This ID matches the toggleLayer call in your HTML
                 type: 'circle',
                 source: 'niFiData',
                 layout: { visibility: this.layerVisibility.geojson ? 'visible' : 'none' },
