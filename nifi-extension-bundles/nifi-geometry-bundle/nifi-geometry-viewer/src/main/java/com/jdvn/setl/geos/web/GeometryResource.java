@@ -1,20 +1,24 @@
 package com.jdvn.setl.geos.web;
 
+import java.io.ByteArrayInputStream;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.nifi.web.ContentAccess;
 import org.apache.nifi.web.ContentRequestContext;
 import org.apache.nifi.web.DownloadableContent;
 import org.apache.nifi.web.HttpServletContentRequestContext;
+import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.feature.FeatureCollection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.jdvn.setl.geos.web.util.GeoUtils;
 
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -30,7 +34,7 @@ public class GeometryResource {
     private static final Logger logger = LoggerFactory.getLogger(GeometryResource.class);    
     private static final String CONTENT_ACCESS_ATTRIBUTE = "nifi-content-access";
     // For raster tiles caching
-	@SuppressWarnings({ "rawtypes", "unused" })
+	@SuppressWarnings("rawtypes")
 	private static final Cache<MapCacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
     // For vector tiles caching
     private static final Cache<MapCacheKey, byte[]> mapVectorCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
@@ -70,9 +74,7 @@ public class GeometryResource {
 	        return Response.serverError().entity(e.getMessage()).build();
 	    }
 	}
-
 	
-    @SuppressWarnings("unchecked")
 	@GET
     @Path("/tiles/{z}/{x}/{y}.mvt")
     //@Path("/tiles/{z}/{x}/{y}")
@@ -89,7 +91,78 @@ public class GeometryResource {
         String crs = null; 
         String envelope = null;
         byte[] bais = null;
+                       
+    	final ServletContext servletContext = request.getServletContext();               
+		java.util.Map<String, String> finalAttributes =getMapAttributes(request, ref);
+		crs = finalAttributes.get(GeoUtils.GEO_CRS);
+		envelope = finalAttributes.get(GeoUtils.GEO_ENVELOP);
+		
+		// 3. Initialize NiFi Content Access
+        final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
+        final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
+        // 4. Retrieve Content
+        final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
+            		    		
+		MapCacheKey key = new MapCacheKey(ref, x, y, z);    		
+		if (mapVectorCache.getIfPresent(key) == null) {
+			bais = GeoUtils.getVectorTileFromDownloadableContent(downloadableContent, crs, envelope, z, x, y);
+			if (bais != null) 
+				mapVectorCache.put(key, bais);				
+		} else {
+			bais = mapVectorCache.getIfPresent(key);
+		}		    		                
+        return Response.ok(bais).build();
+    }
+            
+	@GET
+    @Path("/tiles/{z}/{x}/{y}")
+    @Consumes(MediaType.WILDCARD)
+    @Produces("image/png")
+    public Response getRasterTile(
+            @Context HttpServletRequest request,
+            @PathParam("z") int z,
+            @PathParam("x") int x,
+            @PathParam("y") int y,
+            @QueryParam("ref") String ref) {
         
+        logger.info("Fetching tile at Z:{}, X:{}, Y:{} for ref: {}", z, x, y, ref);
+        String crs = null; 
+        String geoType = null;
+        ByteArrayInputStream bais = null;
+       
+    	final ServletContext servletContext = request.getServletContext();               
+		java.util.Map<String, String> finalAttributes =getMapAttributes(request, ref);
+		crs = finalAttributes.get(GeoUtils.GEO_CRS);
+		geoType = finalAttributes.get(GeoUtils.GEO_TYPE);
+            
+        final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
+        final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
+        // 4. Retrieve Content
+        final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
+            		    		            		    		    		
+		if (geoType.equals("Features")) {
+			MapCacheKey key = new MapCacheKey(ref, x, y, z); 
+			if (mapViewCache.getIfPresent(key) == null) {
+				final SimpleFeatureCollection drawablefc = GeoUtils.drawableFeatureCollectionFromDownloadableContent(downloadableContent, crs, geoType);
+				mapViewCache.put(key, drawablefc);
+				bais = GeoUtils.getImageTileFromFeatureCollection(drawablefc, z, x, y);
+			} else {
+				bais = GeoUtils.getImageTileFromFeatureCollection((SimpleFeatureCollection) mapViewCache.getIfPresent(key), z, x, y);
+			}
+		} else if (geoType.equals("Tiles")){
+			bais = GeoUtils.getImageTileFromDownloadableContent(downloadableContent, geoType, z, x, y);
+		}         
+        return Response.ok(bais).build();
+    }
+	/*
+	 * Utility using Reflection to get Attribute information
+	 * from DownloadableContent using ServletRequest as Plugin
+	 * is isolated from Nifi2 frameworks  
+	 */
+    @SuppressWarnings("unchecked")
+	public java.util.Map<String, String> getMapAttributes(HttpServletRequest request, String ref ){
+    	java.util.Map<String, String> finalAttributes = new java.util.HashMap<>();
+    	
         try {
             // 1. Initialize Context
             final ServletContext servletContext = request.getServletContext();
@@ -141,8 +214,6 @@ public class GeometryResource {
 							java.lang.reflect.Method getAttributesMethod = dto.getClass().getMethod("getAttributes");
 							Object attributesObj = getAttributesMethod.invoke(dto);
 
-							java.util.Map<String, String> finalAttributes = new java.util.HashMap<>();
-
 							if (attributesObj instanceof java.util.Map) {
 								// This handles the FlowFileDTO case
 								finalAttributes.putAll((java.util.Map<String, String>) attributesObj);
@@ -169,15 +240,6 @@ public class GeometryResource {
 								}
 							}
 
-							if (!finalAttributes.isEmpty()) {
-//								logger.info("Successfully retrieved {} attributes", finalAttributes.size());
-//								finalAttributes.forEach((k, v) -> {
-//									logger.info("Attribute: {} = {}", k, v);								
-//									
-//								});
-								crs = finalAttributes.get(GeoUtils.GEO_CRS);
-								envelope = finalAttributes.get(GeoUtils.GEO_ENVELOP);
-							}
 						} else {
 							logger.error("Metadata DTO not found for ref: {}", ref);
 						}
@@ -186,31 +248,11 @@ public class GeometryResource {
 					logger.error("Could not extract Metadata from ServiceFacade: " + e.getMessage(), e);
 				}
 			}            
-            
-			// 3. Initialize NiFi Content Access
-            final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
-            final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
-            // 4. Retrieve Content
-            final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
-                		    		
-    		MapCacheKey key = new MapCacheKey(ref, x, y, z);    		
-    		if (mapVectorCache.getIfPresent(key) == null) {
-    			bais = GeoUtils.getVectorTileFromDownloadableContent(downloadableContent, crs, envelope, z, x, y);
-    			if (bais != null) 
-    				mapVectorCache.put(key, bais);				
-    		} else {
-    			bais = mapVectorCache.getIfPresent(key);
-    		}
-    		    		
-    		return Response.ok(bais).build();                
-
+                		    		    		
         } catch (Exception e) {
-            logger.error("Error processing Avro content in /hello", e);
-        }
-                
-        if (bais.length == 0) {
-            return Response.noContent().build();
-        }
-        return Response.ok(bais).build();
-    }
+            logger.error("Error processing MAP attributes", e);
+        }      	
+    	return finalAttributes;
+    }	
+    
 }

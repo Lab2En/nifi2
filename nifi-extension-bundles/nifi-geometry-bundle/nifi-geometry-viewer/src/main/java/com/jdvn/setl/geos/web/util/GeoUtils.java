@@ -1,4 +1,4 @@
-package com.jdvn.setl.geos.web;
+package com.jdvn.setl.geos.web.util;
 
 import java.awt.AlphaComposite;
 import java.awt.Color;
@@ -13,10 +13,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -34,7 +30,6 @@ import org.apache.avro.file.DataFileStream;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.io.DatumReader;
-
 import org.apache.nifi.web.DownloadableContent;
 import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
@@ -103,6 +98,7 @@ public class GeoUtils {
 
     public static final String GEO_CRS = "crs";
     public static final String GEO_ENVELOP = "geo.envelope";
+    public static final String GEO_TYPE = "geo.type";
     
 	private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
     private static final IGeometryFilter ACCEPT_ALL_FILTER = geometry -> true;
@@ -154,8 +150,8 @@ public class GeoUtils {
     				double y_o1 = Double.valueOf(xy.get(2).trim().replace("[", ""));
     				double y_o2 = Double.valueOf(xy.get(3).trim().replace("]", ""));
     				
-    				logger.info("GET INTO ENVELOP with " + envelope);
-    				logger.info("GET INTO CRS with " + crs_source);
+//    				logger.info("GET INTO ENVELOP with " + envelope);
+//    				logger.info("GET INTO CRS with " + crs_source);
         			
     				// Envelope of original all data
         			ReferencedEnvelope env_o  = new ReferencedEnvelope(x_o1, x_o2, y_o1, y_o2, crs_source); 
@@ -323,6 +319,320 @@ public class GeoUtils {
 		}
 		return geometryClass;
 	}		
+	
+	
+	public static SimpleFeatureCollection drawableFeatureCollectionFromDownloadableContent(DownloadableContent content, String crs, String geoType) {
+		
+		List<SimpleFeature> collection = new LinkedList<SimpleFeature>();
+		boolean bCreatedFeatureType = false;
+		String geokey = null;
+		SimpleFeatureType TYPE = null;
+		
+    	if (geoType.equals("Features")) {    		
+            final GenericData genericData = new GenericData();
+            genericData.addLogicalTypeConversion(new Conversions.DecimalConversion());
+            genericData.addLogicalTypeConversion(new TimeConversions.DateConversion());
+            genericData.addLogicalTypeConversion(new TimeConversions.TimeMicrosConversion());
+            genericData.addLogicalTypeConversion(new TimeConversions.TimeMillisConversion());
+            genericData.addLogicalTypeConversion(new TimeConversions.TimestampMicrosConversion());
+            genericData.addLogicalTypeConversion(new TimeConversions.TimestampMillisConversion());
+            genericData.addLogicalTypeConversion(new TimeConversions.LocalTimestampMicrosConversion());
+            genericData.addLogicalTypeConversion(new TimeConversions.LocalTimestampMillisConversion());
+            final DatumReader<GenericData.Record> datumReader = new GenericDatumReader<>(null, null, genericData);
+    		try (final DataFileStream<GenericData.Record> dataFileReader = new DataFileStream<>(content.getContent(), datumReader)) {
+    			if (crs != null) {
+        			CoordinateReferenceSystem crs_source = CRS.parseWKT(crs);
+        			WKTReader2 wkt = new WKTReader2();
+        			while (dataFileReader.hasNext()) {
+        				final GenericData.Record record = dataFileReader.next();
+        				if (bCreatedFeatureType == false) {
+        					
+        					@SuppressWarnings("rawtypes")
+        					Class geometryClass = getTypeGeometry(record);
+        					if (geometryClass == null) 
+        						break;
+        					geokey = getGeometryFieldName(record);
+        					SimpleFeatureTypeBuilder tbuilder =  new SimpleFeatureTypeBuilder();
+        					tbuilder.setName("Features");
+        			    	tbuilder.setCRS(crs_source);
+        			    	tbuilder.add("geometry", geometryClass);
+        			    	
+        			    	TYPE = tbuilder.buildFeatureType();
+        			    	bCreatedFeatureType = true;
+        				}
+        				String wktGeo = record.get(geokey) == null ? null : record.get(geokey) .toString();
+        				if (wktGeo != null)
+        					if (!wktGeo.contains("EMPTY")) {  // not found case of EMPTY geometry from WKT
+        						try {
+        							collection.add(SimpleFeatureBuilder.build(TYPE, new Object[] { wkt.read(wktGeo)}, null));
+        						} catch (ParseException e) {
+        							// TODO Auto-generated catch block
+        							e.printStackTrace();
+        						}					
+        					}			
+        			}    				
+    			}	
+
+    		} catch (IOException | FactoryException e) {
+    			e.printStackTrace();
+    		}        		
+    	}			
+		return new ListFeatureCollection(TYPE, collection);
+	}	
+	
+	public static ByteArrayInputStream getImageTileFromFeatureCollection(final SimpleFeatureCollection content, int z,int x, int y) {
+
+		ByteArrayInputStream bais = null;
+    	// Create BoundingBox from XYZ in EPSG:4326, it is Leaflet projection
+		int x0 = x;
+		int y0 = y;
+		int z0 = z;					
+		BoundingBox bb = tile2boundingBox(x0,y0,z0);
+        
+		// Transform and Create Envelop in target projection
+		MathTransform transform;
+		try {
+			
+			CoordinateReferenceSystem crs_source = content.getSchema().getCoordinateReferenceSystem();
+			transform = CRS.findMathTransform(CRS.decode("EPSG:4326"),crs_source);
+	        GeometryFactory gf = new GeometryFactory();
+	        Point nw1 = gf.createPoint(new Coordinate(bb.north, bb.west));
+	        Point se1 = gf.createPoint(new Coordinate(bb.south, bb.east));
+	        Point nw = (Point) JTS.transform(nw1, transform);
+	        Point se = (Point) JTS.transform(se1, transform);
+						        
+			double x_i1 = nw.getX();
+			double x_i2 = se.getX();
+			double y_i1 = nw.getY();
+			double y_i2 = se.getY();
+			
+			// Get envelop of source features and compare 
+			ReferencedEnvelope env_o = content.getBounds();
+			ReferencedEnvelope env_t  = new ReferencedEnvelope(x_i1, x_i2, y_i1, y_i2, crs_source);
+			Style style = createStyle();
+			
+			if (env_o.intersects(new Coordinate(x_i1,y_i1), new Coordinate(x_i2,y_i2))) {
+				bais = new ByteArrayInputStream(imageFromFeatureCollection(content, env_t, style, 256, 256));
+			}
+		} catch (NoSuchAuthorityCodeException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (FactoryException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (MismatchedDimensionException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (TransformException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		if (bais == null) { // set default Tiles without data
+			String markedText = "N/A";
+			bais = new ByteArrayInputStream(createBlankTiles(256, 256, markedText));
+		}
+		return bais;
+	}
+	/**
+	 * Draw a String centered in the middle of a Rectangle.
+	 *
+	 * @param g The Graphics instance.
+	 * @param text The String to draw.
+	 * @param rect The Rectangle to center the text in.
+	 */
+	private static void drawCenteredString(Graphics g, String text, Rectangle rect, Font font) {
+	    // Get the FontMetrics
+	    FontMetrics metrics = g.getFontMetrics(font);
+	    // Determine the X coordinate for the text
+	    int x = rect.x + (rect.width - metrics.stringWidth(text)) / 2;
+	    // Determine the Y coordinate for the text (note we add the ascent, as in java 2d 0 is top of the screen)
+	    int y = rect.y + ((rect.height - metrics.getHeight()) / 2) + metrics.getAscent();
+	    // Set the font
+	    g.setFont(font);
+	    // Draw the String
+	    g.drawString(text, x, y);
+	}		
+	public static byte[] createBlankTiles(int w, int h, String displayText) {
+		BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		Graphics2D graphics = image.createGraphics();
+		try {
+			
+			graphics.setComposite(AlphaComposite.Clear);
+			graphics.fillRect(0, 0, w, h);
+			
+			graphics.setComposite(AlphaComposite.Src);
+			graphics.setPaint(Color.BLUE);
+			graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			Font font = new Font("Segoe Script", Font.BOLD + Font.ITALIC, 15);
+			drawCenteredString(graphics, displayText, new Rectangle(w, h), font);
+			try {
+				ImageIO.write(image, "PNG", baos);
+			} catch (IOException e) {
+				logger.info("Failed clearing out non-client response buffer due to: " + e, e);
+				e.printStackTrace();
+			}			
+		}
+        finally {
+            graphics.dispose();
+        }
+
+		return baos.toByteArray();
+	}	
+    private static byte[] imageFromFeatureCollection(SimpleFeatureCollection featurecollection, ReferencedEnvelope bounds, Style style, int w, int h) {
+    	ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        if (bounds != null) {
+    		if (featurecollection != null) {
+    			MapContent map = new MapContent();
+    			BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);    			
+    			try {            		
+                    Layer layer = new FeatureLayer(featurecollection, style);
+                    map.addLayer(layer);                    
+                    
+                    GTRenderer renderer = new StreamingRenderer();
+                    LabelCacheImpl labelCache = new LabelCacheImpl();
+                    Map<Object, Object> hints = renderer.getRendererHints();                    
+                    if (hints == null) {
+                      hints = new HashMap<>();
+                    }
+                    hints.put(StreamingRenderer.LABEL_CACHE_KEY, labelCache);
+
+            		Graphics2D graphics = image.createGraphics();
+            		graphics.setComposite(AlphaComposite.Clear);
+            		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);  
+            		
+            		
+            	    int maxErrors = 5;
+            	    MaxErrorEnforcer errorChecker = new MaxErrorEnforcer(renderer, graphics, map, maxErrors);
+            	    // Add a render listener that reports back non ignorable ones
+            	    final RenderExceptionStrategy nonIgnorableExceptionListener;
+            	    nonIgnorableExceptionListener = new RenderExceptionStrategy(renderer, graphics, map);
+            	    renderer.addRenderListener(nonIgnorableExceptionListener);
+            	    
+            	    int maxRenderingTime = 10000;  // 10s
+            	    RenderingTimeoutEnforcer timeout = new RenderingTimeoutEnforcer(maxRenderingTime, renderer, graphics, map);
+            	    timeout.start();
+                    try {
+                        renderer.setRendererHints(hints);
+                        renderer.setMapContent(map);
+                        renderer.paint(graphics, new Rectangle(w, h), bounds); 
+                        try {
+                			ImageIO.write(image, "PNG", baos);
+                		} catch (IOException e) {
+                			e.printStackTrace();
+                		}                     	
+                    }
+                    finally {
+                    	timeout.stop();
+                    	if (graphics != null)
+                    		graphics.dispose();
+                    }
+                    
+                    if (timeout.isTimedOut()) {
+                    	logger.info("This requested used more time than allowed and has been forcefully stopped. " + "Max rendering time is " + (maxRenderingTime / 1000.0) + "s");
+                    }
+                    // check if a non ignorable error occurred
+                    if (nonIgnorableExceptionListener.exceptionOccurred()) {
+                        Exception renderError = nonIgnorableExceptionListener.getException();
+                        logger.info("Rendering process failed", renderError);
+                    }
+                    // check if too many errors occurred
+                    if (errorChecker.exceedsMaxErrors()) {
+                    	logger.info("More than " + maxErrors + " rendering errors occurred, bailing out.", errorChecker.getLastException());
+                    }
+                    
+    			}
+    			finally {
+    				if (map != null)
+    					map.dispose();
+    		    }      			
+    		}
+        }
+        return baos.toByteArray();
+    }	
+    private static Style createStyle() {
+    	
+    	StyleFactory styleFactory = CommonFactoryFinder.getStyleFactory();
+    	FilterFactory2 filterFactory = CommonFactoryFinder.getFilterFactory2();
+    	
+        PolygonSymbolizer polySymbolizer = styleFactory.createPolygonSymbolizer();
+        Fill fill = styleFactory.createFill(
+                filterFactory.literal("#FFAA00"),
+                filterFactory.literal(0.25)
+        );
+        final Stroke stroke = styleFactory.createStroke(filterFactory.literal(Color.BLACK), filterFactory.literal(2));
+        polySymbolizer.setFill(fill);
+        polySymbolizer.setStroke(stroke);
+        
+
+        Expression opacity = null; // use default
+        Expression size = filterFactory.literal(5);
+        Expression rotation = null; // use default
+        AnchorPoint anchor = null; // use default
+        Displacement displacement = null; // use default
+        List<GraphicalSymbol> symbols = new ArrayList<>();
+        symbols.add(styleFactory.mark(filterFactory.literal("circle"), fill, stroke)); 
+        // define a point symbolizer of a small circle
+        Graphic circle = styleFactory.graphic(symbols, opacity, size, rotation, anchor, displacement);
+        PointSymbolizer pointSymbolizer = styleFactory.pointSymbolizer("point", filterFactory.property("geometry"), null, null, circle);
+        
+        LineSymbolizer lineSymbolizer = styleFactory.createLineSymbolizer();
+        lineSymbolizer.setStroke(styleFactory.createStroke(filterFactory.literal(Color.MAGENTA), filterFactory.literal(1)));
+        
+        Rule rule = styleFactory.createRule();
+        rule.symbolizers().add(polySymbolizer);
+        rule.symbolizers().add(pointSymbolizer);
+        rule.symbolizers().add(lineSymbolizer);
+        FeatureTypeStyle fts = styleFactory.createFeatureTypeStyle();
+        fts.rules().add(rule);
+
+        Style style = styleFactory.createStyle();
+        style.featureTypeStyles().add(fts);
+        return style;
+        
+        
+    }	        
+	public static ByteArrayInputStream getImageTileFromDownloadableContent(final DownloadableContent content, String geoType, int z,int x, int y) {
+        final GenericData genericData = new GenericData();
+        genericData.addLogicalTypeConversion(new Conversions.DecimalConversion());
+        genericData.addLogicalTypeConversion(new TimeConversions.DateConversion());
+        genericData.addLogicalTypeConversion(new TimeConversions.TimeMicrosConversion());
+        genericData.addLogicalTypeConversion(new TimeConversions.TimeMillisConversion());
+        genericData.addLogicalTypeConversion(new TimeConversions.TimestampMicrosConversion());
+        genericData.addLogicalTypeConversion(new TimeConversions.TimestampMillisConversion());
+        genericData.addLogicalTypeConversion(new TimeConversions.LocalTimestampMicrosConversion());
+        genericData.addLogicalTypeConversion(new TimeConversions.LocalTimestampMillisConversion());
+        final DatumReader<GenericData.Record> datumReader = new GenericDatumReader<>(null, null, genericData);
+		ByteArrayInputStream bais = null;
+		try (final DataFileStream<GenericData.Record> dataFileReader = new DataFileStream<>(content.getContent(), datumReader)) {
+			if (geoType.equals("Tiles")) {
+				while (dataFileReader.hasNext()) {
+					final GenericData.Record record = dataFileReader.next();
+					int zoom = Integer.parseInt(record.get("zoom_level").toString());
+					int column = Integer.parseInt(record.get("tile_column").toString());
+					int row = Integer.parseInt(record.get("tile_row").toString());
+					if ((zoom == z) && (column == x) && (row == y)) {
+						bais = new ByteArrayInputStream(getBytes((ByteBuffer) record.get("tile_data")));
+						break;
+					}					
+				}				
+			}
+		} catch (IOException | MismatchedDimensionException e1) {
+			e1.printStackTrace();
+		}
+		if (bais == null) { // set default Tiles without data
+			String markedText = "N/A";
+			bais = new ByteArrayInputStream(createBlankTiles(256, 256, markedText));
+		}
+		return bais;
+	}   
+	
+	public static byte[] getBytes(final ByteBuffer buffer) {
+		byte[] dest = new byte[buffer.remaining()];
+		buffer.get(dest);
+		return dest;
+	}	
 	public static String getGeometryFieldName(GenericData.Record record) {
 		String geoKey = null;
 		for (int i = 0; i < record.getSchema().getFields().size(); i++) {
