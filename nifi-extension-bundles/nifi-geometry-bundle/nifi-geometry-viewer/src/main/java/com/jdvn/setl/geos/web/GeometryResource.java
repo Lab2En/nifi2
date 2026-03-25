@@ -1,21 +1,17 @@
 package com.jdvn.setl.geos.web;
 
-import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
 
-import org.apache.avro.Conversions;
-import org.apache.avro.data.TimeConversions;
-import org.apache.avro.file.DataFileStream;
-import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericDatumReader;
-import org.apache.avro.io.DatumReader;
 import org.apache.nifi.web.ContentAccess;
 import org.apache.nifi.web.ContentRequestContext;
 import org.apache.nifi.web.DownloadableContent;
 import org.apache.nifi.web.HttpServletContentRequestContext;
+import org.geotools.feature.FeatureCollection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,8 +26,16 @@ import jakarta.ws.rs.core.Response;
 
 @Path("/geometry")
 public class GeometryResource {
-    private static final Logger logger = LoggerFactory.getLogger(GeometryResource.class);
+	
+    private static final Logger logger = LoggerFactory.getLogger(GeometryResource.class);    
     private static final String CONTENT_ACCESS_ATTRIBUTE = "nifi-content-access";
+    // For raster tiles caching
+	@SuppressWarnings({ "rawtypes", "unused" })
+	private static final Cache<MapCacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
+    // For vector tiles caching
+    private static final Cache<MapCacheKey, byte[]> mapVectorCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
+    
+    public record MapCacheKey(String ref, int x, int y, int z) {}
 
 	@GET
 	@Path("/hello")
@@ -70,8 +74,10 @@ public class GeometryResource {
 	
     @SuppressWarnings("unchecked")
 	@GET
-    @Path("/tiles/{z}/{x}/{y}")
-    @Produces("application/x-protobuf")
+    @Path("/tiles/{z}/{x}/{y}.mvt")
+    //@Path("/tiles/{z}/{x}/{y}")
+    //@Produces("application/x-protobuf")
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
     public Response getVectorTile(
             @Context HttpServletRequest request,
             @PathParam("z") int z,
@@ -80,7 +86,10 @@ public class GeometryResource {
             @QueryParam("ref") String ref) {
         
         logger.info("Fetching tile at Z:{}, X:{}, Y:{} for ref: {}", z, x, y, ref);
-
+        String crs = null; 
+        String envelope = null;
+        byte[] bais = null;
+        
         try {
             // 1. Initialize Context
             final ServletContext servletContext = request.getServletContext();
@@ -161,8 +170,13 @@ public class GeometryResource {
 							}
 
 							if (!finalAttributes.isEmpty()) {
-								logger.info("Successfully retrieved {} attributes", finalAttributes.size());
-								finalAttributes.forEach((k, v) -> logger.info("Attribute: {} = {}", k, v));
+//								logger.info("Successfully retrieved {} attributes", finalAttributes.size());
+//								finalAttributes.forEach((k, v) -> {
+//									logger.info("Attribute: {} = {}", k, v);								
+//									
+//								});
+								crs = finalAttributes.get(GeoUtils.GEO_CRS);
+								envelope = finalAttributes.get(GeoUtils.GEO_ENVELOP);
 							}
 						} else {
 							logger.error("Metadata DTO not found for ref: {}", ref);
@@ -178,59 +192,25 @@ public class GeometryResource {
             final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
             // 4. Retrieve Content
             final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
-        	                
-            // 5. Process Avro into JSON String (Your original logic)
-            final StringBuilder sb = new StringBuilder();
-            sb.append("[");
-            
-            final GenericData genericData = new GenericData();
-            // Standard NiFi Avro Conversions
-            genericData.addLogicalTypeConversion(new Conversions.DecimalConversion());
-            genericData.addLogicalTypeConversion(new TimeConversions.DateConversion());
-            genericData.addLogicalTypeConversion(new TimeConversions.TimestampMicrosConversion());
-            genericData.addLogicalTypeConversion(new TimeConversions.TimestampMillisConversion());
-
-            final DatumReader<GenericData.Record> datumReader = new GenericDatumReader<>(null, null, genericData);
-            
-            try (final InputStream contentStream = downloadableContent.getContent();
-                 final DataFileStream<GenericData.Record> dataFileReader = new DataFileStream<>(contentStream, datumReader)) {
-                
-                while (dataFileReader.hasNext()) {
-                    final GenericData.Record record = dataFileReader.next();
-                    sb.append(genericData.toString(record)).append(",");
-                    
-                    // Limit for browser safety (2MB)
-                    if (sb.length() > 1024 * 1024 * 2) break;
-                }
-            }
-
-            if (sb.length() > 1) {
-                sb.deleteCharAt(sb.length() - 1);
-            }
-            sb.append("]");
-            
-            final String json = sb.toString();
-            
-            // 4. Return formatted JSON
-            final ObjectMapper mapper = new ObjectMapper();
-            final Object objectJson = mapper.readValue(json, Object.class);
-            String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(objectJson);
-            
-            //logger.info("JSON Generated from Tiles: {}", prettyJson);
-
-            //return Response.ok(prettyJson).build();
+                		    		
+    		MapCacheKey key = new MapCacheKey(ref, x, y, z);    		
+    		if (mapVectorCache.getIfPresent(key) == null) {
+    			bais = GeoUtils.getVectorTileFromDownloadableContent(downloadableContent, crs, envelope, z, x, y);
+    			if (bais != null) 
+    				mapVectorCache.put(key, bais);				
+    		} else {
+    			bais = mapVectorCache.getIfPresent(key);
+    		}
+    		    		
+    		return Response.ok(bais).build();                
 
         } catch (Exception e) {
             logger.error("Error processing Avro content in /hello", e);
         }
                 
-        // to feed your VectorTileEncoder.
-        byte[] tileData = new byte[0]; 
-
-        if (tileData.length == 0) {
+        if (bais.length == 0) {
             return Response.noContent().build();
         }
-
-        return Response.ok(tileData).build();
+        return Response.ok(bais).build();
     }
 }

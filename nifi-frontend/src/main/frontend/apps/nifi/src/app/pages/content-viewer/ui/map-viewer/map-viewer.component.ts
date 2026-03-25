@@ -102,7 +102,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             this.map.removeSource('nifi-source');
         }
 
-        const nifiTileUrl = `${window.location.origin}/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}?ref=${encodeURIComponent(ref)}`;
+        const nifiTileUrl = `${window.location.origin}/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}.mvt?ref=${encodeURIComponent(ref)}`;
         this.map.addSource('nifi-source', {
             type: 'vector',
             tiles: [nifiTileUrl]
