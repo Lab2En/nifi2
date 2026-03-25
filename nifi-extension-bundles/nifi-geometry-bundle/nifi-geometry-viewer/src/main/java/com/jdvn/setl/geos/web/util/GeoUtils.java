@@ -243,6 +243,10 @@ public class GeoUtils {
 					}
 				}			
 		}
+		if (g_list.isEmpty()) {
+		    // Return an empty byte array instead of null to satisfy the Protobuf contract
+		    return new byte[0]; 
+		}
 		com.vividsolutions.jts.geom.GeometryFactory geomFactory = new com.vividsolutions.jts.geom.GeometryFactory();		
 		// Use buffer with clip envelope - (10 * 2)% buffered area of the tile envelope
 		// to display well geometries belongs many tiles
@@ -257,7 +261,7 @@ public class GeoUtils {
         TileGeomResult bufferedTileGeom = JtsAdapter.createTileGeom(g_list, env_t, clipEnvelope, geomFactory, DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
         VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, bufferedTileGeom, layerName);
         
-		return mvt.toByteArray();		
+		return (mvt != null) ? mvt.toByteArray() : new byte[0];
 	}	
     private static VectorTile.Tile encodeMvt(MvtLayerParams mvtParams, TileGeomResult tileGeom, String layerName) {
         // Build MVT

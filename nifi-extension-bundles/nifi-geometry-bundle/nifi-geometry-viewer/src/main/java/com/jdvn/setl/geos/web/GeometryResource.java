@@ -113,9 +113,56 @@ public class GeometryResource {
 		}		    		                
         return Response.ok(bais).build();
     }
-            
 	@GET
     @Path("/tiles/{z}/{x}/{y}")
+    @Produces("application/x-protobuf")
+    public Response getVectorTileInPbf(
+            @Context HttpServletRequest request,
+            @PathParam("z") int z,
+            @PathParam("x") int x,
+            @PathParam("y") int y,
+            @QueryParam("ref") String ref) {
+        
+        logger.info("Fetching tile at Z:{}, X:{}, Y:{} for ref: {}", z, x, y, ref);
+        String crs = null; 
+        String envelope = null;
+        byte[] mvtBytes = null;
+                       
+    	final ServletContext servletContext = request.getServletContext();               
+		java.util.Map<String, String> finalAttributes =getMapAttributes(request, ref);
+		crs = finalAttributes.get(GeoUtils.GEO_CRS);
+		envelope = finalAttributes.get(GeoUtils.GEO_ENVELOP);
+		
+		// 3. Initialize NiFi Content Access
+        final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
+        final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
+        // 4. Retrieve Content
+        final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
+            		    		
+		MapCacheKey key = new MapCacheKey(ref, x, y, z);    		
+		if (mapVectorCache.getIfPresent(key) == null) {
+			mvtBytes = GeoUtils.getVectorTileFromDownloadableContent(downloadableContent, crs, envelope, z, x, y);
+			if (mvtBytes != null) 
+				mapVectorCache.put(key, mvtBytes);				
+		} else {
+			mvtBytes = mapVectorCache.getIfPresent(key);
+		}
+		
+		if (mvtBytes == null || mvtBytes.length == 0) {
+	        return Response.noContent() // Returns HTTP 204
+	                .header("Content-Type", "application/x-protobuf")
+	                .build();
+	    }		
+		// 5. Return the response with proper headers
+	    return Response.ok(mvtBytes)
+	            .header("Content-Type", "application/x-protobuf")
+	            .header("Content-Length", mvtBytes.length)
+	            // Prevent some proxies from trying to 'helpfully' compress or change the binary
+	            .header("Content-Encoding", "identity") 
+	            .build();
+    }            
+	@GET
+    @Path("/tiles_img/{z}/{x}/{y}")
     @Consumes(MediaType.WILDCARD)
     @Produces("image/png")
     public Response getRasterTile(
