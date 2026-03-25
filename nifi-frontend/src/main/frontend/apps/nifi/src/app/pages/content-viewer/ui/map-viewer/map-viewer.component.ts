@@ -1,5 +1,4 @@
 import { Component, inject, AfterViewInit, OnDestroy } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
 import { selectRef } from '../../state/content/content.selectors';
@@ -17,18 +16,15 @@ import * as maplibregl from 'maplibre-gl';
 })
 export class MapViewer implements AfterViewInit, OnDestroy {
     private store = inject<Store<NiFiState>>(Store);
-    private http = inject(HttpClient);
 
     private map: maplibregl.Map | undefined;
     private contextPath = 'nifi-geometry-viewer-2.8.0-SNAPSHOT';
 
     ref: string | null = null;
-    apiResponse: any = null;
 
+    // Simplified visibility tracking
     layerVisibility = {
-        remote: true,
-        local: true,
-        geojson: true
+        local: true
     };
 
     constructor() {
@@ -37,8 +33,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             .pipe(isDefinedAndNotNull(), takeUntilDestroyed())
             .subscribe((ref) => {
                 this.ref = ref;
-                this.loadMapData(ref);
-                // If map is already loaded, update/add the NiFi source
+                // Update the tiles whenever the FlowFile reference changes
                 if (this.map?.isStyleLoaded()) {
                     this.addNifiTileSource(ref);
                 }
@@ -50,12 +45,10 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     }
 
     private initializeMap(): void {
-        const remoteTileUrl = 'https://tiles-c.sntglobal.net/maps/keangnam/{z}/{x}/{y}.vector.pbf';
-
         this.map = new maplibregl.Map({
             container: 'map-canvas',
             style: 'https://demotiles.maplibre.org/style.json',
-            center: [127.0276, 37.4979],
+            center: [105.6528, 20.975], // Default focus: Hanoi
             zoom: 13,
             trackResize: true
         });
@@ -65,29 +58,9 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         this.map.on('load', () => {
             if (!this.map) return;
 
-            // 1. Add Remote Source
-            this.map.addSource('remote-source', {
-                type: 'vector',
-                tiles: [remoteTileUrl]
-            });
-
-            this.map.addLayer({
-                id: 'remote-layer',
-                type: 'fill',
-                source: 'remote-source',
-                'source-layer': 'kn_buildings',
-                paint: { 'fill-color': '#ff0000', 'fill-opacity': 0.4 }
-            });
-
-            // 2. Add Local Source if ref is already present
+            // Load NiFi Source immediately if ref exists
             if (this.ref) {
                 this.addNifiTileSource(this.ref);
-            }
-
-            // --- ADDED ONLY THIS LINE ---
-            // If the GeoJSON API call finished before map was ready, draw it now.
-            if (this.apiResponse) {
-                this.updateMapSource(this.apiResponse);
             }
 
             this.map.resize();
@@ -97,65 +70,115 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     private addNifiTileSource(ref: string): void {
         if (!this.map) return;
 
-        if (this.map.getSource('nifi-source')) {
-            if (this.map.getLayer('local-layer')) this.map.removeLayer('local-layer');
-            this.map.removeSource('nifi-source');
-        }
+        const sourceId = 'nifi-source';
+        const layers = ['local-polygons', 'local-lines', 'local-points'];
 
-        const nifiTileUrl = `${window.location.origin}/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}.mvt?ref=${encodeURIComponent(ref)}`;
-        this.map.addSource('nifi-source', {
+        // 1. Remove existing layers and source to prevent "Source already exists" errors
+        layers.forEach((id) => {
+            if (this.map?.getLayer(id)) this.map.removeLayer(id);
+        });
+        if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
+
+        // 2. Build the Absolute URL for the Request constructor
+        const baseUrl = window.location.origin;
+        const path = `/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}`;
+        const urlWithParams = new URL(path, baseUrl);
+        urlWithParams.searchParams.set('ref', ref);
+
+        // decodeURI ensures the {z}/{x}/{y} placeholders aren't double-encoded
+        const fullNifiTileUrl = decodeURI(urlWithParams.toString());
+
+        // 3. Add Vector Source
+        this.map.addSource(sourceId, {
             type: 'vector',
-            tiles: [nifiTileUrl]
+            tiles: [fullNifiTileUrl],
+            minzoom: 0,
+            maxzoom: 22
+        });
+
+        const visibility = this.layerVisibility.local ? 'visible' : 'none';
+
+        // 4. Add Layers based on your Java Layer Names
+        this.map.addLayer({
+            id: 'local-polygons',
+            type: 'fill',
+            source: sourceId,
+            'source-layer': 'myPolygons',
+            layout: { visibility },
+            paint: {
+                'fill-color': '#0786e0',
+                'fill-opacity': 0.6,
+                'fill-outline-color': '#ffffff'
+            }
         });
 
         this.map.addLayer({
-            id: 'local-layer',
-            type: 'fill',
-            source: 'nifi-source',
-            'source-layer': 'kn_buildings',
-            layout: { visibility: this.layerVisibility.local ? 'visible' : 'none' },
-            paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.7 }
+            id: 'local-lines',
+            type: 'line',
+            source: sourceId,
+            'source-layer': 'myLines',
+            layout: { visibility },
+            paint: { 'line-color': '#0786e0', 'line-width': 2.5 }
         });
-    }
 
-    toggleLayer(layerKey: 'remote' | 'local' | 'geojson', layerId: string): void {
-        if (!this.map) return;
-        this.layerVisibility[layerKey] = !this.layerVisibility[layerKey];
-        if (this.map.getLayer(layerId)) {
-            const visibility = this.layerVisibility[layerKey] ? 'visible' : 'none';
-            this.map.setLayoutProperty(layerId, 'visibility', visibility);
-        }
-    }
-
-    private loadMapData(ref: string): void {
-        const url = `/${this.contextPath}/api/geometry/hello?ref=${encodeURIComponent(ref)}`;
-        this.http.get(url).subscribe({
-            next: (data: any) => {
-                this.apiResponse = data;
-                if (this.map?.isStyleLoaded()) this.updateMapSource(data);
-            },
-            error: (err) => console.error('API Error:', err)
+        this.map.addLayer({
+            id: 'local-points',
+            type: 'circle',
+            source: sourceId,
+            'source-layer': 'myPoints',
+            layout: { visibility },
+            paint: {
+                'circle-radius': 6,
+                'circle-color': '#0786e0',
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff'
+            }
         });
-    }
 
-    private updateMapSource(data: any): void {
-        if (!this.map || !data) return;
-        const geoJsonData = data.geoJson || data;
-        if (this.map.getSource('niFiData')) {
-            (this.map.getSource('niFiData') as maplibregl.GeoJSONSource).setData(geoJsonData);
-        } else {
-            this.map.addSource('niFiData', { type: 'geojson', data: geoJsonData });
-            this.map.addLayer({
-                id: 'geojson-layer', // This ID matches the toggleLayer call in your HTML
-                type: 'circle',
-                source: 'niFiData',
-                layout: { visibility: this.layerVisibility.geojson ? 'visible' : 'none' },
-                paint: { 'circle-radius': 8, 'circle-color': '#ffcc00', 'circle-stroke-width': 2 }
+        // 5. Interaction: Popup on Click
+        this.map.on('click', (e) => {
+            const features = this.map?.queryRenderedFeatures(e.point, {
+                layers: ['local-polygons', 'local-lines', 'local-points']
             });
-        }
+
+            if (!features?.length) return;
+
+            const props = features[0].properties;
+            let html = '<div style="color:#333; font-family: sans-serif; padding: 5px;">';
+            html +=
+                '<b style="font-size:12px; border-bottom:1px solid #ccc; display:block; margin-bottom:5px;">NiFi Attributes</b>';
+            html += '<table style="font-size:11px; width:100%;">';
+            Object.entries(props).forEach(([k, v]) => {
+                html += `<tr><td style="font-weight:bold; padding-right:8px;">${k}</td><td>${v}</td></tr>`;
+            });
+            html += '</table></div>';
+
+            new maplibregl.Popup({ closeButton: true }).setLngLat(e.lngLat).setHTML(html).addTo(this.map!);
+        });
+
+        // Change cursor on hover
+        this.map.on('mouseenter', 'local-polygons', () => (this.map!.getCanvas().style.cursor = 'pointer'));
+        this.map.on('mouseleave', 'local-polygons', () => (this.map!.getCanvas().style.cursor = ''));
+    }
+
+    /**
+     * Toggles all NiFi MVT layers simultaneously
+     */
+    toggleNiFiLayer(): void {
+        if (!this.map) return;
+        this.layerVisibility.local = !this.layerVisibility.local;
+        const visibility = this.layerVisibility.local ? 'visible' : 'none';
+
+        ['local-polygons', 'local-lines', 'local-points'].forEach((id) => {
+            if (this.map?.getLayer(id)) {
+                this.map.setLayoutProperty(id, 'visibility', visibility);
+            }
+        });
     }
 
     ngOnDestroy(): void {
-        if (this.map) this.map.remove();
+        if (this.map) {
+            this.map.remove();
+        }
     }
 }

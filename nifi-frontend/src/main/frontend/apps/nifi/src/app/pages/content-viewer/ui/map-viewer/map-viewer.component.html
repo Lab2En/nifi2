@@ -1,33 +1,12 @@
 <div class="map-container">
     <div class="map-controls">
         <div class="control-card">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Layer Manager</h3>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">NiFi Map Controls</h3>
 
             <label class="layer-item">
-                <input
-                    type="checkbox"
-                    [checked]="layerVisibility.remote"
-                    (change)="toggleLayer('remote', 'remote-layer')" />
-                <span class="indicator remote"></span>
-                <span class="label-text">Remote Tiles (SNT)</span>
-            </label>
-
-            <label class="layer-item">
-                <input
-                    type="checkbox"
-                    [checked]="layerVisibility.local"
-                    (change)="toggleLayer('local', 'local-layer')" />
+                <input type="checkbox" [checked]="layerVisibility.local" (change)="toggleNiFiLayer()" />
                 <span class="indicator local"></span>
-                <span class="label-text">My NiFi Tiles</span>
-            </label>
-
-            <label class="layer-item">
-                <input
-                    type="checkbox"
-                    [checked]="layerVisibility.geojson"
-                    (change)="toggleLayer('geojson', 'geojson-layer')" />
-                <span class="indicator geojson"></span>
-                <span class="label-text">NiFi API (GeoJSON)</span>
+                <span class="label-text">FlowFile Geometries</span>
             </label>
         </div>
     </div>
