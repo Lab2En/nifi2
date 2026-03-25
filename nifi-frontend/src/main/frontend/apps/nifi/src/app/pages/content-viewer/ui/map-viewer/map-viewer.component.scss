@@ -1,12 +1,10 @@
 @import 'maplibre-gl/dist/maplibre-gl.css';
 
 :host {
-    display: flex;
-    flex-direction: column;
+    display: block;
     width: 100%;
     height: 100%;
     position: relative;
-    overflow: hidden;
 }
 
 .map-container {
@@ -16,11 +14,53 @@
 }
 
 #map-canvas {
+    width: 100%;
+    height: 100%;
     position: absolute;
     top: 0;
-    bottom: 0;
     left: 0;
-    right: 0;
+}
+
+::ng-deep {
+    .maplibregl-popup {
+        z-index: 1000 !important;
+        pointer-events: none;
+    }
+
+    .maplibregl-popup-content {
+        pointer-events: auto;
+        background: #ffffff !important;
+        color: #333 !important;
+        padding: 10px !important;
+        border-radius: 4px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .nifi-popup-table {
+        min-width: 150px;
+        b {
+            font-size: 13px;
+            color: #0786e0;
+        }
+        hr {
+            border: 0;
+            border-top: 1px solid #eee;
+            margin: 5px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            td {
+                padding: 3px 0;
+                font-size: 11px;
+                border-bottom: 1px solid #f9f9f9;
+                &:first-child {
+                    color: #666;
+                    padding-right: 10px;
+                }
+            }
+        }
+    }
 }
 
 .map-controls {
@@ -30,55 +70,27 @@
     z-index: 10;
 
     .control-card {
-        background: rgba(255, 255, 255, 0.95);
+        background: rgba(255, 255, 255, 0.9);
         padding: 12px;
-        border-radius: 8px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        min-width: 180px;
-        backdrop-filter: blur(4px);
+        border-radius: 4px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        min-width: 160px;
     }
 }
 
 .layer-item {
     display: flex;
     align-items: center;
-    padding: 6px 0;
     cursor: pointer;
-    transition: opacity 0.2s;
-
-    &:hover {
-        opacity: 0.8;
-    }
-
-    input {
-        cursor: pointer;
-    }
-
     .label-text {
         font-size: 12px;
-        color: #333;
         margin-left: 8px;
-        font-family: sans-serif;
     }
-
-    .indicator {
+    .indicator.local {
         width: 10px;
         height: 10px;
         border-radius: 2px;
+        background-color: #0786e0;
         margin-left: 8px;
-
-        &.remote {
-            background-color: #ff0000;
-            border: 1px solid #900;
-        }
-        &.local {
-            background-color: #0786e0;
-            border: 1px solid #004a80;
-        }
-        &.geojson {
-            background-color: #ffcc00;
-            border: 1px solid #b28f00;
-            border-radius: 50%;
-        }
     }
 }

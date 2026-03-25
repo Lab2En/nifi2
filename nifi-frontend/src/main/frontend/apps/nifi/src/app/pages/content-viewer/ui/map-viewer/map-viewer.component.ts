@@ -19,13 +19,10 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
     private map: maplibregl.Map | undefined;
     private contextPath = 'nifi-geometry-viewer-2.8.0-SNAPSHOT';
+    private clickListener: ((e: maplibregl.MapMouseEvent) => void) | null = null;
 
     ref: string | null = null;
-
-    // Simplified visibility tracking
-    layerVisibility = {
-        local: true
-    };
+    layerVisibility = { local: true };
 
     constructor() {
         this.store
@@ -33,7 +30,6 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             .pipe(isDefinedAndNotNull(), takeUntilDestroyed())
             .subscribe((ref) => {
                 this.ref = ref;
-                // Update the tiles whenever the FlowFile reference changes
                 if (this.map?.isStyleLoaded()) {
                     this.addNifiTileSource(ref);
                 }
@@ -48,7 +44,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         this.map = new maplibregl.Map({
             container: 'map-canvas',
             style: 'https://demotiles.maplibre.org/style.json',
-            center: [105.6528, 20.975], // Default focus: Hanoi
+            center: [105.6528, 20.975],
             zoom: 13,
             trackResize: true
         });
@@ -57,13 +53,10 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
         this.map.on('load', () => {
             if (!this.map) return;
+            if (this.ref) this.addNifiTileSource(this.ref);
 
-            // Load NiFi Source immediately if ref exists
-            if (this.ref) {
-                this.addNifiTileSource(this.ref);
-            }
-
-            this.map.resize();
+            // Ensures the map fills the container after initial render
+            setTimeout(() => this.map?.resize(), 100);
         });
     }
 
@@ -71,24 +64,26 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         if (!this.map) return;
 
         const sourceId = 'nifi-source';
-        const layers = ['local-polygons', 'local-lines', 'local-points'];
+        const layerIds = ['local-polygons', 'local-lines', 'local-points'];
 
-        // 1. Remove existing layers and source to prevent "Source already exists" errors
-        layers.forEach((id) => {
+        // 1. Cleanup existing layers and source
+        layerIds.forEach((id) => {
             if (this.map?.getLayer(id)) this.map.removeLayer(id);
         });
         if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
 
-        // 2. Build the Absolute URL for the Request constructor
+        // 2. Cleanup existing click listener (Fixed TS2554)
+        if (this.clickListener) {
+            this.map.off('click', this.clickListener);
+        }
+
+        // 3. Build the Absolute URL
         const baseUrl = window.location.origin;
         const path = `/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}`;
         const urlWithParams = new URL(path, baseUrl);
         urlWithParams.searchParams.set('ref', ref);
-
-        // decodeURI ensures the {z}/{x}/{y} placeholders aren't double-encoded
         const fullNifiTileUrl = decodeURI(urlWithParams.toString());
 
-        // 3. Add Vector Source
         this.map.addSource(sourceId, {
             type: 'vector',
             tiles: [fullNifiTileUrl],
@@ -98,18 +93,14 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
         const visibility = this.layerVisibility.local ? 'visible' : 'none';
 
-        // 4. Add Layers based on your Java Layer Names
+        // 4. Add Geometry Layers
         this.map.addLayer({
             id: 'local-polygons',
             type: 'fill',
             source: sourceId,
             'source-layer': 'myPolygons',
             layout: { visibility },
-            paint: {
-                'fill-color': '#0786e0',
-                'fill-opacity': 0.6,
-                'fill-outline-color': '#ffffff'
-            }
+            paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.6, 'fill-outline-color': '#ffffff' }
         });
 
         this.map.addLayer({
@@ -135,49 +126,42 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             }
         });
 
-        // 5. Interaction: Popup on Click
-        this.map.on('click', (e) => {
+        // 5. Define and Attach the Click Listener
+        this.clickListener = (e: maplibregl.MapMouseEvent) => {
             const features = this.map?.queryRenderedFeatures(e.point, {
-                layers: ['local-polygons', 'local-lines', 'local-points']
+                layers: layerIds
             });
 
             if (!features?.length) return;
 
             const props = features[0].properties;
-            let html = '<div style="color:#333; font-family: sans-serif; padding: 5px;">';
-            html +=
-                '<b style="font-size:12px; border-bottom:1px solid #ccc; display:block; margin-bottom:5px;">NiFi Attributes</b>';
-            html += '<table style="font-size:11px; width:100%;">';
+            let html = '<div class="nifi-popup-table"><b>NiFi Attributes</b><hr/><table>';
             Object.entries(props).forEach(([k, v]) => {
-                html += `<tr><td style="font-weight:bold; padding-right:8px;">${k}</td><td>${v}</td></tr>`;
+                html += `<tr><td><b>${k}</b></td><td>${v}</td></tr>`;
             });
             html += '</table></div>';
 
-            new maplibregl.Popup({ closeButton: true }).setLngLat(e.lngLat).setHTML(html).addTo(this.map!);
-        });
+            new maplibregl.Popup({ closeButton: true, anchor: 'bottom', offset: [0, -10] })
+                .setLngLat(e.lngLat)
+                .setHTML(html)
+                .addTo(this.map!);
+        };
 
-        // Change cursor on hover
-        this.map.on('mouseenter', 'local-polygons', () => (this.map!.getCanvas().style.cursor = 'pointer'));
-        this.map.on('mouseleave', 'local-polygons', () => (this.map!.getCanvas().style.cursor = ''));
+        this.map.on('click', this.clickListener);
     }
 
-    /**
-     * Toggles all NiFi MVT layers simultaneously
-     */
     toggleNiFiLayer(): void {
         if (!this.map) return;
         this.layerVisibility.local = !this.layerVisibility.local;
         const visibility = this.layerVisibility.local ? 'visible' : 'none';
-
         ['local-polygons', 'local-lines', 'local-points'].forEach((id) => {
-            if (this.map?.getLayer(id)) {
-                this.map.setLayoutProperty(id, 'visibility', visibility);
-            }
+            if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', visibility);
         });
     }
 
     ngOnDestroy(): void {
         if (this.map) {
+            if (this.clickListener) this.map.off('click', this.clickListener);
             this.map.remove();
         }
     }
