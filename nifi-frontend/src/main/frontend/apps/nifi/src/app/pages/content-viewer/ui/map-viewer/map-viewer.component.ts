@@ -69,34 +69,36 @@ export class MapViewer implements AfterViewInit, OnDestroy {
      * Expects API to return: [minLng, minLat, maxLng, maxLat]
      */
     private zoomToDataExtent(ref: string): void {
-    const url = `/${this.contextPath}/api/geometry/bounds?ref=${encodeURIComponent(ref)}`;
+        const url = `/${this.contextPath}/api/geometry/bounds?ref=${encodeURIComponent(ref)}`;
 
-    this.http.get<number[]>(url).subscribe({
-        next: (bbox) => {
-            if (this.map && bbox && bbox.length === 4) {
-                // DEBUG: Look at your console to see what the Java API sent
-                console.log('Received BBox from API:', bbox);
+        this.http.get<number[]>(url).subscribe({
+            next: (bbox) => {
+                if (this.map && bbox && bbox.length === 4) {
+                    // DEBUG: Look at your console to see what the Java API sent
+                    console.log('Received BBox from API:', bbox);
 
-                // Check if the coordinates are actually Lat/Lng (Lat must be -90 to 90)
-                const isInvalidLat = Math.abs(bbox[1]) > 90 || Math.abs(bbox[3]) > 90;
-                
-                if (isInvalidLat) {
-                    console.error('API returned Projected coordinates (Meters) instead of WGS84 (Degrees). Zoom cancelled.');
-                    return;
+                    // Check if the coordinates are actually Lat/Lng (Lat must be -90 to 90)
+                    const isInvalidLat = Math.abs(bbox[1]) > 90 || Math.abs(bbox[3]) > 90;
+
+                    if (isInvalidLat) {
+                        console.error(
+                            'API returned Projected coordinates (Meters) instead of WGS84 (Degrees). Zoom cancelled.'
+                        );
+                        return;
+                    }
+
+                    this.map.fitBounds(
+                        [
+                            [bbox[0], bbox[1]], // Southwest [Lon, Lat]
+                            [bbox[2], bbox[3]] // Northeast [Lon, Lat]
+                        ],
+                        { padding: 40, duration: 1200, essential: true }
+                    );
                 }
-
-                this.map.fitBounds(
-                    [
-                        [bbox[0], bbox[1]], // Southwest [Lon, Lat]
-                        [bbox[2], bbox[3]]  // Northeast [Lon, Lat]
-                    ],
-                    { padding: 40, duration: 1200, essential: true }
-                );
-            }
-        },
-        error: (err) => console.warn('Could not zoom to extent.', err)
-    });
-}
+            },
+            error: (err) => console.warn('Could not zoom to extent.', err)
+        });
+    }
 
     private addNifiTileSource(ref: string): void {
         if (!this.map) return;
@@ -123,7 +125,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             type: 'vector',
             tiles: [fullNifiTileUrl],
             minzoom: 0,
-            maxzoom: 22
+            maxzoom: 18
         });
 
         const visibility = this.layerVisibility.local ? 'visible' : 'none';

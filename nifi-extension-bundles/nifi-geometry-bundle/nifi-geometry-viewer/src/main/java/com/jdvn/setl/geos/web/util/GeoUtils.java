@@ -258,10 +258,21 @@ public class GeoUtils {
 		double tileWidth  = env_t.getWidth();
 		double tileHeight = env_t.getHeight();
 		Envelope clipEnvelope = new Envelope(env_t);
-        double bufferWidth = tileWidth * .1f;
-        double bufferHeight = tileHeight * .1f;
+//        double bufferWidth = tileWidth * .1f;
+//        double bufferHeight = tileHeight * .1f;
+		// Change 10% (.1f) to 2% (.02f)
+		// the JtsAdapter will try to clip a massive amount of geometry into a tiny tile, causing a massive response size
+        double bufferWidth = tileWidth * .02f;
+        double bufferHeight = tileHeight * .02f;
         
         clipEnvelope.expandBy(bufferWidth, bufferHeight);	
+        // Fixes topology so the clipper doesn't hang
+        for (int i = 0; i < g_list.size(); i++) {
+            Geometry geom = g_list.get(i);
+            if (!geom.isValid()) {
+                g_list.set(i, geom.buffer(0)); 
+            }
+        }
         
         TileGeomResult bufferedTileGeom = JtsAdapter.createTileGeom(g_list, env_t, clipEnvelope, geomFactory, DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
         VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, bufferedTileGeom, layerName);
