@@ -9,6 +9,13 @@ import org.apache.nifi.web.DownloadableContent;
 import org.apache.nifi.web.HttpServletContentRequestContext;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.feature.FeatureCollection;
+import org.geotools.geometry.jts.JTS;
+import org.geotools.referencing.CRS;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.opengis.referencing.operation.MathTransform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,6 +78,54 @@ public class GeometryResource {
 	        return Response.ok(geoJson).build();
 	    } catch (Exception e) {
 	        logger.error("Error in getHello", e);
+	        return Response.serverError().entity(e.getMessage()).build();
+	    }
+	}
+
+	@GET
+	@Path("/bounds")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getBounds(@Context HttpServletRequest request, @QueryParam("ref") String ref) {
+	    java.util.Map<String, String> finalAttributes = getMapAttributes(request, ref);
+	    String envelope = finalAttributes.get(GeoUtils.GEO_ENVELOP); // [[minX,maxX],[minY,maxY]]
+	    String crsWkt = finalAttributes.get(GeoUtils.GEO_CRS);
+
+	    if (envelope == null) return Response.status(Response.Status.NOT_FOUND).build();
+
+	    try {
+	        // Parse the string [[957222, 966427], [1940231, 1948298]]
+	        String clean = envelope.replaceAll("[\\[\\]\\s]", "");
+	        String[] parts = clean.split(",");
+	        double minX = Double.parseDouble(parts[0]);
+	        double maxX = Double.parseDouble(parts[1]);
+	        double minY = Double.parseDouble(parts[2]);
+	        double maxY = Double.parseDouble(parts[3]);
+
+	        // Setup CRS
+	        CoordinateReferenceSystem sourceCRS = (crsWkt != null) ? CRS.parseWKT(crsWkt) : CRS.decode("EPSG:5179");
+	        
+	        // FORCE Lon/Lat order for the target
+	        CoordinateReferenceSystem targetCRS = CRS.decode("EPSG:4326", true); 
+
+	        // Transform
+	        MathTransform transform = CRS.findMathTransform(sourceCRS, targetCRS, true);
+	        GeometryFactory gf = new GeometryFactory();
+	        
+	        Point sourceMin = gf.createPoint(new Coordinate(minX, minY));
+	        Point sourceMax = gf.createPoint(new Coordinate(maxX, maxY));
+	        
+	        Point targetMin = (Point) JTS.transform(sourceMin, transform);
+	        Point targetMax = (Point) JTS.transform(sourceMax, transform);
+
+	        // MapLibre expects: [Lon, Lat, Lon, Lat]
+	        // This should now return values like [127.xxxx, 37.xxxx, 127.xxxx, 37.xxxx]
+	        double[] bbox = new double[] {
+	            targetMin.getX(), targetMin.getY(), 
+	            targetMax.getX(), targetMax.getY()
+	        };
+
+	        return Response.ok(bbox).build();
+	    } catch (Exception e) {
 	        return Response.serverError().entity(e.getMessage()).build();
 	    }
 	}
