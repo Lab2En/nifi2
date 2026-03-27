@@ -202,7 +202,12 @@ public class GeoUtils {
 			if (wktGeo != null)
 				if (!wktGeo.contains("EMPTY")) {
 					try {
-						Geometry g = wktRdr.read(wktGeo);						
+						Geometry g = wktRdr.read(wktGeo);		
+						// buffer(0) is a "magic" trick in JTS that rebuilds the topology 
+					    // and fixes most non-noded intersection errors.
+					    if (!g.isValid()) {
+					        g = g.buffer(0);
+					    }
 						if (env_t.intersects(g.getEnvelopeInternal())) {
 							if (bGeometryCollection == true) {
 						        Map<String, Object> attributes = new LinkedHashMap<>();					 
