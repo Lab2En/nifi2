@@ -5,106 +5,53 @@
     width: 100%;
     height: 100%;
     position: relative;
-    overflow: hidden; /* Prevent the popup from pushing the page down */
+    overflow: hidden;
 }
 
 .map-container {
     width: 100%;
     height: 100%;
-    position: absolute; /* Change to absolute to fill the :host exactly */
-    top: 0;
-    left: 0;
-    overflow: hidden;
-}
-
-#map-canvas {
-    width: 100%;
-    height: 100%;
-    /* MapLibre needs this to be relative or absolute to position popups correctly */
     position: relative;
 }
 
-::ng-deep {
-    /* Critical Fix: Ensure the popup container allows pointer events and has high z-index */
-    .maplibregl-popup {
-        z-index: 3000 !important;
-    }
+#map-canvas {
+    width: 100% !important;
+    height: 100% !important;
+    position: absolute;
+    top: 0;
+    left: 0;
 
-    .maplibregl-popup-content {
-        background: #ffffff !important;
-        color: #333 !important;
-        padding: 15px !important;
-        border-radius: 8px !important;
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2) !important;
-        border: 1px solid #e0e0e0;
-        min-width: 220px;
-    }
-
-    /* Ensure the "pointer tip" matches the white background */
-    .maplibregl-popup-tip {
-        border-top-color: #ffffff !important;
-    }
-
-    .nifi-popup-table {
-        b {
-            display: block;
-            margin-bottom: 4px;
-            font-size: 13px;
-            color: #0786e0;
-        }
-        hr {
-            border: 0;
-            border-top: 1px solid #eee;
-            margin: 8px 0;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            td {
-                padding: 4px 0;
-                font-size: 11px;
-                border-bottom: 1px solid #f9f9f9;
-                vertical-align: top;
-                &:first-child {
-                    color: #777;
-                    font-weight: 600;
-                    padding-right: 15px;
-                    white-space: nowrap;
-                }
-                &:last-child {
-                    color: #333;
-                    word-break: break-all;
-                }
-            }
-        }
-    }
-
-    /* Close Button Styling */
-    .maplibregl-popup-close-button {
-        font-size: 18px;
-        color: #999;
-        padding: 5px 8px;
-        &:hover {
-            background: transparent;
-            color: #333;
+    // Target the internal MapLibre elements specifically
+    ::ng-deep {
+        .maplibregl-canvas {
+            width: 100% !important;
+            height: 100% !important;
         }
     }
 }
 
 .map-controls {
     position: absolute;
-    top: 20px;
-    left: 20px;
+    top: 15px;
+    left: 15px;
     z-index: 10;
-
     .control-card {
-        background: white;
-        padding: 10px 15px;
-        border-radius: 6px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
+        background: rgba(255, 255, 255, 0.98);
+        padding: 14px;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+        min-width: 200px;
+        .control-title {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #999;
+            margin-bottom: 8px;
+        }
+        .control-divider {
+            margin: 8px 0;
+            border-top: 1px solid #eee;
+        }
     }
 }
 
@@ -112,33 +59,91 @@
     display: flex;
     align-items: center;
     cursor: pointer;
-    margin-bottom: 6px;
     padding: 4px 0;
-    transition: opacity 0.2s;
-
-    input[type='checkbox'] {
-        cursor: pointer;
-        width: 14px;
-        height: 14px;
-        accent-color: #0786e0; /* NiFi Blue for the checkbox */
+    input {
+        margin-right: 12px;
     }
-
     .label-text {
-        font-size: 12px;
-        color: #444;
-        margin-left: 10px;
-        font-weight: 500;
+        font-size: 13px;
+        color: #333;
+        &.debug-text {
+            color: #d32f2f;
+        }
     }
-
+    .zoom-badge {
+        margin-left: auto;
+        background: #f0f0f0;
+        font-size: 10px;
+        padding: 2px 4px;
+        border-radius: 4px;
+    }
     .indicator.local {
         width: 10px;
         height: 10px;
-        border-radius: 2px;
-        background-color: #0786e0;
-        margin-left: auto; /* Push to the right */
+        border-radius: 50%;
+        background: #007ad1;
+        margin-left: auto;
+    }
+}
+
+.side-panel {
+    position: absolute;
+    top: 0;
+    right: -360px; /* Hidden off-screen */
+    width: 350px;
+    height: 100%;
+    background: white;
+    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+    z-index: 100; /* Must be higher than map-controls if they overlap */
+    transition: right 0.3s ease-in-out;
+    display: flex;
+    flex-direction: column;
+
+    &.open {
+        right: 0;
     }
 
-    &:hover {
-        opacity: 0.8;
+    .panel-header {
+        background: #007ad1;
+        color: white;
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        h3 {
+            margin: 0;
+            font-size: 14px;
+        }
+        .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+        }
+    }
+
+    .panel-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+        .attr-table {
+            width: 100%;
+            border-collapse: collapse;
+            td {
+                padding: 8px;
+                font-size: 11px;
+                border-bottom: 1px solid #eee;
+                word-break: break-all;
+            }
+            .attr-key {
+                color: #666;
+                width: 35%;
+            }
+            .attr-val {
+                color: #333;
+                font-family: monospace;
+            }
+        }
     }
 }

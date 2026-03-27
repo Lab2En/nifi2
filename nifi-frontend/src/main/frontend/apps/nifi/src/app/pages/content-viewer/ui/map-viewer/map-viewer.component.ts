@@ -1,4 +1,4 @@
-import { Component, inject, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, inject, AfterViewInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
@@ -18,15 +18,19 @@ import * as maplibregl from 'maplibre-gl';
 export class MapViewer implements AfterViewInit, OnDestroy {
     private store = inject<Store<NiFiState>>(Store);
     private http = inject(HttpClient);
+    private cdr = inject(ChangeDetectorRef);
 
     private map: maplibregl.Map | undefined;
     private contextPath = 'nifi-geometry-viewer-2.8.0-SNAPSHOT';
-    private clickListener: ((e: maplibregl.MapMouseEvent) => void) | null = null;
 
     ref: string | null = null;
+    currentZoom: number = 2;
+    selectedFeatureProperties: any = null;
+
     layerVisibility = {
         local: true,
-        baseMap: true
+        baseMap: true,
+        debug: false
     };
 
     constructor() {
@@ -47,30 +51,24 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     }
 
     private initializeMap(): void {
-        // 1. Define the OSM Source
         const osmSource: maplibregl.RasterSourceSpecification = {
             type: 'raster',
             tiles: ['https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png'],
             tileSize: 256,
             attribution: '© OpenStreetMap contributors'
         };
+
         this.map = new maplibregl.Map({
             container: 'map-canvas',
             style: {
                 version: 8,
-                // Add glyphs if you plan to use labels in vector layers later
-                glyphs: `https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf`,
-                sources: {
-                    'osm-source': osmSource
-                },
+                sources: { 'osm-source': osmSource },
                 layers: [
                     {
                         id: 'osm-layer',
                         type: 'raster',
                         source: 'osm-source',
-                        layout: { visibility: 'visible' },
-                        minzoom: 0,
-                        maxzoom: 19
+                        layout: { visibility: 'visible' }
                     }
                 ]
             },
@@ -79,10 +77,16 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             trackResize: true
         });
 
-        this.map.addControl(new maplibregl.NavigationControl());
+        this.map.on('zoom', () => {
+            this.currentZoom = Math.round((this.map?.getZoom() || 0) * 100) / 100;
+            this.cdr.detectChanges();
+        });
 
         this.map.on('load', () => {
             if (!this.map) return;
+            this.map.resize();
+            this.addDebugGridSource();
+            this.registerSelectionLogic();
             if (this.ref) {
                 this.addNifiTileSource(this.ref);
                 this.zoomToDataExtent(this.ref);
@@ -91,175 +95,204 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         });
     }
 
-    private zoomToDataExtent(ref: string): void {
-        const url = `/${this.contextPath}/api/geometry/bounds?ref=${encodeURIComponent(ref)}`;
+    private registerSelectionLogic(): void {
+        if (!this.map) return;
 
-        this.http.get<number[]>(url).subscribe({
-            next: (bbox) => {
-                if (this.map && bbox && bbox.length === 4) {
-                    // Safety check: Ensure values are Lon/Lat and not Meters
-                    const isInvalidLat = Math.abs(bbox[1]) > 90 || Math.abs(bbox[3]) > 90;
-                    if (isInvalidLat) return;
+        this.map.on('click', (e) => {
+            // Check all geometry layers
+            const layers = ['local-polygons', 'local-lines', 'local-points'];
+            const features = this.map?.queryRenderedFeatures(e.point, {
+                layers: layers.filter((id) => this.map?.getLayer(id))
+            });
 
-                    this.map.fitBounds(
-                        [
-                            [bbox[0], bbox[1]],
-                            [bbox[2], bbox[3]]
-                        ],
-                        { padding: 40, duration: 1200, essential: true }
-                    );
-                }
-            },
-            error: (err) => console.warn('Could not zoom to extent.', err)
+            if (features && features.length > 0) {
+                const feature = features[0];
+                this.selectedFeatureProperties = feature.properties;
+
+                // Try to find a unique ID for the highlight filter
+                const featureId = feature.id || feature.properties?.['id'] || feature.properties?.['name'] || -1;
+
+                ['h-poly', 'h-line', 'h-point'].forEach((id) => {
+                    if (this.map?.getLayer(id)) {
+                        this.map.setFilter(id, ['==', ['id'], featureId]);
+                    }
+                });
+            } else {
+                this.selectedFeatureProperties = null;
+                ['h-poly', 'h-line', 'h-point'].forEach((id) => {
+                    if (this.map?.getLayer(id)) this.map.setFilter(id, ['==', ['id'], -1]);
+                });
+            }
+            this.cdr.detectChanges();
+        });
+
+        // Cursor pointer on hover
+        this.map.on('mousemove', (e) => {
+            const layers = ['local-polygons', 'local-lines', 'local-points'];
+            const f = this.map?.queryRenderedFeatures(e.point, { layers: layers.filter((l) => this.map?.getLayer(l)) });
+            this.map!.getCanvas().style.cursor = f && f.length > 0 ? 'pointer' : '';
         });
     }
 
     private addNifiTileSource(ref: string): void {
         if (!this.map) return;
-
         const sourceId = 'nifi-source';
-        const layerIds = ['local-polygons', 'local-lines', 'local-points'];
 
-        // Cleanup existing layers/source
-        layerIds.forEach((id) => {
-            if (this.map?.getLayer(id)) this.map.removeLayer(id);
+        // Remove existing layers and source
+        const existingLayers = this.map.getStyle().layers || [];
+        existingLayers.forEach((l) => {
+            if (l.id.startsWith('local-') || l.id.startsWith('h-')) this.map?.removeLayer(l.id);
         });
         if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
-        if (this.clickListener) this.map.off('click', this.clickListener);
 
-        const baseUrl = window.location.origin;
-        const path = `/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}`;
-        const urlWithParams = new URL(path, baseUrl);
-        urlWithParams.searchParams.set('ref', ref);
-        const fullNifiTileUrl = decodeURI(urlWithParams.toString());
+        const url = new URL(`/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}`, window.location.origin);
+        url.searchParams.set('ref', ref);
 
         this.map.addSource(sourceId, {
             type: 'vector',
-            tiles: [fullNifiTileUrl],
-            minzoom: 0,
-            maxzoom: 18
+            tiles: [decodeURI(url.toString())],
+            promoteId: 'id' // Ensure your features have an "id" property
         });
 
-        const visibility = this.layerVisibility.local ? 'visible' : 'none';
+        const v = this.layerVisibility.local ? 'visible' : 'none';
 
-        // Add Layers
-        // 1. Polygons: Use a softer fill with a distinct thick border
+        // --- Polygons ---
         this.map.addLayer({
             id: 'local-polygons',
             type: 'fill',
             source: sourceId,
             'source-layer': 'myPolygons',
-            layout: { visibility },
-            paint: {
-                'fill-color': '#00599a', // Deeper NiFi blue
-                'fill-opacity': 0.85, // More transparent to see the map under it
-                'fill-outline-color': '#fffAAA' // Crisp white edge
-            }
+            layout: { visibility: v },
+            paint: { 'fill-color': '#00599a', 'fill-opacity': 0.85 }
         });
-
-        // 2. Lines: Add a "Halo" effect (a white background line) so the blue line stands out
         this.map.addLayer({
-            id: 'local-lines-bg', // Background line for contrast
+            id: 'h-poly',
             type: 'line',
             source: sourceId,
-            'source-layer': 'myLines',
-            layout: { visibility, 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-                'line-color': '#ffffff',
-                'line-width': 4.5, // Slightly wider than the foreground
-                'line-opacity': 0.85
-            }
+            'source-layer': 'myPolygons',
+            filter: ['==', ['id'], -1],
+            paint: { 'line-color': '#ffa500', 'line-width': 3 }
         });
 
+        // --- Lines ---
         this.map.addLayer({
             id: 'local-lines',
             type: 'line',
             source: sourceId,
             'source-layer': 'myLines',
-            layout: { visibility, 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-                'line-color': '#007ad1',
-                'line-width': 2.5
-            }
+            layout: { visibility: v },
+            paint: { 'line-color': '#007ad1', 'line-width': 2 }
+        });
+        this.map.addLayer({
+            id: 'h-line',
+            type: 'line',
+            source: sourceId,
+            'source-layer': 'myLines',
+            filter: ['==', ['id'], -1],
+            paint: { 'line-color': '#ffa500', 'line-width': 4 }
         });
 
-        // 3. Points: Use a "Pulsing" look with a heavy stroke
+        // --- Points ---
         this.map.addLayer({
             id: 'local-points',
             type: 'circle',
             source: sourceId,
             'source-layer': 'myPoints',
-            layout: { visibility },
+            layout: { visibility: v },
             paint: {
-                'circle-radius': 7,
-                'circle-color': '#00b4eb', // Brighter cyan-blue for points
-                'circle-stroke-width': 3,
-                'circle-stroke-color': '#ffffff',
-                'circle-pitch-alignment': 'map' // Keeps circles flat when map tilts
+                'circle-radius': 6,
+                'circle-color': '#00b4eb',
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#fff'
+            }
+        });
+        this.map.addLayer({
+            id: 'h-point',
+            type: 'circle',
+            source: sourceId,
+            'source-layer': 'myPoints',
+            filter: ['==', ['id'], -1],
+            paint: {
+                'circle-radius': 9,
+                'circle-color': '#ffa500',
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#fff'
             }
         });
 
-        // Click Logic
-        this.clickListener = (e: maplibregl.MapMouseEvent) => {
-            const features = this.map?.queryRenderedFeatures(e.point, { layers: layerIds });
-            if (!features?.length) return;
+        if (this.map.getLayer('debug-grid-layer')) this.map.moveLayer('debug-grid-layer');
+    }
 
-            this.map?.resize();
-            const coordinates = e.lngLat;
-            const props = features[0].properties;
+    private async addDebugGridSource(): Promise<void> {
+        if (!this.map) return;
+        maplibregl.addProtocol('debug-grid', async (params) => {
+            const parts = params.url.split('/');
+            const [z, x, y] = parts.slice(-3).map((p) => parseInt(p));
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d')!;
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(0, 0, 256, 256);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.fillRect(0, 0, 256, 40);
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 10px monospace';
+            ctx.fillText(`Z:${z} X:${x} Y:${y}`, 10, 15);
+            const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res));
+            return { data: await blob!.arrayBuffer() };
+        });
+        this.map.addSource('debug-grid-source', { type: 'raster', tiles: ['debug-grid://{z}/{x}/{y}'], tileSize: 256 });
+        this.map.addLayer({
+            id: 'debug-grid-layer',
+            type: 'raster',
+            source: 'debug-grid-source',
+            layout: { visibility: 'none' }
+        });
+    }
 
-            // Move map to click location
-            this.map?.flyTo({
-                center: coordinates,
-                zoom: Math.max(this.map.getZoom(), 14),
-                essential: true
+    private zoomToDataExtent(ref: string): void {
+        this.http
+            .get<number[]>(`/${this.contextPath}/api/geometry/bounds?ref=${encodeURIComponent(ref)}`)
+            .subscribe((bbox) => {
+                if (this.map && bbox?.length === 4) {
+                    this.map.fitBounds(
+                        [
+                            [bbox[0], bbox[1]],
+                            [bbox[2], bbox[3]]
+                        ],
+                        { padding: 50 }
+                    );
+                }
             });
-
-            // Build Table HTML
-            let html = '<div class="nifi-popup-table"><b>Feature Attributes</b><hr/><table>';
-            Object.entries(props).forEach(([k, v]) => {
-                html += `<tr><td><b>${k}</b></td><td>${v}</td></tr>`;
-            });
-            html += '</table></div>';
-
-            // Create and show popup
-            new maplibregl.Popup({
-                closeButton: true,
-                closeOnClick: true,
-                anchor: 'bottom',
-                offset: 5
-            })
-                .setLngLat(coordinates)
-                .setHTML(html)
-                .addTo(this.map!);
-        };
-
-        this.map.on('click', this.clickListener);
     }
 
     toggleNiFiLayer(): void {
-        if (!this.map) return;
         this.layerVisibility.local = !this.layerVisibility.local;
-        const visibility = this.layerVisibility.local ? 'visible' : 'none';
+        const v = this.layerVisibility.local ? 'visible' : 'none';
         ['local-polygons', 'local-lines', 'local-points'].forEach((id) => {
-            if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', visibility);
+            if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', v);
         });
     }
+
     toggleBaseMap(): void {
-        if (!this.map) return;
-
         this.layerVisibility.baseMap = !this.layerVisibility.baseMap;
-        const visibility = this.layerVisibility.baseMap ? 'visible' : 'none';
-
-        // 'osm-layer' is the ID we set in initializeMap()
-        if (this.map.getLayer('osm-layer')) {
-            this.map.setLayoutProperty('osm-layer', 'visibility', visibility);
-        }
+        if (this.map?.getLayer('osm-layer'))
+            this.map.setLayoutProperty('osm-layer', 'visibility', this.layerVisibility.baseMap ? 'visible' : 'none');
     }
+
+    toggleDebugGrid(): void {
+        this.layerVisibility.debug = !this.layerVisibility.debug;
+        if (this.map?.getLayer('debug-grid-layer'))
+            this.map.setLayoutProperty(
+                'debug-grid-layer',
+                'visibility',
+                this.layerVisibility.debug ? 'visible' : 'none'
+            );
+    }
+
     ngOnDestroy(): void {
-        if (this.map) {
-            if (this.clickListener) this.map.off('click', this.clickListener);
-            this.map.remove();
-        }
+        this.map?.remove();
     }
 }

@@ -1,16 +1,41 @@
 <div class="map-container">
+    <div id="map-canvas"></div>
+
     <div class="map-controls">
         <div class="control-card">
-            <h3 class="text-xs font-bold tracking-wider text-gray-500 mb-3">Layers</h3>
+            <h3 class="control-title">Layers</h3>
             <label class="layer-item">
                 <input type="checkbox" [checked]="layerVisibility.baseMap" (change)="toggleBaseMap()" />
                 <span class="label-text">Base Map</span>
             </label>
             <label class="layer-item">
+                <input type="checkbox" [checked]="layerVisibility.debug" (change)="toggleDebugGrid()" />
+                <span class="label-text debug-text">Grid Cell</span>
+                <span class="zoom-badge">Z: {{ currentZoom }}</span>
+            </label>
+            <hr class="control-divider" />
+            <label class="layer-item">
                 <input type="checkbox" [checked]="layerVisibility.local" (change)="toggleNiFiLayer()" />
                 <span class="label-text">Geometries</span>
+                <div class="indicator local"></div>
             </label>
         </div>
     </div>
-    <div id="map-canvas"></div>
+
+    <div class="side-panel" [class.open]="selectedFeatureProperties">
+        <div class="panel-header" *ngIf="selectedFeatureProperties">
+            <h3>Attributes</h3>
+            <button class="close-btn" (click)="selectedFeatureProperties = null">×</button>
+        </div>
+        <div class="panel-content" *ngIf="selectedFeatureProperties">
+            <table class="attr-table">
+                <tr *ngFor="let attr of selectedFeatureProperties | keyvalue">
+                    <td class="attr-key">
+                        <b>{{ attr.key }}</b>
+                    </td>
+                    <td class="attr-val">{{ attr.value }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
 </div>
