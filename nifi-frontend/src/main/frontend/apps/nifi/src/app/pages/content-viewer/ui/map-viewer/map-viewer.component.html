@@ -2,10 +2,12 @@
     <div class="map-controls">
         <div class="control-card">
             <h3 class="text-xs font-bold tracking-wider text-gray-500 mb-3">Layers</h3>
-
+            <label class="layer-item">
+                <input type="checkbox" [checked]="layerVisibility.baseMap" (change)="toggleBaseMap()" />
+                <span class="label-text">Base Map</span>
+            </label>
             <label class="layer-item">
                 <input type="checkbox" [checked]="layerVisibility.local" (change)="toggleNiFiLayer()" />
-                <span class="indicator local"></span>
                 <span class="label-text">Geometries</span>
             </label>
         </div>

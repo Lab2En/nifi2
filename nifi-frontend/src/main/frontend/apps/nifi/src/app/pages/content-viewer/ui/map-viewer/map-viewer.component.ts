@@ -1,5 +1,5 @@
 import { Component, inject, AfterViewInit, OnDestroy } from '@angular/core';
-import { HttpClient } from '@angular/common/http'; // Added import
+import { HttpClient } from '@angular/common/http';
 import { Store } from '@ngrx/store';
 import { NiFiState } from '../../../../state';
 import { selectRef } from '../../state/content/content.selectors';
@@ -17,14 +17,17 @@ import * as maplibregl from 'maplibre-gl';
 })
 export class MapViewer implements AfterViewInit, OnDestroy {
     private store = inject<Store<NiFiState>>(Store);
-    private http = inject(HttpClient); // Re-added the missing http property
+    private http = inject(HttpClient);
 
     private map: maplibregl.Map | undefined;
     private contextPath = 'nifi-geometry-viewer-2.8.0-SNAPSHOT';
     private clickListener: ((e: maplibregl.MapMouseEvent) => void) | null = null;
 
     ref: string | null = null;
-    layerVisibility = { local: true };
+    layerVisibility = {
+        local: true,
+        baseMap: true
+    };
 
     constructor() {
         this.store
@@ -34,7 +37,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
                 this.ref = ref;
                 if (this.map?.isStyleLoaded()) {
                     this.addNifiTileSource(ref);
-                    this.zoomToDataExtent(ref); // New: Auto-zoom when ref changes
+                    this.zoomToDataExtent(ref);
                 }
             });
     }
@@ -44,10 +47,34 @@ export class MapViewer implements AfterViewInit, OnDestroy {
     }
 
     private initializeMap(): void {
+        // 1. Define the OSM Source
+        const osmSource: maplibregl.RasterSourceSpecification = {
+            type: 'raster',
+            tiles: ['https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors'
+        };
         this.map = new maplibregl.Map({
             container: 'map-canvas',
-            style: 'https://demotiles.maplibre.org/style.json',
-            center: [0, 0], // Start at neutral 0,0; zoomToDataExtent will move it
+            style: {
+                version: 8,
+                // Add glyphs if you plan to use labels in vector layers later
+                glyphs: `https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf`,
+                sources: {
+                    'osm-source': osmSource
+                },
+                layers: [
+                    {
+                        id: 'osm-layer',
+                        type: 'raster',
+                        source: 'osm-source',
+                        layout: { visibility: 'visible' },
+                        minzoom: 0,
+                        maxzoom: 19
+                    }
+                ]
+            },
+            center: [0, 0],
             zoom: 2,
             trackResize: true
         });
@@ -64,33 +91,20 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         });
     }
 
-    /**
-     * Fetches the Bounding Box from the API and zooms the map to fit.
-     * Expects API to return: [minLng, minLat, maxLng, maxLat]
-     */
     private zoomToDataExtent(ref: string): void {
         const url = `/${this.contextPath}/api/geometry/bounds?ref=${encodeURIComponent(ref)}`;
 
         this.http.get<number[]>(url).subscribe({
             next: (bbox) => {
                 if (this.map && bbox && bbox.length === 4) {
-                    // DEBUG: Look at your console to see what the Java API sent
-                    console.log('Received BBox from API:', bbox);
-
-                    // Check if the coordinates are actually Lat/Lng (Lat must be -90 to 90)
+                    // Safety check: Ensure values are Lon/Lat and not Meters
                     const isInvalidLat = Math.abs(bbox[1]) > 90 || Math.abs(bbox[3]) > 90;
-
-                    if (isInvalidLat) {
-                        console.error(
-                            'API returned Projected coordinates (Meters) instead of WGS84 (Degrees). Zoom cancelled.'
-                        );
-                        return;
-                    }
+                    if (isInvalidLat) return;
 
                     this.map.fitBounds(
                         [
-                            [bbox[0], bbox[1]], // Southwest [Lon, Lat]
-                            [bbox[2], bbox[3]] // Northeast [Lon, Lat]
+                            [bbox[0], bbox[1]],
+                            [bbox[2], bbox[3]]
                         ],
                         { padding: 40, duration: 1200, essential: true }
                     );
@@ -106,14 +120,12 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         const sourceId = 'nifi-source';
         const layerIds = ['local-polygons', 'local-lines', 'local-points'];
 
+        // Cleanup existing layers/source
         layerIds.forEach((id) => {
             if (this.map?.getLayer(id)) this.map.removeLayer(id);
         });
         if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
-
-        if (this.clickListener) {
-            this.map.off('click', this.clickListener);
-        }
+        if (this.clickListener) this.map.off('click', this.clickListener);
 
         const baseUrl = window.location.origin;
         const path = `/${this.contextPath}/api/geometry/tiles/{z}/{x}/{y}`;
@@ -130,13 +142,33 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
         const visibility = this.layerVisibility.local ? 'visible' : 'none';
 
+        // Add Layers
+        // 1. Polygons: Use a softer fill with a distinct thick border
         this.map.addLayer({
             id: 'local-polygons',
             type: 'fill',
             source: sourceId,
             'source-layer': 'myPolygons',
             layout: { visibility },
-            paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.6, 'fill-outline-color': '#ffffff' }
+            paint: {
+                'fill-color': '#00599a', // Deeper NiFi blue
+                'fill-opacity': 0.85, // More transparent to see the map under it
+                'fill-outline-color': '#fffAAA' // Crisp white edge
+            }
+        });
+
+        // 2. Lines: Add a "Halo" effect (a white background line) so the blue line stands out
+        this.map.addLayer({
+            id: 'local-lines-bg', // Background line for contrast
+            type: 'line',
+            source: sourceId,
+            'source-layer': 'myLines',
+            layout: { visibility, 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': '#ffffff',
+                'line-width': 4.5, // Slightly wider than the foreground
+                'line-opacity': 0.85
+            }
         });
 
         this.map.addLayer({
@@ -144,10 +176,14 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             type: 'line',
             source: sourceId,
             'source-layer': 'myLines',
-            layout: { visibility },
-            paint: { 'line-color': '#0786e0', 'line-width': 2.5 }
+            layout: { visibility, 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': '#007ad1',
+                'line-width': 2.5
+            }
         });
 
+        // 3. Points: Use a "Pulsing" look with a heavy stroke
         this.map.addLayer({
             id: 'local-points',
             type: 'circle',
@@ -155,26 +191,45 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             'source-layer': 'myPoints',
             layout: { visibility },
             paint: {
-                'circle-radius': 6,
-                'circle-color': '#0786e0',
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#ffffff'
+                'circle-radius': 7,
+                'circle-color': '#00b4eb', // Brighter cyan-blue for points
+                'circle-stroke-width': 3,
+                'circle-stroke-color': '#ffffff',
+                'circle-pitch-alignment': 'map' // Keeps circles flat when map tilts
             }
         });
 
+        // Click Logic
         this.clickListener = (e: maplibregl.MapMouseEvent) => {
             const features = this.map?.queryRenderedFeatures(e.point, { layers: layerIds });
             if (!features?.length) return;
 
+            this.map?.resize();
+            const coordinates = e.lngLat;
             const props = features[0].properties;
-            let html = '<div class="nifi-popup-table"><b>NiFi Attributes</b><hr/><table>';
+
+            // Move map to click location
+            this.map?.flyTo({
+                center: coordinates,
+                zoom: Math.max(this.map.getZoom(), 14),
+                essential: true
+            });
+
+            // Build Table HTML
+            let html = '<div class="nifi-popup-table"><b>Feature Attributes</b><hr/><table>';
             Object.entries(props).forEach(([k, v]) => {
                 html += `<tr><td><b>${k}</b></td><td>${v}</td></tr>`;
             });
             html += '</table></div>';
 
-            new maplibregl.Popup({ closeButton: true, anchor: 'bottom', offset: [0, -10] })
-                .setLngLat(e.lngLat)
+            // Create and show popup
+            new maplibregl.Popup({
+                closeButton: true,
+                closeOnClick: true,
+                anchor: 'bottom',
+                offset: 5
+            })
+                .setLngLat(coordinates)
                 .setHTML(html)
                 .addTo(this.map!);
         };
@@ -190,7 +245,17 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', visibility);
         });
     }
+    toggleBaseMap(): void {
+        if (!this.map) return;
 
+        this.layerVisibility.baseMap = !this.layerVisibility.baseMap;
+        const visibility = this.layerVisibility.baseMap ? 'visible' : 'none';
+
+        // 'osm-layer' is the ID we set in initializeMap()
+        if (this.map.getLayer('osm-layer')) {
+            this.map.setLayoutProperty('osm-layer', 'visibility', visibility);
+        }
+    }
     ngOnDestroy(): void {
         if (this.map) {
             if (this.clickListener) this.map.off('click', this.clickListener);

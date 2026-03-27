@@ -5,76 +5,106 @@
     width: 100%;
     height: 100%;
     position: relative;
+    overflow: hidden; /* Prevent the popup from pushing the page down */
 }
 
 .map-container {
     width: 100%;
     height: 100%;
-    position: relative;
+    position: absolute; /* Change to absolute to fill the :host exactly */
+    top: 0;
+    left: 0;
+    overflow: hidden;
 }
 
 #map-canvas {
     width: 100%;
     height: 100%;
-    position: absolute;
-    top: 0;
-    left: 0;
+    /* MapLibre needs this to be relative or absolute to position popups correctly */
+    position: relative;
 }
 
 ::ng-deep {
+    /* Critical Fix: Ensure the popup container allows pointer events and has high z-index */
     .maplibregl-popup {
-        z-index: 1000 !important;
-        pointer-events: none;
+        z-index: 3000 !important;
     }
 
     .maplibregl-popup-content {
-        pointer-events: auto;
         background: #ffffff !important;
         color: #333 !important;
-        padding: 10px !important;
-        border-radius: 4px;
-        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        padding: 15px !important;
+        border-radius: 8px !important;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2) !important;
+        border: 1px solid #e0e0e0;
+        min-width: 220px;
+    }
+
+    /* Ensure the "pointer tip" matches the white background */
+    .maplibregl-popup-tip {
+        border-top-color: #ffffff !important;
     }
 
     .nifi-popup-table {
-        min-width: 150px;
         b {
+            display: block;
+            margin-bottom: 4px;
             font-size: 13px;
             color: #0786e0;
         }
         hr {
             border: 0;
             border-top: 1px solid #eee;
-            margin: 5px 0;
+            margin: 8px 0;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             td {
-                padding: 3px 0;
+                padding: 4px 0;
                 font-size: 11px;
                 border-bottom: 1px solid #f9f9f9;
+                vertical-align: top;
                 &:first-child {
-                    color: #666;
-                    padding-right: 10px;
+                    color: #777;
+                    font-weight: 600;
+                    padding-right: 15px;
+                    white-space: nowrap;
+                }
+                &:last-child {
+                    color: #333;
+                    word-break: break-all;
                 }
             }
+        }
+    }
+
+    /* Close Button Styling */
+    .maplibregl-popup-close-button {
+        font-size: 18px;
+        color: #999;
+        padding: 5px 8px;
+        &:hover {
+            background: transparent;
+            color: #333;
         }
     }
 }
 
 .map-controls {
     position: absolute;
-    top: 15px;
-    left: 15px;
+    top: 20px;
+    left: 20px;
     z-index: 10;
 
     .control-card {
-        background: rgba(255, 255, 255, 0.9);
-        padding: 12px;
-        border-radius: 4px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-        min-width: 160px;
+        background: white;
+        padding: 10px 15px;
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     }
 }
 
@@ -82,15 +112,33 @@
     display: flex;
     align-items: center;
     cursor: pointer;
+    margin-bottom: 6px;
+    padding: 4px 0;
+    transition: opacity 0.2s;
+
+    input[type='checkbox'] {
+        cursor: pointer;
+        width: 14px;
+        height: 14px;
+        accent-color: #0786e0; /* NiFi Blue for the checkbox */
+    }
+
     .label-text {
         font-size: 12px;
-        margin-left: 8px;
+        color: #444;
+        margin-left: 10px;
+        font-weight: 500;
     }
+
     .indicator.local {
         width: 10px;
         height: 10px;
         border-radius: 2px;
         background-color: #0786e0;
-        margin-left: 8px;
+        margin-left: auto; /* Push to the right */
+    }
+
+    &:hover {
+        opacity: 0.8;
     }
 }
