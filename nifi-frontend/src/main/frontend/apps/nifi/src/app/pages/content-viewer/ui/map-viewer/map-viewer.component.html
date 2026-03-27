@@ -25,7 +25,7 @@
     <div class="side-panel" [class.open]="selectedFeatureProperties">
         <div class="panel-header" *ngIf="selectedFeatureProperties">
             <h3>Attributes</h3>
-            <button class="close-btn" (click)="selectedFeatureProperties = null">×</button>
+            <button class="close-btn" (click)="resetHighlights()">×</button>
         </div>
         <div class="panel-content" *ngIf="selectedFeatureProperties">
             <table class="attr-table">

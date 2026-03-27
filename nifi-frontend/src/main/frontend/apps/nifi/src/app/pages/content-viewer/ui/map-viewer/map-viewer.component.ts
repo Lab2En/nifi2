@@ -99,34 +99,35 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         if (!this.map) return;
 
         this.map.on('click', (e) => {
-            // Check all geometry layers
             const layers = ['local-polygons', 'local-lines', 'local-points'];
             const features = this.map?.queryRenderedFeatures(e.point, {
                 layers: layers.filter((id) => this.map?.getLayer(id))
             });
 
+            // Reset everything first
+            this.resetHighlights();
+
             if (features && features.length > 0) {
                 const feature = features[0];
                 this.selectedFeatureProperties = feature.properties;
+                const selectedId = feature.properties?.['feature_id'];
 
-                // Try to find a unique ID for the highlight filter
-                const featureId = feature.id || feature.properties?.['id'] || feature.properties?.['name'] || -1;
+                if (selectedId !== undefined) {
+                    const layerMapping: { [key: string]: string } = {
+                        'local-polygons': 'h-poly',
+                        'local-lines': 'h-line',
+                        'local-points': 'h-point'
+                    };
 
-                ['h-poly', 'h-line', 'h-point'].forEach((id) => {
-                    if (this.map?.getLayer(id)) {
-                        this.map.setFilter(id, ['==', ['id'], featureId]);
+                    const hLayer = layerMapping[feature.layer.id];
+                    if (hLayer && this.map?.getLayer(hLayer)) {
+                        this.map.setFilter(hLayer, ['==', ['get', 'feature_id'], selectedId]);
                     }
-                });
-            } else {
-                this.selectedFeatureProperties = null;
-                ['h-poly', 'h-line', 'h-point'].forEach((id) => {
-                    if (this.map?.getLayer(id)) this.map.setFilter(id, ['==', ['id'], -1]);
-                });
+                }
             }
             this.cdr.detectChanges();
         });
 
-        // Cursor pointer on hover
         this.map.on('mousemove', (e) => {
             const layers = ['local-polygons', 'local-lines', 'local-points'];
             const f = this.map?.queryRenderedFeatures(e.point, { layers: layers.filter((l) => this.map?.getLayer(l)) });
@@ -170,7 +171,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             type: 'line',
             source: sourceId,
             'source-layer': 'myPolygons',
-            filter: ['==', ['id'], -1],
+            filter: ['==', ['get', 'feature_id'], -1],
             paint: { 'line-color': '#ffa500', 'line-width': 3 }
         });
 
@@ -188,7 +189,7 @@ export class MapViewer implements AfterViewInit, OnDestroy {
             type: 'line',
             source: sourceId,
             'source-layer': 'myLines',
-            filter: ['==', ['id'], -1],
+            filter: ['==', ['get', 'feature_id'], -1],
             paint: { 'line-color': '#ffa500', 'line-width': 4 }
         });
 
@@ -225,30 +226,54 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
     private async addDebugGridSource(): Promise<void> {
         if (!this.map) return;
+
         maplibregl.addProtocol('debug-grid', async (params) => {
             const parts = params.url.split('/');
-            const [z, x, y] = parts.slice(-3).map((p) => parseInt(p));
+            const z = parseInt(parts[parts.length - 3]);
+            const x = parseInt(parts[parts.length - 2]);
+            const y = parseInt(parts[parts.length - 1]);
+
             const canvas = document.createElement('canvas');
             canvas.width = 256;
             canvas.height = 256;
             const ctx = canvas.getContext('2d')!;
+
+            // 1. Draw Red Border
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 2;
             ctx.strokeRect(0, 0, 256, 256);
+
+            // 2. Background for text
             ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-            ctx.fillRect(0, 0, 256, 40);
+            ctx.fillRect(0, 0, 256, 45);
+
+            // 3. X, Y, Z Labels
             ctx.fillStyle = 'black';
-            ctx.font = 'bold 10px monospace';
-            ctx.fillText(`Z:${z} X:${x} Y:${y}`, 10, 15);
+            ctx.font = 'bold 11px monospace';
+            ctx.fillText(`X:${x} Y:${y} Z:${z}`, 10, 18);
+
+            // 4. RESTORED: Lat/Lon Math
+            const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+            const lat = ((180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))).toFixed(4);
+            const lon = ((x / Math.pow(2, z)) * 360 - 180).toFixed(4);
+
+            ctx.fillText(`NW: ${lat}, ${lon}`, 10, 36);
+
             const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res));
             return { data: await blob!.arrayBuffer() };
         });
-        this.map.addSource('debug-grid-source', { type: 'raster', tiles: ['debug-grid://{z}/{x}/{y}'], tileSize: 256 });
+
+        this.map.addSource('debug-grid-source', {
+            type: 'raster',
+            tiles: ['debug-grid://{z}/{x}/{y}'],
+            tileSize: 256
+        });
+
         this.map.addLayer({
             id: 'debug-grid-layer',
             type: 'raster',
             source: 'debug-grid-source',
-            layout: { visibility: 'none' }
+            layout: { visibility: this.layerVisibility.debug ? 'visible' : 'none' }
         });
     }
 
@@ -291,7 +316,21 @@ export class MapViewer implements AfterViewInit, OnDestroy {
                 this.layerVisibility.debug ? 'visible' : 'none'
             );
     }
+    resetHighlights(): void {
+        if (!this.map) return;
 
+        // Set filter to -1 (or any value that won't exist) to hide the highlight layers
+        const hLayers = ['h-poly', 'h-line', 'h-point'];
+        hLayers.forEach((id) => {
+            if (this.map?.getLayer(id)) {
+                // We use the same ['get', 'feature_id'] logic used in the selection
+                this.map.setFilter(id, ['==', ['get', 'feature_id'], -1]);
+            }
+        });
+
+        this.selectedFeatureProperties = null;
+        this.cdr.detectChanges();
+    }
     ngOnDestroy(): void {
         this.map?.remove();
     }
