@@ -83,6 +83,17 @@ public class GeometryResource {
 	}
 
 	@GET
+	@Path("/metadata")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getMetadata(@QueryParam("ref") String ref, @Context HttpServletRequest request) {
+	    java.util.Map<String, String> attrs = getMapAttributes(request, ref);
+	    String type = attrs.get(GeoUtils.GEO_TYPE); // "Features" or "Tiles"
+	    
+	    java.util.Map<String, String> response = new java.util.HashMap<>();
+	    response.put("geoType", type);	    
+	    return Response.ok(response).build();
+	}
+	@GET
 	@Path("/bounds")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getBounds(@Context HttpServletRequest request, @QueryParam("ref") String ref) {
@@ -227,7 +238,7 @@ public class GeometryResource {
             @PathParam("y") int y,
             @QueryParam("ref") String ref) {
         
-        logger.info("Fetching tile at Z:{}, X:{}, Y:{} for ref: {}", z, x, y, ref);
+        logger.info("Fetching image tile at Z:{}, X:{}, Y:{} for ref: {}", z, x, y, ref);
         String crs = null; 
         String geoType = null;
         ByteArrayInputStream bais = null;

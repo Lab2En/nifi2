@@ -14,15 +14,20 @@
                 <span class="zoom-badge">Z: {{ currentZoom }}</span>
             </label>
             <hr class="control-divider" />
-            <label class="layer-item">
+
+            <label class="layer-item" *ngIf="activeGeoType">
                 <input type="checkbox" [checked]="layerVisibility.local" (change)="toggleNiFiLayer()" />
-                <span class="label-text">Geometries</span>
-                <div class="indicator local"></div>
+                <span class="label-text">
+                    {{ activeGeoType === 'Features' ? 'Geometries' : 'Raster Tiles' }}
+                </span>
+                <div
+                    class="indicator local"
+                    [style.background]="activeGeoType === 'Features' ? '#007ad1' : '#2e7d32'"></div>
             </label>
         </div>
     </div>
 
-    <div class="side-panel" [class.open]="selectedFeatureProperties">
+    <div class="side-panel" [class.open]="selectedFeatureProperties && activeGeoType === 'Features'">
         <div class="panel-header" *ngIf="selectedFeatureProperties">
             <h3>Attributes</h3>
             <button class="close-btn" (click)="resetHighlights()">×</button>
