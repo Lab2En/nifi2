@@ -353,7 +353,7 @@ public class GeoUtils {
 		String geokey = null;
 		SimpleFeatureType TYPE = null;
 		
-    	if (geoType.equals("Features")) {    		
+    	if ("Features".equals(geoType)) {    		
             final GenericData genericData = new GenericData();
             genericData.addLogicalTypeConversion(new Conversions.DecimalConversion());
             genericData.addLogicalTypeConversion(new TimeConversions.DateConversion());
@@ -631,7 +631,7 @@ public class GeoUtils {
         final DatumReader<GenericData.Record> datumReader = new GenericDatumReader<>(null, null, genericData);
 		ByteArrayInputStream bais = null;
 		try (final DataFileStream<GenericData.Record> dataFileReader = new DataFileStream<>(content.getContent(), datumReader)) {
-			if (geoType.equals("Tiles")) {
+			if ("Tiles".equals(geoType)) {		    
 				while (dataFileReader.hasNext()) {
 					final GenericData.Record record = dataFileReader.next();
 					int zoom = Integer.parseInt(record.get("zoom_level").toString());
@@ -641,8 +641,9 @@ public class GeoUtils {
 						bais = new ByteArrayInputStream(getBytes((ByteBuffer) record.get("tile_data")));
 						break;
 					}					
-				}				
+				}		
 			}
+									
 		} catch (IOException | MismatchedDimensionException e1) {
 			e1.printStackTrace();
 		}

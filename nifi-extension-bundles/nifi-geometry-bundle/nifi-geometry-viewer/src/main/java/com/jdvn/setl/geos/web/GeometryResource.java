@@ -7,8 +7,6 @@ import org.apache.nifi.web.ContentAccess;
 import org.apache.nifi.web.ContentRequestContext;
 import org.apache.nifi.web.DownloadableContent;
 import org.apache.nifi.web.HttpServletContentRequestContext;
-import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.feature.FeatureCollection;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.Coordinate;
@@ -40,9 +38,6 @@ public class GeometryResource {
 	
     private static final Logger logger = LoggerFactory.getLogger(GeometryResource.class);    
     private static final String CONTENT_ACCESS_ATTRIBUTE = "nifi-content-access";
-    // For raster tiles caching
-	@SuppressWarnings("rawtypes")
-	private static final Cache<MapCacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
     // For vector tiles caching
     private static final Cache<MapCacheKey, byte[]> mapVectorCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
     
@@ -91,7 +86,7 @@ public class GeometryResource {
 	    String geoType = attrs.get(GeoUtils.GEO_TYPE); // "Features" or "Tiles"
 	    java.util.Map<String, String> response = new java.util.HashMap<>();
 	    response.put("geoType", geoType);
-	    if (geoType.equals("Tiles")) {
+	    if ("Tiles".equals(geoType)) {
 	    	String center = attrs.get(GeoUtils.GEO_TILE_CENTER);
 	    	String envelope = attrs.get(GeoUtils.GEO_ENVELOP);
 		    String zoom_min = attrs.get(GeoUtils.GEO_TILE_ZMIN);
@@ -155,8 +150,6 @@ public class GeometryResource {
 	
 	@GET
     @Path("/tiles/{z}/{x}/{y}.mvt")
-    //@Path("/tiles/{z}/{x}/{y}")
-    //@Produces("application/x-protobuf")
     @Produces(MediaType.APPLICATION_OCTET_STREAM)
     public Response getVectorTile(
             @Context HttpServletRequest request,
@@ -251,32 +244,19 @@ public class GeometryResource {
             @QueryParam("ref") String ref) {
         
         logger.info("Fetching image tile at Z:{}, X:{}, Y:{} for ref: {}", z, x, y, ref);
-        String crs = null; 
-        String geoType = null;
         ByteArrayInputStream bais = null;
        
     	final ServletContext servletContext = request.getServletContext();               
 		java.util.Map<String, String> finalAttributes =getMapAttributes(request, ref);
-		crs = finalAttributes.get(GeoUtils.GEO_CRS);
-		geoType = finalAttributes.get(GeoUtils.GEO_TYPE);
-            
+		String geoType = finalAttributes.get(GeoUtils.GEO_TYPE);
+			    	               
         final ContentRequestContext requestContext = new HttpServletContentRequestContext(request);
         final ContentAccess contentAccess = (ContentAccess) servletContext.getAttribute(CONTENT_ACCESS_ATTRIBUTE);
         // 4. Retrieve Content
-        final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);
-            		    		            		    		    		
-		if (geoType.equals("Features")) {
-			MapCacheKey key = new MapCacheKey(ref, x, y, z); 
-			if (mapViewCache.getIfPresent(key) == null) {
-				final SimpleFeatureCollection drawablefc = GeoUtils.drawableFeatureCollectionFromDownloadableContent(downloadableContent, crs, geoType);
-				mapViewCache.put(key, drawablefc);
-				bais = GeoUtils.getImageTileFromFeatureCollection(drawablefc, z, x, y);
-			} else {
-				bais = GeoUtils.getImageTileFromFeatureCollection((SimpleFeatureCollection) mapViewCache.getIfPresent(key), z, x, y);
-			}
-		} else if (geoType.equals("Tiles")){
+        final DownloadableContent downloadableContent = contentAccess.getContent(requestContext);            		    		            		    		    		
+		if ("Tiles".equals(geoType)) {
 			bais = GeoUtils.getImageTileFromDownloadableContent(downloadableContent, geoType, z, x, y);
-		}         
+		}
         return Response.ok(bais).build();
     }
 	/*
