@@ -10,6 +10,10 @@ import * as maplibregl from 'maplibre-gl';
 
 interface MapMetadata {
     geoType: 'Features' | 'Tiles';
+    zoom_min?: string; // Optional because it only exists for 'Tiles'
+    zoom_max?: string;
+    center?: string;
+    envelope?: string;
 }
 
 @Component({
@@ -108,11 +112,22 @@ export class MapViewer implements AfterViewInit, OnDestroy {
 
                 if (meta.geoType === 'Features') {
                     this.addNifiTileSource(ref);
+                    this.zoomToDataExtent(ref);
                 } else if (meta.geoType === 'Tiles') {
                     this.addNifiRasterSource(ref);
-                }
+                    console.info('Loaded raster tiles metadata.', meta);
+                    if (meta.center && meta.zoom_min) {
+                        // 1. Parse the center string "[x, y]" into numbers
+                        const centerArr = JSON.parse(meta.center); // [x, y]
+                        const zoomInit = parseInt(meta.zoom_min, 10);
 
-                this.zoomToDataExtent(ref);
+                        // 2. MapLibre equivalent: Jump to the center and zoom
+                        // Note: Leaflet's tileCoordsToBounds was likely used because
+                        // Leaflet handles lat/lng, but tiles are XY.
+                        // If 'center' contains Tile X/Y:
+                        this.zoomToTile(centerArr[0], centerArr[1], zoomInit);
+                    }
+                }
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -123,6 +138,23 @@ export class MapViewer implements AfterViewInit, OnDestroy {
         });
     }
 
+    /**
+     * Helper to convert Tile X,Y,Z to Lat/Lng and zoom the map
+     */
+    private zoomToTile(x: number, y: number, z: number) {
+        if (!this.map) return;
+
+        // Convert Tile X/Y to Longitude/Latitude (Northwest corner)
+        const lon = (x / Math.pow(2, z)) * 360 - 180;
+        const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+        const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+
+        this.map.flyTo({
+            center: [lon, lat],
+            zoom: z,
+            essential: true
+        });
+    }
     private clearNifiLayers(): void {
         if (!this.map) return;
         const style = this.map.getStyle();

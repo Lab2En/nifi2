@@ -87,12 +87,24 @@ public class GeometryResource {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getMetadata(@QueryParam("ref") String ref, @Context HttpServletRequest request) {
 	    java.util.Map<String, String> attrs = getMapAttributes(request, ref);
-	    String type = attrs.get(GeoUtils.GEO_TYPE); // "Features" or "Tiles"
 	    
+	    String geoType = attrs.get(GeoUtils.GEO_TYPE); // "Features" or "Tiles"
 	    java.util.Map<String, String> response = new java.util.HashMap<>();
-	    response.put("geoType", type);	    
+	    response.put("geoType", geoType);
+	    if (geoType.equals("Tiles")) {
+	    	String center = attrs.get(GeoUtils.GEO_TILE_CENTER);
+	    	String envelope = attrs.get(GeoUtils.GEO_ENVELOP);
+		    String zoom_min = attrs.get(GeoUtils.GEO_TILE_ZMIN);
+		    String zoom_max = attrs.get(GeoUtils.GEO_TILE_ZMAX);
+		    		    
+		    response.put("center", center);
+		    response.put("envelope", envelope);
+		    response.put("zoom_min", zoom_min == null ? "0" : zoom_min);
+		    response.put("zoom_max", zoom_max == null ? "22" : zoom_max);	
+	    }	    	    	    	        	    	    
 	    return Response.ok(response).build();
 	}
+	
 	@GET
 	@Path("/bounds")
 	@Produces(MediaType.APPLICATION_JSON)

@@ -99,6 +99,11 @@ public class GeoUtils {
     public static final String GEO_CRS = "crs";
     public static final String GEO_ENVELOP = "geo.envelope";
     public static final String GEO_TYPE = "geo.type";
+    public static final String GEO_TILE_ZMIN = "geo.zoomin";
+    public static final String GEO_TILE_ZMAX = "geo.zoomax";
+    public static final String GEO_TILE_CENTER = "geo.center";
+    
+    
     
 	private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
     private static final IGeometryFilter ACCEPT_ALL_FILTER = geometry -> true;
